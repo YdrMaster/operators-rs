@@ -5,9 +5,16 @@ edition = "2021"
 authors = ["YdrMaster <ydrml@hotmail.com>"]
 
 [features]
-default = ["common-cpu", "nv-gpu"]
+default = ["common-cpu", "nvidia-gpu"]
 common-cpu = []
-nv-gpu = []
+nvidia-gpu = ["cuda", "cublas", "nccl"]
 
 [dependencies]
 half = "2.4"
+log = "0.4"
+cuda = { git = "https://github.com/YdrMaster/cuda-driver", rev = "5560ed7", optional = true }
+cublas = { git = "https://github.com/YdrMaster/cuda-driver", rev = "5560ed7", optional = true }
+nccl = { git = "https://github.com/YdrMaster/cuda-driver", rev = "5560ed7", optional = true }
+
+[build-dependencies]
+search-cuda-tools = { git = "https://github.com/YdrMaster/cuda-driver", rev = "5560ed7" }

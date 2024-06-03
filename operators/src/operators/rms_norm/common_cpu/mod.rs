@@ -1,17 +1,18 @@
-﻿use std::{
+﻿use super::{layout::RmsNormSchemeLayout, RmsNormScheme, RmsNormTensorLayout};
+use crate::{
+    devices::common_cpu::Device as Cpu, locate_error, DataLayout, Device, ErrorPosition, F16,
+};
+use half::f16;
+use std::{
     iter::zip,
     slice::{from_raw_parts, from_raw_parts_mut},
 };
 
-use half::f16;
+pub struct Operator {
+    _dt: DataLayout,
+}
 
-use super::{layout::RmsNormSchemeLayout, RmsNorm, RmsNormScheme, RmsNormTensorLayout};
-use crate::{
-    devices::CommonCpu, locate_error, DataLayout, Device, ErrorPosition, Kernel, Operator, F16,
-};
-
-impl Operator for RmsNorm {
-    type Device = CommonCpu;
+impl crate::Operator<Cpu> for Operator {
     type Config = DataLayout;
     type ConfigError = ErrorPosition;
 
@@ -23,34 +24,34 @@ impl Operator for RmsNorm {
         }
     }
 
-    type Kernel = RmsNormCpu;
+    type Kernel = Kernel;
     type LoadError = ();
 
-    fn load(&self, _: &<Self::Device as Device>::Context) -> Result<Self::Kernel, Self::LoadError> {
-        Ok(RmsNormCpu)
+    fn load(&self, _: &<Cpu as Device>::Context) -> Result<Self::Kernel, Self::LoadError> {
+        Ok(Kernel)
     }
 }
 
-pub struct RmsNormCpu;
+pub struct Kernel;
 
-impl Kernel<CommonCpu> for RmsNormCpu {
-    type Scheme = RmsNormCpuScheme;
+impl crate::Kernel<Cpu> for Kernel {
+    type Scheme = Scheme;
     type Config = RmsNormTensorLayout;
     type SchemeError = ErrorPosition;
 
     fn scheme(&self, config: Self::Config) -> Result<Self::Scheme, Self::SchemeError> {
-        Ok(RmsNormCpuScheme(RmsNormSchemeLayout::new(F16, config)?))
+        Ok(Scheme(RmsNormSchemeLayout::new(F16, config)?))
     }
 }
 
-pub struct RmsNormCpuScheme(RmsNormSchemeLayout);
+pub struct Scheme(RmsNormSchemeLayout);
 
-impl RmsNormScheme<CommonCpu> for RmsNormCpuScheme {
+impl RmsNormScheme<Cpu> for Scheme {
     fn launch(
         &self,
-        y: *mut <CommonCpu as Device>::Byte,
-        x: *const <CommonCpu as Device>::Byte,
-        w: *const <CommonCpu as Device>::Byte,
+        y: *mut <Cpu as Device>::Byte,
+        x: *const <Cpu as Device>::Byte,
+        w: *const <Cpu as Device>::Byte,
         epsilon: f32,
     ) {
         let RmsNormSchemeLayout {

@@ -1,15 +1,5 @@
-﻿use crate::Device;
+﻿#[cfg(detected_cpu)]
+pub mod common_cpu;
 
-pub struct CommonCpu;
-
-impl Device for CommonCpu {
-    type Byte = u8;
-    type Context = ();
-}
-
-// pub struct NvidiaGpu;
-
-// impl Device for NvidiaGpu {
-//     type Byte = u8;
-//     type Context = ();
-// }
+#[cfg(detected_cuda)]
+pub mod nvidia_gpu;

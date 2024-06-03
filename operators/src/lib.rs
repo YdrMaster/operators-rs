@@ -1,8 +1,12 @@
 mod data;
 mod devices;
 mod error;
-pub mod operators;
 mod tensor;
+
+pub mod operators;
+
+#[macro_use]
+extern crate log;
 
 pub use data::{types::*, DataLayout};
 pub use error::ErrorPosition;
@@ -13,24 +17,19 @@ pub trait Device {
     type Context;
 }
 
-pub trait Operator: Sized {
-    type Device: Device;
-
+pub trait Operator<D: Device>: Sized {
     type Config;
     type ConfigError;
 
     fn config(config: Self::Config) -> Result<Self, Self::ConfigError>;
 
-    type Kernel: Kernel<Self::Device>;
+    type Kernel: Kernel<D>;
     type LoadError;
 
-    fn load(
-        &self,
-        ctx: &<Self::Device as Device>::Context,
-    ) -> Result<Self::Kernel, Self::LoadError>;
+    fn load(&self, ctx: &D::Context) -> Result<Self::Kernel, Self::LoadError>;
 }
 
-pub trait Kernel<Device> {
+pub trait Kernel<D> {
     type Scheme;
     type Config;
     type SchemeError;
