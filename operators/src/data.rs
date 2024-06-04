@@ -4,7 +4,7 @@
 #[repr(C)]
 pub struct DataLayout {
     packed: u8,
-    signed: bool,
+    signed_nbyte: u8,
     exponent: u8,
     mantissa: u8,
 }
@@ -15,12 +15,16 @@ impl DataLayout {
         assert!(packed <= u8::MAX as usize);
         assert!(exponent <= u8::MAX as usize);
         assert!(mantissa <= u8::MAX as usize);
-        let total_bits = packed * (if signed { 1 } else { 0 } + exponent + mantissa);
+        let signed = if signed { 1 } else { 0 };
+        let total_bits = packed * (signed + exponent + mantissa);
         assert!(total_bits % u8::BITS as usize == 0);
-        assert!(total_bits.is_power_of_two());
+        let nbyte = total_bits / u8::BITS as usize;
+        assert!(nbyte.is_power_of_two());
+        assert!(nbyte < (1 << 7));
+        let signed_nbyte = (signed << 7) | nbyte;
         Self {
             packed: packed as _,
-            signed,
+            signed_nbyte: signed_nbyte as _,
             exponent: exponent as _,
             mantissa: mantissa as _,
         }
@@ -33,7 +37,7 @@ impl DataLayout {
 
     #[inline]
     pub const fn signed(&self) -> bool {
-        self.signed
+        self.signed_nbyte >> 7 == 1
     }
 
     #[inline]
@@ -48,13 +52,18 @@ impl DataLayout {
 
     #[inline]
     pub const fn bits(&self) -> usize {
-        self.packed() * (if self.signed { 1 } else { 0 } + self.exponent() + self.mantissa())
+        self.nbyte() * u8::BITS as usize
     }
 
     #[inline]
     pub const fn layout(&self) -> Layout {
-        let size = self.bits() / u8::BITS as usize;
-        unsafe { Layout::from_size_align_unchecked(size, size) }
+        let nbyte = self.nbyte();
+        unsafe { Layout::from_size_align_unchecked(nbyte, nbyte) }
+    }
+
+    #[inline]
+    const fn nbyte(&self) -> usize {
+        (self.signed_nbyte & ((1 << 7) - 1)) as _
     }
 }
 
