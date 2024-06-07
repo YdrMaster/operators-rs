@@ -1,18 +1,15 @@
 ﻿fn main() {
-    use search_cuda_tools::{find_cuda_root, find_nccl_root, Cfg};
+    use build_script_cfg::Cfg;
+    use search_cuda_tools::find_cuda_root;
 
-    let cpu = Cfg::new("cpu");
-    let cuda = Cfg::new("cuda");
-    let nccl = Cfg::new("nccl");
+    let cpu = Cfg::new("use_cpu");
+    let cuda = Cfg::new("use_cuda");
     if cfg!(feature = "common-cpu") {
-        cpu.detect();
+        cpu.define();
     }
     if cfg!(feature = "nvidia-gpu") {
         if find_cuda_root().is_some() {
-            cuda.detect();
-        }
-        if find_nccl_root().is_some() {
-            nccl.detect();
+            cuda.define();
         }
     }
 }

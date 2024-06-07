@@ -5,13 +5,13 @@
 // assert BLOCK_SIZE >= blockDim.x
 template<unsigned int BLOCK_SIZE, class Tdata>
 static __device__ void padding(
-    Tdata *__restrict__ o_,
-    int const stride_o,
+    Tdata *__restrict__ y_,
+    int const stride_y,
     Tdata const *__restrict__ x_,
     int const stride_x,
     Tdata const *__restrict__ w_,
     float const epsilon) {
-    auto o = o_ + blockIdx.x * stride_o + threadIdx.x;
+    auto y = y_ + blockIdx.x * stride_y + threadIdx.x;
     auto x = x_[blockIdx.x * stride_x + threadIdx.x];
     auto w = w_[threadIdx.x];
 
@@ -25,19 +25,19 @@ static __device__ void padding(
     }
     __syncthreads();
 
-    *o = rms * x * w;
+    *y = rms * x * w;
 }
 
 template<unsigned int BLOCK_SIZE, unsigned int NUM_ITEMS_THREAD, class Tdata>
 static __device__ void folding(
-    Tdata *__restrict__ o,
-    int const stride_o,
+    Tdata *__restrict__ y,
+    int const stride_y,
     Tdata const *__restrict__ x,
     int const stride_x,
     Tdata const *__restrict__ w,
     float const epsilon,
     unsigned int const items_size) {
-    o += blockIdx.x * stride_o;
+    y += blockIdx.x * stride_y;
     x += blockIdx.x * stride_x;
 
     float data[NUM_ITEMS_THREAD], weight[NUM_ITEMS_THREAD];
@@ -75,6 +75,6 @@ static __device__ void folding(
     {
         using BlockOp = cub::BlockStore<float, BLOCK_SIZE, NUM_ITEMS_THREAD>;
         __shared__ typename BlockOp::TempStorage temp_storage;
-        BlockOp(temp_storage).Load(o, data, items_size);
+        BlockOp(temp_storage).Load(y, data, items_size);
     }
 }

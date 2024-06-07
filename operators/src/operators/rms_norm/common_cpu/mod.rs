@@ -1,4 +1,4 @@
-﻿use super::{layout::RmsNormSchemeLayout, RmsNormScheme, RmsNormTensorLayout};
+﻿use super::{layout::SchemeLayout, KnTensorLayout, RmsNormScheme};
 use crate::{
     devices::common_cpu::Device as Cpu, locate_error, DataLayout, Device, ErrorPosition, F16,
 };
@@ -36,15 +36,15 @@ pub struct Kernel;
 
 impl crate::Kernel<Cpu> for Kernel {
     type Scheme = Scheme;
-    type Config = RmsNormTensorLayout;
+    type Config = KnTensorLayout;
     type SchemeError = ErrorPosition;
 
     fn scheme(&self, config: Self::Config) -> Result<Self::Scheme, Self::SchemeError> {
-        Ok(Scheme(RmsNormSchemeLayout::new(F16, config)?))
+        Ok(Scheme(SchemeLayout::new(F16, config)?))
     }
 }
 
-pub struct Scheme(RmsNormSchemeLayout);
+pub struct Scheme(SchemeLayout);
 
 impl RmsNormScheme<Cpu> for Scheme {
     fn launch(
@@ -54,7 +54,7 @@ impl RmsNormScheme<Cpu> for Scheme {
         w: *const <Cpu as Device>::Byte,
         epsilon: f32,
     ) {
-        let RmsNormSchemeLayout {
+        let SchemeLayout {
             n,
             d,
             stride_y,

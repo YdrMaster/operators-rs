@@ -1,3 +1,13 @@
-﻿mod rms_norm;
+﻿pub mod rms_norm;
+pub mod rope;
 
-pub use rms_norm::*;
+#[allow(unused)]
+#[inline]
+const fn gcd(mut a: usize, mut b: usize) -> usize {
+    while b != 0 {
+        let rem = a % b;
+        a = b;
+        b = rem;
+    }
+    a
+}

@@ -1,22 +1,22 @@
 ﻿use crate::{locate_error, DataLayout, ErrorPosition, TensorLayout};
 
-pub struct RmsNormTensorLayout {
+pub struct KnTensorLayout {
     pub y: TensorLayout,
     pub x: TensorLayout,
     pub w: TensorLayout,
 }
 
-pub(super) struct RmsNormSchemeLayout {
+pub(super) struct SchemeLayout {
     pub n: usize,
     pub d: usize,
     pub stride_y: isize,
     pub stride_x: isize,
 }
 
-impl RmsNormSchemeLayout {
+impl SchemeLayout {
     pub fn new(
         dt: DataLayout,
-        RmsNormTensorLayout { y, x, w }: RmsNormTensorLayout,
+        KnTensorLayout { y, x, w }: KnTensorLayout,
     ) -> Result<Self, ErrorPosition> {
         if y.dt() != dt {
             return Err(locate_error!());
@@ -53,11 +53,11 @@ impl RmsNormSchemeLayout {
             return Err(locate_error!());
         }
 
-        Ok(RmsNormSchemeLayout {
+        Ok(Self {
             n: yn,
             d: yd,
-            stride_y: yns,
-            stride_x: xns,
+            stride_y: yns / unit,
+            stride_x: xns / unit,
         })
     }
 }

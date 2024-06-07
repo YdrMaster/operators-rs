@@ -1,4 +1,4 @@
-﻿use super::{layout::RmsNormSchemeLayout, RmsNormScheme, RmsNormTensorLayout};
+﻿use super::{layout::SchemeLayout, KnTensorLayout, RmsNormScheme};
 use crate::{
     devices::nvidia_gpu::Device as Gpu, locate_error, DataLayout, Device, ErrorPosition, F16,
 };
@@ -51,7 +51,7 @@ impl crate::Operator<Gpu> for Operator {
             compute_capability,
         }: Self::Config,
     ) -> Result<Self, Self::ConfigError> {
-        const RMS_NORMALIZATION: &str = include_str!("rms_norm.cuh");
+        const CODE: &str = include_str!("rms_norm.cuh");
 
         if data_layout != F16 {
             return Err(locate_error!());
@@ -59,7 +59,7 @@ impl crate::Operator<Gpu> for Operator {
         if num_items_reduce <= max_num_threads_block {
             let name = format!("rms_norm_padding_f16_{num_items_reduce}");
             let code = format!(
-                r#"{RMS_NORMALIZATION}
+                r#"{CODE}
 
 extern "C" __global__ void {name}(
     half *__restrict__ y,
@@ -105,7 +105,7 @@ extern "C" __global__ void {name}(
 
             let name = format!("rms_norm_folding_f16_{num_items_reduce}");
             let code = format!(
-                r#"{RMS_NORMALIZATION}
+                r#"{CODE}
 
 extern "C" __global__ void {name}(
     half *__restrict__ y,
@@ -171,12 +171,12 @@ enum KernelType {
 
 impl crate::Kernel<Gpu> for Kernel {
     type Scheme = Scheme;
-    type Config = (RmsNormTensorLayout, StreamSpore);
+    type Config = (KnTensorLayout, StreamSpore);
     type SchemeError = ErrorPosition;
 
     fn scheme(&self, config: Self::Config) -> Result<Self::Scheme, Self::SchemeError> {
         let (layout, stream) = config;
-        let layout = RmsNormSchemeLayout::new(F16, layout)?;
+        let layout = SchemeLayout::new(F16, layout)?;
         match self.ty {
             KernelType::Padding { num_items_reduce } => {
                 if layout.d != num_items_reduce {
@@ -236,8 +236,8 @@ impl RmsNormScheme<Gpu> for Scheme {
         epsilon: f32,
     ) {
         self.context.apply(|ctx| {
-            let stream = unsafe { self.stream.sprout(ctx) };
-            let module = unsafe { self.module.sprout(ctx) };
+            let stream = self.stream.sprout_ref(ctx);
+            let module = self.module.sprout_ref(ctx);
             let kernel = module.get_kernel(&self.name);
             let params = cuda::params![y, self.stride_y, x, self.stride_x, w, epsilon];
             kernel.launch(

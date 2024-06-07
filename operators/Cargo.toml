@@ -12,9 +12,10 @@ nvidia-gpu = ["cuda", "cublas", "nccl"]
 [dependencies]
 half = "2.4"
 log = "0.4"
-cuda = { git = "https://github.com/YdrMaster/cuda-driver", rev = "5560ed7", optional = true }
-cublas = { git = "https://github.com/YdrMaster/cuda-driver", rev = "5560ed7", optional = true }
-nccl = { git = "https://github.com/YdrMaster/cuda-driver", rev = "5560ed7", optional = true }
+cuda = { git = "https://github.com/YdrMaster/cuda-driver", rev = "a4b3cf5", optional = true }
+cublas = { git = "https://github.com/YdrMaster/cuda-driver", rev = "a4b3cf5", optional = true }
+nccl = { git = "https://github.com/YdrMaster/cuda-driver", rev = "a4b3cf5", optional = true }
 
 [build-dependencies]
-search-cuda-tools = { git = "https://github.com/YdrMaster/cuda-driver", rev = "5560ed7" }
+build-script-cfg = "0.0"
+search-cuda-tools = { git = "https://github.com/YdrMaster/cuda-driver", rev = "a4b3cf5" }
