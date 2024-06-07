@@ -7,9 +7,7 @@
     if cfg!(feature = "common-cpu") {
         cpu.define();
     }
-    if cfg!(feature = "nvidia-gpu") {
-        if find_cuda_root().is_some() {
-            cuda.define();
-        }
+    if cfg!(feature = "nvidia-gpu") && find_cuda_root().is_some() {
+        cuda.define();
     }
 }

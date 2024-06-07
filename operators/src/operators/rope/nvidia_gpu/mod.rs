@@ -98,11 +98,18 @@ impl crate::Kernel<Gpu> for Kernel {
 
     fn scheme(&self, config: Self::Config) -> Result<Self::Scheme, Self::SchemeError> {
         let (layout, stream) = config;
-        let layout = SchemeLayout::new(F16, layout)?;
-        let nh = layout.nh;
-        let dh = layout.dh / 2;
-        let stride_token = (layout.stride_token / 2) as _;
-        let stride_head = (layout.stride_head / 2) as _;
+        let SchemeLayout {
+            n,
+            nh,
+            dh,
+            stride_token,
+            stride_head,
+            offset_t,
+            offset_pos,
+        } = SchemeLayout::new(F16, layout)?;
+        let dh = dh / 2;
+        let stride_token = (stride_token / 2) as _;
+        let stride_head = (stride_head / 2) as _;
         if self.max_num_threads_block % dh != 0 {
             return Err(locate_error!());
         }
@@ -116,10 +123,12 @@ impl crate::Kernel<Gpu> for Kernel {
             module: self.module.clone(),
             stream,
 
-            grid: (layout.n as _, nh_h as _),
+            grid: (n as _, nh_h as _),
             block: (nh_l as _, dh as _),
             stride_token,
             stride_head,
+            offset_t,
+            offset_pos,
         })
     }
 }
@@ -133,17 +142,26 @@ pub struct Scheme {
     block: (c_uint, c_uint),
     stride_token: c_int,
     stride_head: c_int,
+    offset_t: usize,
+    offset_pos: usize,
 }
 
 impl RopeScheme<Gpu> for Scheme {
+    #[allow(clippy::not_unsafe_ptr_arg_deref)]
     fn launch(&self, t: *mut <Gpu as Device>::Byte, pos: *const <Gpu as Device>::Byte, theta: f32) {
         let name = CString::new(NAME).unwrap();
         self.context.apply(|ctx| {
             let stream = self.stream.sprout_ref(ctx);
             let module = self.module.sprout_ref(ctx);
             let kernel = module.get_kernel(&name);
-            let params = cuda::params![t, self.stride_token, self.stride_head, pos, theta];
-            kernel.launch(self.grid, self.block, params.as_ptr(), 0, Some(&stream));
+            let params = cuda::params![
+                unsafe { t.add(self.offset_t) },
+                self.stride_token,
+                self.stride_head,
+                unsafe { pos.add(self.offset_pos) },
+                theta
+            ];
+            kernel.launch(self.grid, self.block, params.as_ptr(), 0, Some(stream));
         });
     }
 }

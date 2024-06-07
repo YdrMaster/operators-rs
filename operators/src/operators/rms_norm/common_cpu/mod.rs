@@ -47,6 +47,7 @@ impl crate::Kernel<Cpu> for Kernel {
 pub struct Scheme(SchemeLayout);
 
 impl RmsNormScheme<Cpu> for Scheme {
+    #[allow(clippy::not_unsafe_ptr_arg_deref)]
     fn launch(
         &self,
         y: *mut <Cpu as Device>::Byte,
@@ -59,11 +60,14 @@ impl RmsNormScheme<Cpu> for Scheme {
             d,
             stride_y,
             stride_x,
+            offset_y,
+            offset_x,
+            offset_w,
         } = self.0;
 
-        let y = y.cast::<f16>();
-        let x = x.cast::<f16>();
-        let w = unsafe { from_raw_parts(w.cast::<f16>(), d) };
+        let y = unsafe { y.add(offset_y) }.cast::<f16>();
+        let x = unsafe { x.add(offset_x) }.cast::<f16>();
+        let w = unsafe { from_raw_parts(w.add(offset_w).cast::<f16>(), d) };
 
         for i in 0..n as isize {
             let y = unsafe { from_raw_parts_mut(y.offset(stride_y * i), d) };

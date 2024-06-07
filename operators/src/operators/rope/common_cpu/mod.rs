@@ -44,6 +44,7 @@ impl crate::Kernel<Cpu> for Kernel {
 pub struct Scheme(SchemeLayout);
 
 impl RopeScheme<Cpu> for Scheme {
+    #[allow(clippy::not_unsafe_ptr_arg_deref)]
     fn launch(&self, t: *mut <Cpu as Device>::Byte, pos: *const <Cpu as Device>::Byte, theta: f32) {
         let SchemeLayout {
             n,
@@ -51,13 +52,15 @@ impl RopeScheme<Cpu> for Scheme {
             dh,
             stride_token,
             stride_head,
+            offset_t,
+            offset_pos,
         } = self.0;
         let dh = dh / 2;
         let ts = stride_token / 2;
         let hs = stride_head / 2;
 
-        let t = t.cast::<(f16, f16)>();
-        let pos = unsafe { from_raw_parts(pos.cast::<u32>(), n) };
+        let t = unsafe { t.add(offset_t) }.cast::<(f16, f16)>();
+        let pos = unsafe { from_raw_parts(pos.add(offset_pos).cast::<u32>(), n) };
 
         for (i, pos) in pos.iter().enumerate() {
             let pos = *pos as f32;

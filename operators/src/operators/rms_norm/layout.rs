@@ -11,6 +11,9 @@ pub(super) struct SchemeLayout {
     pub d: usize,
     pub stride_y: isize,
     pub stride_x: isize,
+    pub offset_y: usize,
+    pub offset_x: usize,
+    pub offset_w: usize,
 }
 
 impl SchemeLayout {
@@ -58,6 +61,9 @@ impl SchemeLayout {
             d: yd,
             stride_y: yns / unit,
             stride_x: xns / unit,
+            offset_y: y.offset(),
+            offset_x: x.offset(),
+            offset_w: w.offset(),
         })
     }
 }

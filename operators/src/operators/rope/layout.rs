@@ -11,6 +11,8 @@ pub(super) struct SchemeLayout {
     pub dh: usize,
     pub stride_token: isize,
     pub stride_head: isize,
+    pub offset_t: usize,
+    pub offset_pos: usize,
 }
 
 impl SchemeLayout {
@@ -50,6 +52,8 @@ impl SchemeLayout {
             dh,
             stride_token: nts / unit,
             stride_head: nhs / unit,
+            offset_t: t.offset(),
+            offset_pos: pos.offset(),
         })
     }
 }

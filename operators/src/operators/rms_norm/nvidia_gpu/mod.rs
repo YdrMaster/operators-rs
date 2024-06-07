@@ -176,10 +176,18 @@ impl crate::Kernel<Gpu> for Kernel {
 
     fn scheme(&self, config: Self::Config) -> Result<Self::Scheme, Self::SchemeError> {
         let (layout, stream) = config;
-        let layout = SchemeLayout::new(F16, layout)?;
+        let SchemeLayout {
+            n,
+            d,
+            stride_y,
+            stride_x,
+            offset_y,
+            offset_x,
+            offset_w,
+        } = SchemeLayout::new(F16, layout)?;
         match self.ty {
             KernelType::Padding { num_items_reduce } => {
-                if layout.d != num_items_reduce {
+                if d != num_items_reduce {
                     return Err(locate_error!());
                 }
                 Ok(Self::Scheme {
@@ -187,17 +195,20 @@ impl crate::Kernel<Gpu> for Kernel {
                     module: self.module.clone(),
                     name: self.name.clone(),
                     stream,
-                    num_blocks_grid: layout.n as _,
-                    num_threads_block: layout.d as _,
-                    stride_y: layout.stride_y as _,
-                    stride_x: layout.stride_x as _,
+                    num_blocks_grid: n as _,
+                    num_threads_block: d as _,
+                    stride_y: stride_y as _,
+                    stride_x: stride_x as _,
+                    offset_y,
+                    offset_x,
+                    offset_w,
                 })
             }
             KernelType::Folding {
                 num_threads_block,
                 num_items_reduce,
             } => {
-                if layout.d != num_items_reduce {
+                if d != num_items_reduce {
                     return Err(locate_error!());
                 }
                 Ok(Self::Scheme {
@@ -205,10 +216,13 @@ impl crate::Kernel<Gpu> for Kernel {
                     module: self.module.clone(),
                     name: self.name.clone(),
                     stream,
-                    num_blocks_grid: layout.n as _,
+                    num_blocks_grid: n as _,
                     num_threads_block: num_threads_block as _,
-                    stride_y: layout.stride_y as _,
-                    stride_x: layout.stride_x as _,
+                    stride_y: stride_y as _,
+                    stride_x: stride_x as _,
+                    offset_y,
+                    offset_x,
+                    offset_w,
                 })
             }
         }
@@ -225,9 +239,13 @@ pub struct Scheme {
     num_threads_block: c_uint,
     stride_y: c_int,
     stride_x: c_int,
+    offset_y: usize,
+    offset_x: usize,
+    offset_w: usize,
 }
 
 impl RmsNormScheme<Gpu> for Scheme {
+    #[allow(clippy::not_unsafe_ptr_arg_deref)]
     fn launch(
         &self,
         y: *mut <Gpu as Device>::Byte,
@@ -239,13 +257,20 @@ impl RmsNormScheme<Gpu> for Scheme {
             let stream = self.stream.sprout_ref(ctx);
             let module = self.module.sprout_ref(ctx);
             let kernel = module.get_kernel(&self.name);
-            let params = cuda::params![y, self.stride_y, x, self.stride_x, w, epsilon];
+            let params = cuda::params![
+                unsafe { y.add(self.offset_y) },
+                self.stride_y,
+                unsafe { x.add(self.offset_x) },
+                self.stride_x,
+                unsafe { w.add(self.offset_w) },
+                epsilon
+            ];
             kernel.launch(
                 self.num_blocks_grid,
                 self.num_threads_block,
                 params.as_ptr(),
                 0,
-                Some(&stream),
+                Some(stream),
             );
         });
     }

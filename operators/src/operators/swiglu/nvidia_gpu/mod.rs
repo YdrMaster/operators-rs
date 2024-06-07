@@ -100,17 +100,26 @@ impl crate::Kernel<Gpu> for Kernel {
 
     fn scheme(&self, config: Self::Config) -> Result<Self::Scheme, Self::SchemeError> {
         let (layout, stream) = config;
-        let layout = SchemeLayout::new(F16, layout)?;
-        let block = gcd(self.max_num_threads_block, layout.d);
+        let SchemeLayout {
+            n,
+            d,
+            stride_gate,
+            stride_up,
+            offset_gate,
+            offset_up,
+        } = SchemeLayout::new(F16, layout)?;
+        let block = gcd(self.max_num_threads_block, d);
         Ok(Self::Scheme {
             context: self.context.clone(),
             module: self.module.clone(),
             stream,
 
-            grid: (layout.n as _, (layout.d / block) as _),
+            grid: (n as _, (d / block) as _),
             block: block as _,
-            stride_gate: layout.stride_gate as _,
-            stride_up: layout.stride_up as _,
+            stride_gate: stride_gate as _,
+            stride_up: stride_up as _,
+            offset_gate,
+            offset_up,
         })
     }
 }
@@ -124,17 +133,25 @@ pub struct Scheme {
     block: c_uint,
     stride_gate: c_int,
     stride_up: c_int,
+    offset_gate: usize,
+    offset_up: usize,
 }
 
 impl SwigluScheme<Gpu> for Scheme {
+    #[allow(clippy::not_unsafe_ptr_arg_deref)]
     fn launch(&self, gate: *mut <Gpu as Device>::Byte, up: *const <Gpu as Device>::Byte) {
         let name = CString::new(NAME).unwrap();
         self.context.apply(|ctx| {
             let stream = self.stream.sprout_ref(ctx);
             let module = self.module.sprout_ref(ctx);
             let kernel = module.get_kernel(&name);
-            let params = cuda::params![gate, self.stride_gate, up, self.stride_up];
-            kernel.launch(self.grid, self.block, params.as_ptr(), 0, Some(&stream));
+            let params = cuda::params![
+                unsafe { gate.add(self.offset_gate) },
+                self.stride_gate,
+                unsafe { up.add(self.offset_up) },
+                self.stride_up
+            ];
+            kernel.launch(self.grid, self.block, params.as_ptr(), 0, Some(stream));
         });
     }
 }

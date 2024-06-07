@@ -10,6 +10,8 @@ pub(super) struct SchemeLayout {
     pub d: usize,
     pub stride_gate: isize,
     pub stride_up: isize,
+    pub offset_gate: usize,
+    pub offset_up: usize,
 }
 
 impl SchemeLayout {
@@ -45,6 +47,8 @@ impl SchemeLayout {
             d: gd,
             stride_gate: gns / unit,
             stride_up: uns / unit,
+            offset_gate: gate.offset(),
+            offset_up: up.offset(),
         })
     }
 }

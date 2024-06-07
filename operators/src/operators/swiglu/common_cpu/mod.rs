@@ -47,19 +47,23 @@ impl crate::Kernel<Cpu> for Kernel {
 pub struct Scheme(SchemeLayout);
 
 impl SwigluScheme<Cpu> for Scheme {
+    #[allow(clippy::not_unsafe_ptr_arg_deref)]
     fn launch(&self, gate: *mut <Cpu as Device>::Byte, up: *const <Cpu as Device>::Byte) {
         let SchemeLayout {
             n,
             d,
             stride_gate,
             stride_up,
+            offset_gate,
+            offset_up,
         } = self.0;
 
-        for i in 0..n {
-            let gate = unsafe { gate.cast::<f16>().offset(i as isize * stride_gate) };
-            let up = unsafe { up.cast::<f16>().offset(i as isize * stride_up) };
-            let gate = unsafe { from_raw_parts_mut(gate, d) };
-            let up = unsafe { from_raw_parts(up, d) };
+        let gate = unsafe { gate.add(offset_gate).cast::<f16>() };
+        let up = unsafe { up.add(offset_up).cast::<f16>() };
+
+        for i in 0..n as isize {
+            let gate = unsafe { from_raw_parts_mut(gate.offset(i * stride_gate), d) };
+            let up = unsafe { from_raw_parts(up.offset(i * stride_up), d) };
             for (gate, up) in zip(gate, up) {
                 let x = gate.to_f32();
                 let y = up.to_f32();
