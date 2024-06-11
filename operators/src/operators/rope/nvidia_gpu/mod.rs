@@ -1,12 +1,11 @@
-﻿use super::{layout::SchemeLayout, KnTensorLayout, RopeScheme};
+﻿use super::{layout::SchemeLayout, LayoutAttrs, Params};
 use crate::{
-    devices::nvidia_gpu::Device as Gpu, locate_error, DataLayout, Device, ErrorPosition, F16,
+    devices::nvidia_gpu::{Device as Gpu, __global__},
+    locate_error, DataLayout, ErrorPosition, F16,
 };
-use cuda::{ComputeCapability, ContextResource, ContextSpore, Ptx, StreamSpore};
-use std::{
-    ffi::{c_int, c_uint, CString},
-    sync::Arc,
-};
+use cuda::{ComputeCapability, Ptx};
+use log::warn;
+use std::ffi::{c_int, c_uint, CString};
 
 pub struct Config {
     pub data_layout: DataLayout,
@@ -25,7 +24,7 @@ impl Config {
 }
 
 pub struct Operator {
-    ptx: Ptx,
+    global: __global__,
     max_num_threads_block: usize,
 }
 
@@ -33,15 +32,14 @@ const NAME: &str = "rope_f16";
 
 impl crate::Operator<Gpu> for Operator {
     type Config = Config;
-    type ConfigError = ErrorPosition;
-
-    fn config(
-        Self::Config {
+    type Error = ErrorPosition;
+    fn new(config: &Self::Config) -> Result<Self, Self::Error> {
+        let &Self::Config {
             data_layout,
             max_num_threads_block,
             compute_capability,
-        }: Self::Config,
-    ) -> Result<Self, Self::ConfigError> {
+        } = config;
+
         const CODE: &str = include_str!("rope.cuh");
 
         if data_layout != F16 {
@@ -50,15 +48,15 @@ impl crate::Operator<Gpu> for Operator {
         let code = format!(
             r#"{CODE}
 
-extern "C" __global__ void {NAME}(
-    half2 *__restrict__ t,
-    int const stride_token,
-    int const stride_head,
-    unsigned int const *__restrict__ pos,
-    float theta
-){{
-    padding(t, stride, pos, theta);
-}}"#
+    extern "C" __global__ void {NAME}(
+        half2 *__restrict__ t,
+        int const stride_token,
+        int const stride_head,
+        unsigned int const *__restrict__ pos,
+        float theta
+    ){{
+        padding(t, stride, pos, theta);
+    }}"#
         );
 
         let (ptx, log) = Ptx::compile(code, compute_capability);
@@ -68,36 +66,27 @@ extern "C" __global__ void {NAME}(
             warn!("{log}");
         }
         Ok(Self {
-            ptx,
+            global: __global__::load(&ptx),
             max_num_threads_block,
         })
     }
-
-    type Kernel = Kernel;
-    type LoadError = ();
-
-    fn load(&self, ctx: &<Gpu as Device>::Context) -> Result<Self::Kernel, Self::LoadError> {
-        Ok(Kernel {
-            context: ctx.clone(),
-            module: Arc::new(ctx.apply(|ctx| ctx.load(&self.ptx).sporulate())),
-            max_num_threads_block: self.max_num_threads_block,
-        })
-    }
 }
 
-pub struct Kernel {
-    context: Arc<cuda::Context>,
-    module: Arc<cuda::ModuleSpore>,
-    max_num_threads_block: usize,
+pub struct Scheme {
+    global: __global__,
+
+    grid: (c_uint, c_uint),
+    block: (c_uint, c_uint),
+    stride_token: c_int,
+    stride_head: c_int,
+    offset_t: usize,
+    offset_pos: usize,
 }
 
-impl crate::Kernel<Gpu> for Kernel {
-    type Scheme = Scheme;
-    type Config = (KnTensorLayout, StreamSpore);
-    type SchemeError = ErrorPosition;
-
-    fn scheme(&self, config: Self::Config) -> Result<Self::Scheme, Self::SchemeError> {
-        let (layout, stream) = config;
+impl crate::Scheme<Gpu, Operator> for Scheme {
+    type LayoutAttrs = LayoutAttrs;
+    type Error = ErrorPosition;
+    fn new(op: &Operator, layout: Self::LayoutAttrs) -> Result<Self, Self::Error> {
         let SchemeLayout {
             n,
             nh,
@@ -110,18 +99,16 @@ impl crate::Kernel<Gpu> for Kernel {
         let dh = dh / 2;
         let stride_token = (stride_token / 2) as _;
         let stride_head = (stride_head / 2) as _;
-        if self.max_num_threads_block % dh != 0 {
+        if op.max_num_threads_block % dh != 0 {
             return Err(locate_error!());
         }
         //                    nh == nh_h * nh_l
         // max_num_threads_block >= nh_l x dh
-        let max_nh_l = (self.max_num_threads_block / dh).min(nh);
+        let max_nh_l = (op.max_num_threads_block / dh).min(nh);
         let nh_l = (1..=max_nh_l).rev().find(|nhl| nh % nhl == 0).unwrap();
         let nh_h = nh / nh_l;
-        Ok(Self::Scheme {
-            context: self.context.clone(),
-            module: self.module.clone(),
-            stream,
+        Ok(Self {
+            global: op.global,
 
             grid: (n as _, nh_h as _),
             block: (nh_l as _, dh as _),
@@ -131,37 +118,19 @@ impl crate::Kernel<Gpu> for Kernel {
             offset_pos,
         })
     }
-}
 
-pub struct Scheme {
-    context: Arc<cuda::Context>,
-    module: Arc<cuda::ModuleSpore>,
-    stream: StreamSpore,
-
-    grid: (c_uint, c_uint),
-    block: (c_uint, c_uint),
-    stride_token: c_int,
-    stride_head: c_int,
-    offset_t: usize,
-    offset_pos: usize,
-}
-
-impl RopeScheme<Gpu> for Scheme {
-    #[allow(clippy::not_unsafe_ptr_arg_deref)]
-    fn launch(&self, t: *mut <Gpu as Device>::Byte, pos: *const <Gpu as Device>::Byte, theta: f32) {
+    type Params<'ctx> = Params<Gpu>;
+    fn launch(&self, params: &Self::Params<'_>, queue: &crate::QueueOf<Gpu>) {
+        let (t, pos, theta) = params;
         let name = CString::new(NAME).unwrap();
-        self.context.apply(|ctx| {
-            let stream = self.stream.sprout_ref(ctx);
-            let module = self.module.sprout_ref(ctx);
-            let kernel = module.get_kernel(&name);
-            let params = cuda::params![
-                unsafe { t.add(self.offset_t) },
-                self.stride_token,
-                self.stride_head,
-                unsafe { pos.add(self.offset_pos) },
-                theta
-            ];
-            kernel.launch(self.grid, self.block, params.as_ptr(), 0, Some(stream));
-        });
+        let params = cuda::params![
+            unsafe { t.add(self.offset_t) },
+            self.stride_token,
+            self.stride_head,
+            unsafe { pos.add(self.offset_pos) },
+            theta
+        ];
+        self.global
+            .launch(&name, self.grid, self.block, params.as_ptr(), 0, queue);
     }
 }

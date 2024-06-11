@@ -4,8 +4,10 @@ pub mod common_cpu;
 pub mod nvidia_gpu;
 
 mod layout;
-pub use layout::KnTensorLayout;
+pub use layout::LayoutAttrs;
 
-pub trait SwigluScheme<D: crate::Device> {
-    fn launch(&self, gate: *mut D::Byte, up: *const D::Byte);
-}
+use crate::Device;
+type Params<D> = (
+    *mut <D as Device>::Byte,   // gate
+    *const <D as Device>::Byte, // up
+);

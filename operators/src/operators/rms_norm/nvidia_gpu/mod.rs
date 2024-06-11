@@ -1,12 +1,11 @@
-﻿use super::{layout::SchemeLayout, KnTensorLayout, RmsNormScheme};
+﻿use super::{layout::SchemeLayout, LayoutAttrs, Params};
 use crate::{
-    devices::nvidia_gpu::Device as Gpu, locate_error, DataLayout, Device, ErrorPosition, F16,
+    devices::nvidia_gpu::{Device as Gpu, __global__},
+    locate_error, DataLayout, ErrorPosition, QueueOf, F16,
 };
-use cuda::{ComputeCapability, ContextResource, ContextSpore, Ptx, StreamSpore};
-use std::{
-    ffi::{c_int, c_uint, CString},
-    sync::Arc,
-};
+use cuda::{ComputeCapability, Ptx};
+use log::warn;
+use std::ffi::{c_int, c_uint, CString};
 
 pub struct Config {
     pub data_layout: DataLayout,
@@ -32,25 +31,36 @@ impl Config {
     }
 }
 
+#[derive(Clone, Debug)]
+enum KernelType {
+    Padding {
+        num_items_reduce: usize,
+    },
+    Folding {
+        num_threads_block: usize,
+        num_items_reduce: usize,
+    },
+}
+
 pub struct Operator {
-    ptx: Ptx,
+    global: __global__,
     name: CString,
     ty: KernelType,
 }
 
 impl crate::Operator<Gpu> for Operator {
     type Config = Config;
-    type ConfigError = ErrorPosition;
+    type Error = ErrorPosition;
 
-    fn config(
-        Self::Config {
+    fn new(config: &Self::Config) -> Result<Self, Self::Error> {
+        let &Self::Config {
             data_layout,
             num_items_reduce,
             num_threads_warp,
             max_num_threads_block,
             compute_capability,
-        }: Self::Config,
-    ) -> Result<Self, Self::ConfigError> {
+        } = config;
+
         const CODE: &str = include_str!("rms_norm.cuh");
 
         if data_layout != F16 {
@@ -61,17 +71,17 @@ impl crate::Operator<Gpu> for Operator {
             let code = format!(
                 r#"{CODE}
 
-extern "C" __global__ void {name}(
-    half *__restrict__ y,
-    int  const stride_y,
-    half const *__restrict__ x,
-    int  const stride_x,
-    half const *__restrict__ w,
-    float epsilon
-){{
-    padding<{num_items_reduce}>
-    (y, stride_y, x, stride_x, w, epsilon);
-}}"#
+            extern "C" __global__ void {name}(
+                half *__restrict__ y,
+                int  const stride_y,
+                half const *__restrict__ x,
+                int  const stride_x,
+                half const *__restrict__ w,
+                float epsilon
+            ){{
+                padding<{num_items_reduce}>
+                (y, stride_y, x, stride_x, w, epsilon);
+            }}"#
             );
 
             let (ptx, log) = Ptx::compile(code, compute_capability);
@@ -82,7 +92,7 @@ extern "C" __global__ void {name}(
             }
 
             Ok(Self {
-                ptx,
+                global: __global__::load(&ptx),
                 name: CString::new(name).unwrap(),
                 ty: KernelType::Padding { num_items_reduce },
             })
@@ -107,17 +117,17 @@ extern "C" __global__ void {name}(
             let code = format!(
                 r#"{CODE}
 
-extern "C" __global__ void {name}(
-    half *__restrict__ y,
-    int  const stride_y,
-    half const *__restrict__ x,
-    int  const stride_x,
-    half const *__restrict__ w,
-    float epsilon
-){{
-    folding<{num_threads_block}, {num_items_thread}>
-    (y, stride_y, x, stride_x, w, epsilon, {num_items_reduce});
-}}"#
+            extern "C" __global__ void {name}(
+                half *__restrict__ y,
+                int  const stride_y,
+                half const *__restrict__ x,
+                int  const stride_x,
+                half const *__restrict__ w,
+                float epsilon
+            ){{
+                folding<{num_threads_block}, {num_items_thread}>
+                (y, stride_y, x, stride_x, w, epsilon, {num_items_reduce});
+            }}"#
             );
 
             let (ptx, log) = Ptx::compile(code, compute_capability);
@@ -128,7 +138,7 @@ extern "C" __global__ void {name}(
             }
 
             Ok(Self {
-                ptx,
+                global: __global__::load(&ptx),
                 name: CString::new(name).unwrap(),
                 ty: KernelType::Folding {
                     num_threads_block: num_warps_block * num_threads_warp,
@@ -137,45 +147,25 @@ extern "C" __global__ void {name}(
             })
         }
     }
-
-    type Kernel = Kernel;
-    type LoadError = ();
-
-    fn load(&self, ctx: &<Gpu as Device>::Context) -> Result<Self::Kernel, Self::LoadError> {
-        Ok(Kernel {
-            context: ctx.clone(),
-            module: Arc::new(ctx.apply(|ctx| ctx.load(&self.ptx).sporulate())),
-            name: self.name.clone(),
-            ty: self.ty.clone(),
-        })
-    }
 }
 
-pub struct Kernel {
-    context: Arc<cuda::Context>,
-    module: Arc<cuda::ModuleSpore>,
+pub struct Scheme {
+    global: __global__,
     name: CString,
-    ty: KernelType,
+
+    num_blocks_grid: c_uint,
+    num_threads_block: c_uint,
+    stride_y: c_int,
+    stride_x: c_int,
+    offset_y: usize,
+    offset_x: usize,
+    offset_w: usize,
 }
 
-#[derive(Clone, Debug)]
-enum KernelType {
-    Padding {
-        num_items_reduce: usize,
-    },
-    Folding {
-        num_threads_block: usize,
-        num_items_reduce: usize,
-    },
-}
-
-impl crate::Kernel<Gpu> for Kernel {
-    type Scheme = Scheme;
-    type Config = (KnTensorLayout, StreamSpore);
-    type SchemeError = ErrorPosition;
-
-    fn scheme(&self, config: Self::Config) -> Result<Self::Scheme, Self::SchemeError> {
-        let (layout, stream) = config;
+impl crate::Scheme<Gpu, Operator> for Scheme {
+    type LayoutAttrs = LayoutAttrs;
+    type Error = ErrorPosition;
+    fn new(op: &Operator, layout: Self::LayoutAttrs) -> Result<Self, Self::Error> {
         let SchemeLayout {
             n,
             d,
@@ -185,16 +175,16 @@ impl crate::Kernel<Gpu> for Kernel {
             offset_x,
             offset_w,
         } = SchemeLayout::new(F16, layout)?;
-        match self.ty {
+
+        match op.ty {
             KernelType::Padding { num_items_reduce } => {
                 if d != num_items_reduce {
                     return Err(locate_error!());
                 }
-                Ok(Self::Scheme {
-                    context: self.context.clone(),
-                    module: self.module.clone(),
-                    name: self.name.clone(),
-                    stream,
+                Ok(Self {
+                    global: op.global,
+                    name: op.name.clone(),
+
                     num_blocks_grid: n as _,
                     num_threads_block: d as _,
                     stride_y: stride_y as _,
@@ -211,11 +201,10 @@ impl crate::Kernel<Gpu> for Kernel {
                 if d != num_items_reduce {
                     return Err(locate_error!());
                 }
-                Ok(Self::Scheme {
-                    context: self.context.clone(),
-                    module: self.module.clone(),
-                    name: self.name.clone(),
-                    stream,
+                Ok(Self {
+                    global: op.global,
+                    name: op.name.clone(),
+
                     num_blocks_grid: n as _,
                     num_threads_block: num_threads_block as _,
                     stride_y: stride_y as _,
@@ -227,51 +216,25 @@ impl crate::Kernel<Gpu> for Kernel {
             }
         }
     }
-}
 
-pub struct Scheme {
-    context: Arc<cuda::Context>,
-    module: Arc<cuda::ModuleSpore>,
-    name: CString,
-    stream: StreamSpore,
-
-    num_blocks_grid: c_uint,
-    num_threads_block: c_uint,
-    stride_y: c_int,
-    stride_x: c_int,
-    offset_y: usize,
-    offset_x: usize,
-    offset_w: usize,
-}
-
-impl RmsNormScheme<Gpu> for Scheme {
-    #[allow(clippy::not_unsafe_ptr_arg_deref)]
-    fn launch(
-        &self,
-        y: *mut <Gpu as Device>::Byte,
-        x: *const <Gpu as Device>::Byte,
-        w: *const <Gpu as Device>::Byte,
-        epsilon: f32,
-    ) {
-        self.context.apply(|ctx| {
-            let stream = self.stream.sprout_ref(ctx);
-            let module = self.module.sprout_ref(ctx);
-            let kernel = module.get_kernel(&self.name);
-            let params = cuda::params![
-                unsafe { y.add(self.offset_y) },
-                self.stride_y,
-                unsafe { x.add(self.offset_x) },
-                self.stride_x,
-                unsafe { w.add(self.offset_w) },
-                epsilon
-            ];
-            kernel.launch(
-                self.num_blocks_grid,
-                self.num_threads_block,
-                params.as_ptr(),
-                0,
-                Some(stream),
-            );
-        });
+    type Params<'ctx> = Params<Gpu>;
+    fn launch(&self, params: &Self::Params<'_>, queue: &QueueOf<Gpu>) {
+        let &(y, x, w, epsilon) = params;
+        let params = cuda::params![
+            unsafe { y.add(self.offset_y) },
+            self.stride_y,
+            unsafe { x.add(self.offset_x) },
+            self.stride_x,
+            unsafe { w.add(self.offset_w) },
+            epsilon
+        ];
+        self.global.launch(
+            &self.name,
+            self.num_blocks_grid,
+            self.num_threads_block,
+            params.as_ptr(),
+            0,
+            queue,
+        );
     }
 }

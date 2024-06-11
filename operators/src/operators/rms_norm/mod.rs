@@ -4,8 +4,12 @@ pub mod common_cpu;
 pub mod nvidia_gpu;
 
 mod layout;
-pub use layout::KnTensorLayout;
+pub use layout::LayoutAttrs;
 
-pub trait RmsNormScheme<D: crate::Device> {
-    fn launch(&self, y: *mut D::Byte, x: *const D::Byte, w: *const D::Byte, epsilon: f32);
-}
+use crate::Device;
+type Params<D> = (
+    *mut <D as Device>::Byte,   // y
+    *const <D as Device>::Byte, // x
+    *const <D as Device>::Byte, // w
+    f32,                        // ε
+);

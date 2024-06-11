@@ -1,6 +1,6 @@
-﻿use super::{layout::SchemeLayout, KnTensorLayout, SwigluScheme};
+﻿use super::{layout::SchemeLayout, LayoutAttrs, Params};
 use crate::{
-    devices::common_cpu::Device as Cpu, locate_error, DataLayout, Device, ErrorPosition, F16,
+    devices::common_cpu::Device as Cpu, locate_error, DataLayout, ErrorPosition, QueueOf, F16,
 };
 use half::f16;
 use std::{
@@ -9,46 +9,34 @@ use std::{
 };
 
 pub struct Operator {
-    _dt: DataLayout,
+    dt: DataLayout,
 }
 
 impl crate::Operator<Cpu> for Operator {
     type Config = DataLayout;
-    type ConfigError = ErrorPosition;
-
-    fn config(conf: Self::Config) -> Result<Self, Self::ConfigError> {
-        if conf == F16 {
-            Ok(Self { _dt: F16 })
+    type Error = ErrorPosition;
+    #[inline]
+    fn new(config: &Self::Config) -> Result<Self, Self::Error> {
+        if *config == F16 {
+            Ok(Self { dt: *config })
         } else {
             Err(locate_error!())
         }
-    }
-
-    type Kernel = Kernel;
-    type LoadError = ();
-
-    fn load(&self, _: &<Cpu as Device>::Context) -> Result<Self::Kernel, Self::LoadError> {
-        Ok(Kernel)
-    }
-}
-
-pub struct Kernel;
-
-impl crate::Kernel<Cpu> for Kernel {
-    type Scheme = Scheme;
-    type Config = KnTensorLayout;
-    type SchemeError = ErrorPosition;
-
-    fn scheme(&self, config: Self::Config) -> Result<Self::Scheme, Self::SchemeError> {
-        Ok(Scheme(SchemeLayout::new(F16, config)?))
     }
 }
 
 pub struct Scheme(SchemeLayout);
 
-impl SwigluScheme<Cpu> for Scheme {
-    #[allow(clippy::not_unsafe_ptr_arg_deref)]
-    fn launch(&self, gate: *mut <Cpu as Device>::Byte, up: *const <Cpu as Device>::Byte) {
+impl crate::Scheme<Cpu, Operator> for Scheme {
+    type LayoutAttrs = LayoutAttrs;
+    type Error = ErrorPosition;
+    #[inline]
+    fn new(op: &Operator, layout: Self::LayoutAttrs) -> Result<Self, Self::Error> {
+        SchemeLayout::new(op.dt, layout).map(Self)
+    }
+
+    type Params<'ctx> = Params<Cpu>;
+    fn launch(&self, params: &Self::Params<'_>, _queue: &QueueOf<Cpu>) {
         let SchemeLayout {
             n,
             d,
@@ -57,6 +45,7 @@ impl SwigluScheme<Cpu> for Scheme {
             offset_gate,
             offset_up,
         } = self.0;
+        let &(gate, up) = params;
 
         let gate = unsafe { gate.add(offset_gate).cast::<f16>() };
         let up = unsafe { up.add(offset_up).cast::<f16>() };

@@ -1,6 +1,6 @@
 ﻿use crate::{locate_error, DataLayout, ErrorPosition, TensorLayout};
 
-pub struct KnTensorLayout {
+pub struct LayoutAttrs {
     pub gate: TensorLayout,
     pub up: TensorLayout,
 }
@@ -17,7 +17,7 @@ pub(super) struct SchemeLayout {
 impl SchemeLayout {
     pub fn new(
         dt: DataLayout,
-        KnTensorLayout { gate, up }: KnTensorLayout,
+        LayoutAttrs { gate, up }: LayoutAttrs,
     ) -> Result<Self, ErrorPosition> {
         if gate.dt() != dt || up.dt() != dt || dt.packed() != 1 {
             return Err(locate_error!());

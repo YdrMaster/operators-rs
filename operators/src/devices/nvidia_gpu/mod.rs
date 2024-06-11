@@ -11,9 +11,11 @@ pub struct Device;
 
 impl crate::Device for Device {
     type Byte = cuda::DevByte;
-    type Context = std::sync::Arc<cuda::Context>;
+    type Queue<'ctx> = Stream<'ctx>;
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[repr(transparent)]
 #[allow(non_camel_case_types)]
 pub(crate) struct __global__(usize);
 
@@ -32,7 +34,7 @@ impl __global__ {
         Self(index)
     }
 
-    pub fn launch<T>(
+    pub fn launch(
         &self,
         name: impl AsRef<CStr>,
         grid_dims: impl Into<Dim3>,

@@ -1,15 +1,11 @@
-﻿use std::{
-    ffi::{c_int, c_uint, CString},
-    sync::Arc,
-};
-
+﻿use super::{super::gcd, layout::SchemeLayout, LayoutAttrs, Params};
 use crate::{
-    devices::nvidia_gpu::Device as Gpu, locate_error, operators::gcd, DataLayout, Device,
-    ErrorPosition, F16,
+    devices::nvidia_gpu::{Device as Gpu, __global__},
+    locate_error, DataLayout, ErrorPosition, F16,
 };
-use cuda::{ComputeCapability, ContextResource, ContextSpore, Ptx, StreamSpore};
-
-use super::{layout::SchemeLayout, KnTensorLayout, SwigluScheme};
+use cuda::{ComputeCapability, Ptx};
+use log::warn;
+use std::ffi::{c_int, c_uint, CString};
 
 pub struct Config {
     pub data_layout: DataLayout,
@@ -28,7 +24,7 @@ impl Config {
 }
 
 pub struct Operator {
-    ptx: Ptx,
+    global: __global__,
     max_num_threads_block: usize,
 }
 
@@ -36,15 +32,14 @@ const NAME: &str = "swiglu_f16";
 
 impl crate::Operator<Gpu> for Operator {
     type Config = Config;
-    type ConfigError = ErrorPosition;
-
-    fn config(
-        Self::Config {
+    type Error = ErrorPosition;
+    fn new(config: &Self::Config) -> Result<Self, Self::Error> {
+        let &Self::Config {
             data_layout,
             max_num_threads_block,
             compute_capability,
-        }: Self::Config,
-    ) -> Result<Self, Self::ConfigError> {
+        } = config;
+
         const CODE: &str = include_str!("swiglu.cuh");
 
         if data_layout != F16 {
@@ -53,14 +48,14 @@ impl crate::Operator<Gpu> for Operator {
         let code = format!(
             r#"{CODE}
 
-extern "C" __global__ void {NAME}(
-    half *__restrict__ gate,
-    int const stride_gate,
-    half const *__restrict__ up,
-    int const stride_up
-){{
-    swiglu(gate, stride_gate, up, stride_up);
-}}"#
+        extern "C" __global__ void {NAME}(
+            half *__restrict__ gate,
+            int const stride_gate,
+            half const *__restrict__ up,
+            int const stride_up
+        ){{
+            swiglu(gate, stride_gate, up, stride_up);
+        }}"#
         );
 
         let (ptx, log) = Ptx::compile(code, compute_capability);
@@ -70,64 +65,14 @@ extern "C" __global__ void {NAME}(
             warn!("{log}");
         }
         Ok(Self {
-            ptx,
+            global: __global__::load(&ptx),
             max_num_threads_block,
-        })
-    }
-
-    type Kernel = Kernel;
-    type LoadError = ();
-
-    fn load(&self, ctx: &<Gpu as Device>::Context) -> Result<Self::Kernel, Self::LoadError> {
-        Ok(Kernel {
-            context: ctx.clone(),
-            module: Arc::new(ctx.apply(|ctx| ctx.load(&self.ptx).sporulate())),
-            max_num_threads_block: self.max_num_threads_block,
-        })
-    }
-}
-
-pub struct Kernel {
-    context: Arc<cuda::Context>,
-    module: Arc<cuda::ModuleSpore>,
-    max_num_threads_block: usize,
-}
-
-impl crate::Kernel<Gpu> for Kernel {
-    type Scheme = Scheme;
-    type Config = (KnTensorLayout, StreamSpore);
-    type SchemeError = ErrorPosition;
-
-    fn scheme(&self, config: Self::Config) -> Result<Self::Scheme, Self::SchemeError> {
-        let (layout, stream) = config;
-        let SchemeLayout {
-            n,
-            d,
-            stride_gate,
-            stride_up,
-            offset_gate,
-            offset_up,
-        } = SchemeLayout::new(F16, layout)?;
-        let block = gcd(self.max_num_threads_block, d);
-        Ok(Self::Scheme {
-            context: self.context.clone(),
-            module: self.module.clone(),
-            stream,
-
-            grid: (n as _, (d / block) as _),
-            block: block as _,
-            stride_gate: stride_gate as _,
-            stride_up: stride_up as _,
-            offset_gate,
-            offset_up,
         })
     }
 }
 
 pub struct Scheme {
-    context: Arc<cuda::Context>,
-    module: Arc<cuda::ModuleSpore>,
-    stream: StreamSpore,
+    global: __global__,
 
     grid: (c_uint, c_uint),
     block: c_uint,
@@ -137,21 +82,42 @@ pub struct Scheme {
     offset_up: usize,
 }
 
-impl SwigluScheme<Gpu> for Scheme {
-    #[allow(clippy::not_unsafe_ptr_arg_deref)]
-    fn launch(&self, gate: *mut <Gpu as Device>::Byte, up: *const <Gpu as Device>::Byte) {
+impl crate::Scheme<Gpu, Operator> for Scheme {
+    type LayoutAttrs = LayoutAttrs;
+    type Error = ErrorPosition;
+    fn new(op: &Operator, layout: Self::LayoutAttrs) -> Result<Self, Self::Error> {
+        let SchemeLayout {
+            n,
+            d,
+            stride_gate,
+            stride_up,
+            offset_gate,
+            offset_up,
+        } = SchemeLayout::new(F16, layout)?;
+        let block = gcd(op.max_num_threads_block, d);
+        Ok(Self {
+            global: op.global,
+
+            grid: (n as _, (d / block) as _),
+            block: block as _,
+            stride_gate: stride_gate as _,
+            stride_up: stride_up as _,
+            offset_gate,
+            offset_up,
+        })
+    }
+
+    type Params<'ctx> = Params<Gpu>;
+    fn launch(&self, params: &Self::Params<'_>, queue: &crate::QueueOf<Gpu>) {
+        let (gate, up) = params;
         let name = CString::new(NAME).unwrap();
-        self.context.apply(|ctx| {
-            let stream = self.stream.sprout_ref(ctx);
-            let module = self.module.sprout_ref(ctx);
-            let kernel = module.get_kernel(&name);
-            let params = cuda::params![
-                unsafe { gate.add(self.offset_gate) },
-                self.stride_gate,
-                unsafe { up.add(self.offset_up) },
-                self.stride_up
-            ];
-            kernel.launch(self.grid, self.block, params.as_ptr(), 0, Some(stream));
-        });
+        let params = cuda::params![
+            unsafe { gate.add(self.offset_gate) },
+            self.stride_gate,
+            unsafe { up.add(self.offset_up) },
+            self.stride_up
+        ];
+        self.global
+            .launch(&name, self.grid, self.block, params.as_ptr(), 0, queue);
     }
 }

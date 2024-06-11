@@ -4,8 +4,11 @@ pub mod common_cpu;
 pub mod nvidia_gpu;
 
 mod layout;
-pub use layout::KnTensorLayout;
+pub use layout::LayoutAttrs;
 
-pub trait RopeScheme<D: crate::Device> {
-    fn launch(&self, t: *mut D::Byte, pos: *const D::Byte, theta: f32);
-}
+use crate::Device;
+type Params<D> = (
+    *mut <D as Device>::Byte,   // t
+    *const <D as Device>::Byte, // pos
+    f32,                        // θ
+);
