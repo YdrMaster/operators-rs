@@ -1,0 +1,13 @@
+[package]
+name = "nvidia-gpu"
+version = "0.1.0"
+edition = "2021"
+authors = ["YdrMaster <ydrml@hotmail.com>"]
+
+[dependencies]
+common = { path = "../../common" }
+cuda.workspace = true
+
+[build-dependencies]
+build-script-cfg.workspace = true
+search-cuda-tools.workspace = true

@@ -5,17 +5,20 @@ edition = "2021"
 authors = ["YdrMaster <ydrml@hotmail.com>"]
 
 [features]
-default = ["common-cpu", "nvidia-gpu"]
-common-cpu = []
-nvidia-gpu = ["cuda", "cublas", "nccl"]
+default = ["common-cpu", "nvidia-gpu", "cambricon-mlu"]
+common-cpu = ["dev-common-cpu"]
+nvidia-gpu = ["dev-nvidia-gpu"]
+cambricon-mlu = ["dev-cambricon-mlu"]
 
 [dependencies]
+common = { path = "../common" }
+dev-common-cpu = { path = "../devices/common-cpu", package = "common-cpu", optional = true }
+dev-nvidia-gpu = { path = "../devices/nvidia-gpu", package = "nvidia-gpu", optional = true }
+dev-cambricon-mlu = { path = "../devices/cambricon-mlu", package = "cambricon-mlu", optional = true }
 half = "2.4"
 log = "0.4"
-cuda = { git = "https://github.com/YdrMaster/cuda-driver", rev = "a4b3cf5", optional = true }
-cublas = { git = "https://github.com/YdrMaster/cuda-driver", rev = "a4b3cf5", optional = true }
-nccl = { git = "https://github.com/YdrMaster/cuda-driver", rev = "a4b3cf5", optional = true }
 
 [build-dependencies]
-build-script-cfg = "0.0"
-search-cuda-tools = { git = "https://github.com/YdrMaster/cuda-driver", rev = "a4b3cf5" }
+build-script-cfg.workspace = true
+search-cuda-tools.workspace = true
+search-neuware-tools.workspace = true

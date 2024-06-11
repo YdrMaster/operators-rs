@@ -1,0 +1,13 @@
+[package]
+name = "cambricon-mlu"
+version = "0.1.0"
+edition = "2021"
+authors = ["YdrMaster <ydrml@hotmail.com>"]
+
+[dependencies]
+common = { path = "../../common" }
+cndrv.workspace = true
+
+[build-dependencies]
+build-script-cfg.workspace = true
+search-neuware-tools.workspace = true
