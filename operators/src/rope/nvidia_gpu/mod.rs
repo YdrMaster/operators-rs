@@ -23,6 +23,7 @@ impl Config {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct Operator {
     global: __global__,
     max_num_threads_block: usize,
@@ -55,7 +56,7 @@ impl common::Operator<Gpu> for Operator {
         unsigned int const *__restrict__ pos,
         float theta
     ){{
-        padding(t, stride, pos, theta);
+        padding(t, stride_token, stride_head, pos, theta);
     }}"#
         );
 
@@ -121,15 +122,11 @@ impl common::Scheme<Gpu, Operator> for Scheme {
 
     type Params<'ctx> = Params<Gpu>;
     fn launch(&self, params: &Self::Params<'_>, queue: &QueueOf<Gpu>) {
-        let (t, pos, theta) = params;
         let name = CString::new(NAME).unwrap();
-        let params = cuda::params![
-            unsafe { t.add(self.offset_t) },
-            self.stride_token,
-            self.stride_head,
-            unsafe { pos.add(self.offset_pos) },
-            theta
-        ];
+        let (t, pos, theta) = params;
+        let t = unsafe { t.add(self.offset_t) };
+        let pos = unsafe { pos.add(self.offset_pos) };
+        let params = cuda::params![t, self.stride_token, self.stride_head, pos, theta];
         self.global
             .launch(&name, self.grid, self.block, params.as_ptr(), 0, queue);
     }

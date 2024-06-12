@@ -42,6 +42,7 @@ enum KernelType {
     },
 }
 
+#[derive(Clone, Debug)]
 pub struct Operator {
     global: __global__,
     name: CString,
@@ -220,14 +221,10 @@ impl common::Scheme<Gpu, Operator> for Scheme {
     type Params<'ctx> = Params<Gpu>;
     fn launch(&self, params: &Self::Params<'_>, queue: &QueueOf<Gpu>) {
         let &(y, x, w, epsilon) = params;
-        let params = cuda::params![
-            unsafe { y.add(self.offset_y) },
-            self.stride_y,
-            unsafe { x.add(self.offset_x) },
-            self.stride_x,
-            unsafe { w.add(self.offset_w) },
-            epsilon
-        ];
+        let y = unsafe { y.add(self.offset_y) };
+        let x = unsafe { x.add(self.offset_x) };
+        let w = unsafe { w.add(self.offset_w) };
+        let params = cuda::params![y, self.stride_y, x, self.stride_x, w, epsilon];
         self.global.launch(
             &self.name,
             self.num_blocks_grid,

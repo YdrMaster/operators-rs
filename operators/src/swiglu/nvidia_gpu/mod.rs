@@ -23,6 +23,7 @@ impl Config {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct Operator {
     global: __global__,
     max_num_threads_block: usize,
@@ -111,12 +112,9 @@ impl common::Scheme<Gpu, Operator> for Scheme {
     fn launch(&self, params: &Self::Params<'_>, queue: &QueueOf<Gpu>) {
         let (gate, up) = params;
         let name = CString::new(NAME).unwrap();
-        let params = cuda::params![
-            unsafe { gate.add(self.offset_gate) },
-            self.stride_gate,
-            unsafe { up.add(self.offset_up) },
-            self.stride_up
-        ];
+        let gate = unsafe { gate.add(self.offset_gate) };
+        let up = unsafe { up.add(self.offset_up) };
+        let params = cuda::params![gate, self.stride_gate, up, self.stride_up];
         self.global
             .launch(&name, self.grid, self.block, params.as_ptr(), 0, queue);
     }

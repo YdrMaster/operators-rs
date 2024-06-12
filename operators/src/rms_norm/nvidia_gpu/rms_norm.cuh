@@ -75,6 +75,6 @@ static __device__ void folding(
     {
         using BlockOp = cub::BlockStore<float, BLOCK_SIZE, NUM_ITEMS_THREAD>;
         __shared__ typename BlockOp::TempStorage temp_storage;
-        BlockOp(temp_storage).Load(y, data, items_size);
+        BlockOp(temp_storage).Store(y, data, items_size);
     }
 }
