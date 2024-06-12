@@ -24,14 +24,37 @@ impl ErrorPosition {
 impl fmt::Debug for ErrorPosition {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}:{}: {:?}", self.file, self.line, self.message)
+        write!(f, "{self}")
     }
+}
+
+struct Colored<T>(T, u32);
+
+impl<T: fmt::Display> fmt::Display for Colored<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "\x1b[{}m{}\x1b[0m", self.1, self.0)
+    }
+}
+
+#[inline]
+fn red<T>(t: T) -> Colored<T> {
+    Colored(t, 31)
 }
 
 impl fmt::Display for ErrorPosition {
     #[inline]
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}:{}: \"{}\"", self.file, self.line, self.message)
+        if self.message.lines().nth(1).is_some() {
+            writeln!(f, "{}:{}:", self.file, self.line)?;
+            writeln!(f, "{}", red("+--"))?;
+            for line in self.message.lines() {
+                write!(f, "{} ", red('|'))?;
+                writeln!(f, "{line}")?;
+            }
+            writeln!(f, "{}", red("+--"))
+        } else {
+            write!(f, "{}:{}: {}", self.file, self.line, self.message)
+        }
     }
 }
 
