@@ -1,4 +1,4 @@
-﻿use super::{layout::SchemeLayout, LayoutAttrs, Params};
+﻿use super::{layout::SchemeLayout, LayoutAttrs, Params, RmsNorm};
 use common::{locate_error, DataLayout, ErrorPosition, QueueOf, F16};
 use dev_nvidia_gpu::{
     cuda::{self, ComputeCapability, Ptx},
@@ -49,10 +49,11 @@ pub struct Operator {
     ty: KernelType,
 }
 
-impl common::Operator<Gpu> for Operator {
+impl common::Operator for Operator {
+    type Device = Gpu;
+
     type Config = Config;
     type Error = ErrorPosition;
-
     fn new(config: &Self::Config) -> Result<Self, Self::Error> {
         let &Self::Config {
             data_layout,
@@ -163,7 +164,12 @@ pub struct Scheme {
     offset_w: usize,
 }
 
-impl common::Scheme<Gpu, Operator> for Scheme {
+impl RmsNorm<Gpu> for Scheme {}
+
+impl common::Scheme for Scheme {
+    type Device = Gpu;
+    type Operator = Operator;
+
     type LayoutAttrs = LayoutAttrs;
     type Error = ErrorPosition;
     fn new(op: &Operator, layout: Self::LayoutAttrs) -> Result<Self, Self::Error> {
@@ -218,8 +224,8 @@ impl common::Scheme<Gpu, Operator> for Scheme {
         }
     }
 
-    type Params<'ctx> = Params<Gpu>;
-    fn launch(&self, params: &Self::Params<'_>, queue: &QueueOf<Gpu>) {
+    type Params = Params<Gpu>;
+    fn launch(&self, params: &Self::Params, queue: &QueueOf<Gpu>) {
         let &(y, x, w, epsilon) = params;
         let y = unsafe { y.add(self.offset_y) };
         let x = unsafe { x.add(self.offset_x) };

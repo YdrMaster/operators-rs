@@ -1,4 +1,4 @@
-﻿use super::{layout::SchemeLayout, LayoutAttrs, Params};
+﻿use super::{layout::SchemeLayout, LayoutAttrs, Params, Rope};
 use common::{locate_error, DataLayout, ErrorPosition, QueueOf, F16};
 use dev_nvidia_gpu::{
     cuda::{self, ComputeCapability, Ptx},
@@ -31,7 +31,9 @@ pub struct Operator {
 
 const NAME: &str = "rope_f16";
 
-impl common::Operator<Gpu> for Operator {
+impl common::Operator for Operator {
+    type Device = Gpu;
+
     type Config = Config;
     type Error = ErrorPosition;
     fn new(config: &Self::Config) -> Result<Self, Self::Error> {
@@ -84,7 +86,12 @@ pub struct Scheme {
     offset_pos: usize,
 }
 
-impl common::Scheme<Gpu, Operator> for Scheme {
+impl Rope<Gpu> for Scheme {}
+
+impl common::Scheme for Scheme {
+    type Device = Gpu;
+    type Operator = Operator;
+
     type LayoutAttrs = LayoutAttrs;
     type Error = ErrorPosition;
     fn new(op: &Operator, layout: Self::LayoutAttrs) -> Result<Self, Self::Error> {
@@ -120,8 +127,8 @@ impl common::Scheme<Gpu, Operator> for Scheme {
         })
     }
 
-    type Params<'ctx> = Params<Gpu>;
-    fn launch(&self, params: &Self::Params<'_>, queue: &QueueOf<Gpu>) {
+    type Params = Params<Gpu>;
+    fn launch(&self, params: &Self::Params, queue: &QueueOf<Gpu>) {
         let name = CString::new(NAME).unwrap();
         let (t, pos, theta) = params;
         let t = unsafe { t.add(self.offset_t) };

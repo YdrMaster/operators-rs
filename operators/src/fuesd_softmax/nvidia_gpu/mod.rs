@@ -1,4 +1,4 @@
-﻿use super::{layout::SchemeLayout, LayoutAttrs, Params};
+﻿use super::{layout::SchemeLayout, FuesdSoftmax, LayoutAttrs, Params};
 use common::{locate_error, DataLayout, ErrorPosition, QueueOf, F16};
 use dev_nvidia_gpu::{
     cuda::{self, ComputeCapability, Ptx},
@@ -33,7 +33,9 @@ pub struct Operator {
     max_num_threads_block: usize,
 }
 
-impl common::Operator<Gpu> for Operator {
+impl common::Operator for Operator {
+    type Device = Gpu;
+
     type Config = Config;
     type Error = ErrorPosition;
     fn new(config: &Self::Config) -> Result<Self, Self::Error> {
@@ -111,7 +113,12 @@ pub struct Scheme {
     att_len: c_uint,
 }
 
-impl common::Scheme<Gpu, Operator> for Scheme {
+impl FuesdSoftmax<Gpu> for Scheme {}
+
+impl common::Scheme for Scheme {
+    type Device = Gpu;
+    type Operator = Operator;
+
     type LayoutAttrs = LayoutAttrs;
     type Error = ErrorPosition;
     fn new(op: &Operator, layout: Self::LayoutAttrs) -> Result<Self, Self::Error> {
@@ -157,8 +164,8 @@ impl common::Scheme<Gpu, Operator> for Scheme {
         })
     }
 
-    type Params<'ctx> = Params<Gpu>;
-    fn launch(&self, att: &Self::Params<'_>, queue: &QueueOf<Gpu>) {
+    type Params = Params<Gpu>;
+    fn launch(&self, att: &Self::Params, queue: &QueueOf<Gpu>) {
         let att = unsafe { att.add(self.offset) };
         let params = cuda::params![att, 0i32, self.stride_head, self.stride_token, self.att_len];
         self.global

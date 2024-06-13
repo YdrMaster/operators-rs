@@ -1,4 +1,4 @@
-﻿use super::{layout::SchemeLayout, LayoutAttrs, Params};
+﻿use super::{layout::SchemeLayout, FuesdSoftmax, LayoutAttrs, Params};
 use common::{locate_error, DataLayout, ErrorPosition, QueueOf, F16};
 use dev_common_cpu::Device as Cpu;
 use half::f16;
@@ -8,7 +8,9 @@ pub struct Operator {
     dt: DataLayout,
 }
 
-impl common::Operator<Cpu> for Operator {
+impl common::Operator for Operator {
+    type Device = Cpu;
+
     type Config = DataLayout;
     type Error = ErrorPosition;
     #[inline]
@@ -23,7 +25,12 @@ impl common::Operator<Cpu> for Operator {
 
 pub struct Scheme(SchemeLayout);
 
-impl common::Scheme<Cpu, Operator> for Scheme {
+impl FuesdSoftmax<Cpu> for Scheme {}
+
+impl common::Scheme for Scheme {
+    type Device = Cpu;
+    type Operator = Operator;
+
     type LayoutAttrs = LayoutAttrs;
     type Error = ErrorPosition;
     #[inline]
@@ -31,8 +38,8 @@ impl common::Scheme<Cpu, Operator> for Scheme {
         SchemeLayout::new(op.dt, layout).map(Self)
     }
 
-    type Params<'ctx> = Params<Cpu>;
-    fn launch(&self, params: &Self::Params<'_>, _queue: &QueueOf<Cpu>) {
+    type Params = Params<Cpu>;
+    fn launch(&self, params: &Self::Params, _queue: &QueueOf<Cpu>) {
         let SchemeLayout {
             nh,
             seq_len,
