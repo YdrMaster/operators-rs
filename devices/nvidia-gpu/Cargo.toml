@@ -7,6 +7,7 @@ authors = ["YdrMaster <ydrml@hotmail.com>"]
 [dependencies]
 common = { path = "../../common" }
 cuda.workspace = true
+cublas.workspace = true
 
 [build-dependencies]
 build-script-cfg.workspace = true

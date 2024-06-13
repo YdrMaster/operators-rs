@@ -1,6 +1,5 @@
-﻿use cuda::{
-    AsRaw, Context, ContextResource, ContextSpore, Device as Gpu, Dim3, ModuleSpore, Ptx, Stream,
-};
+﻿use super::contexts;
+use cuda::{AsRaw, ContextResource, ContextSpore, Dim3, ModuleSpore, Ptx, Stream};
 use std::{
     ffi::{c_void, CStr},
     sync::{OnceLock, RwLock},
@@ -49,16 +48,6 @@ impl __global__ {
             .get_kernel(name.as_ref())
             .launch(grid_dims, block_dims, params, shared_mem, Some(stream));
     }
-}
-
-fn contexts() -> &'static [Context] {
-    static CONTEXTS: OnceLock<Vec<Context>> = OnceLock::new();
-    CONTEXTS.get_or_init(|| {
-        cuda::init();
-        (0..Gpu::count())
-            .map(|i| Gpu::new(i as _).retain_primary())
-            .collect()
-    })
 }
 
 fn module_library() -> &'static RwLock<Vec<ModuleSpore>> {
