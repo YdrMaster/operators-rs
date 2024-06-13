@@ -9,6 +9,7 @@ pub extern crate dev_cambricon_mlu as cambricon_mlu;
 
 pub mod fuesd_softmax;
 pub mod mat_mul;
+pub mod reform;
 pub mod rms_norm;
 pub mod rope;
 pub mod swiglu;
