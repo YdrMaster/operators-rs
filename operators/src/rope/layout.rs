@@ -38,8 +38,8 @@ impl SchemeLayout {
         let &[nps] = pos.strides() else {
             unreachable!();
         };
-        let unit = dt.layout().size() as isize;
-        if dhs != unit || nps != U32.layout().size() as isize {
+        let unit = dt.nbytes() as isize;
+        if dhs != unit || nps != U32.nbytes() as isize {
             return Err(locate_error!());
         }
 

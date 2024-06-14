@@ -51,19 +51,19 @@ impl DataLayout {
     }
 
     #[inline]
-    pub const fn bits(&self) -> usize {
-        self.nbyte() * u8::BITS as usize
+    pub const fn nbits(&self) -> usize {
+        self.nbytes() * u8::BITS as usize
+    }
+
+    #[inline]
+    pub const fn nbytes(&self) -> usize {
+        (self.signed_nbyte & ((1 << 7) - 1)) as _
     }
 
     #[inline]
     pub const fn layout(&self) -> Layout {
-        let nbyte = self.nbyte();
+        let nbyte = self.nbytes();
         unsafe { Layout::from_size_align_unchecked(nbyte, nbyte) }
-    }
-
-    #[inline]
-    const fn nbyte(&self) -> usize {
-        (self.signed_nbyte & ((1 << 7) - 1)) as _
     }
 }
 

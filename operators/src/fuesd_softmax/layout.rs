@@ -24,7 +24,7 @@ impl SchemeLayout {
         let &[stride_head, stride_token, stride_num] = att.strides() else {
             return Err(locate_error!());
         };
-        let unit = dt.layout().size() as isize;
+        let unit = dt.nbytes() as isize;
         if stride_num != unit {
             return Err(locate_error!());
         }

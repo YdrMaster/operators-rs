@@ -51,7 +51,7 @@ impl SchemeLayout {
         let &[wds] = w.strides() else {
             unreachable!();
         };
-        let unit = dt.layout().size() as isize;
+        let unit = dt.nbytes() as isize;
         if yds != unit || xds != unit || wds != unit {
             return Err(locate_error!());
         }

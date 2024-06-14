@@ -26,7 +26,7 @@ impl SchemeLayout {
             return Err(locate_error!("dst and src must have the same shape"));
         }
 
-        let unit = dst.dt().layout().size() as isize;
+        let unit = dst.dt().nbytes() as isize;
         let [r @ .., c, z] = dst.shape() else {
             return Err(locate_error!("dst and src must have at least 2 dimensions"));
         };

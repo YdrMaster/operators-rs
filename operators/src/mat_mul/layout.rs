@@ -121,7 +121,7 @@ impl TryFrom<&TensorLayout> for Matrix {
         let [stride @ .., rs, cs] = tensor.strides() else {
             unreachable!();
         };
-        let unit = tensor.dt().layout().size() as isize;
+        let unit = tensor.dt().nbytes() as isize;
         let (batch, stride) = match batch {
             [] | [1] => {
                 assert!(matches!(stride, [] | [_]));

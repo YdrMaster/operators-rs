@@ -50,6 +50,7 @@ impl __global__ {
     }
 }
 
+#[inline(always)]
 fn module_library() -> &'static RwLock<Vec<ModuleSpore>> {
     static MODULE_LIBRARY: OnceLock<RwLock<Vec<ModuleSpore>>> = OnceLock::new();
     MODULE_LIBRARY.get_or_init(Default::default)

@@ -37,7 +37,7 @@ impl SchemeLayout {
         let &[uns, uds] = up.strides() else {
             unreachable!();
         };
-        let unit = dt.layout().size() as isize;
+        let unit = dt.nbytes() as isize;
         if gds != unit || uds != unit {
             return Err(locate_error!());
         }
