@@ -1,6 +1,6 @@
 ﻿use super::{layout::SchemeLayout, LayoutAttrs, MatMul, Params};
 use common::{locate_error, DataLayout, ErrorPosition, QueueOf, F16};
-use dev_nvidia_gpu::{cublas::cublas, cuda::AsRaw, use_cublas, Device as Gpu};
+use dev_nvidia_gpu::{cublas::cublas, cuda::AsRaw, preload_cublas, use_cublas, Device as Gpu};
 use half::f16;
 use std::ffi::c_void;
 
@@ -17,6 +17,7 @@ impl common::Operator for Operator {
     #[inline]
     fn new(config: &Self::Config) -> Result<Self, Self::Error> {
         if *config == F16 {
+            preload_cublas();
             Ok(Self { dt: *config })
         } else {
             Err(locate_error!())

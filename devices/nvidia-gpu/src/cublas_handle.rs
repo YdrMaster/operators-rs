@@ -4,17 +4,32 @@ use cublas::{Cublas, CublasSpore};
 use cuda::{AsRaw, ContextResource, ContextSpore, Stream};
 use std::sync::OnceLock;
 
+#[inline]
+pub fn pools() -> &'static [Pool<CublasSpore>] {
+    static POOL: OnceLock<Vec<Pool<CublasSpore>>> = OnceLock::new();
+    POOL.get_or_init(|| {
+        contexts()
+            .iter()
+            .map(|context| {
+                let pool = Pool::new();
+                pool.push(context.apply(|ctx| Cublas::new(ctx).sporulate()));
+                pool
+            })
+            .collect()
+    })
+}
+
 pub fn use_cublas(stream: &Stream, f: impl FnOnce(&Cublas)) {
     let ctx = stream.ctx();
-    let idx = contexts()
+    let contexts = contexts();
+    let idx = contexts
         .iter()
         .enumerate()
         .find(|(_, context)| unsafe { context.as_raw() == ctx.as_raw() })
         .expect("Use primary context")
         .0;
 
-    static POOL: OnceLock<Vec<Pool<CublasSpore>>> = OnceLock::new();
-    let pool = &POOL.get_or_init(|| (0..cuda::Device::count()).map(|_| Pool::new()).collect())[idx];
+    let pool = &pools()[idx];
     let cublas = pool
         .pop()
         .map_or_else(|| Cublas::new(ctx), |spore| spore.sprout(ctx));

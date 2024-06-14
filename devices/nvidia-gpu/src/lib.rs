@@ -14,8 +14,8 @@ impl common::Device for Device {
 mod module;
 pub use module::__global__;
 
-mod handle_pool;
-pub use handle_pool::use_cublas;
+mod cublas_handle;
+pub use cublas_handle::{pools as preload_cublas, use_cublas};
 
 fn contexts() -> &'static [cuda::Context] {
     use cuda::{Context, Device as Gpu};
