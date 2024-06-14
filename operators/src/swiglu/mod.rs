@@ -6,10 +6,9 @@ pub mod nvidia_gpu;
 mod layout;
 pub use layout::LayoutAttrs;
 
-use common::{Device, Scheme};
+use crate::utils::*;
+op_trait!(Swiglu);
 type Params<D> = (
-    *mut <D as Device>::Byte,   // gate
-    *const <D as Device>::Byte, // up
+    MutPtr<D>,   // gate
+    ConstPtr<D>, // up
 );
-
-pub trait Swiglu<D: Device>: Scheme<LayoutAttrs = LayoutAttrs, Params = Params<D>> {}

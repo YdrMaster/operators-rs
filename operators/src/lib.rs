@@ -26,3 +26,18 @@ const fn gcd(mut a: usize, mut b: usize) -> usize {
     }
     a
 }
+
+mod utils {
+    macro_rules! op_trait {
+        ($name:ident) => {
+            pub trait $name<D: common::Device>:
+                common::Scheme<Device = D, LayoutAttrs = LayoutAttrs, Params = Params<D>>
+            {
+            }
+        };
+    }
+
+    pub(crate) use op_trait;
+    pub(crate) type ConstPtr<D> = *const <D as common::Device>::Byte;
+    pub(crate) type MutPtr<D> = *mut <D as common::Device>::Byte;
+}

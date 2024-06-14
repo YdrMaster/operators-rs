@@ -6,10 +6,9 @@ pub mod nvidia_gpu;
 mod layout;
 pub use layout::LayoutAttrs;
 
-use common::{Device, Scheme};
+use crate::utils::*;
+op_trait!(Reform);
 type Params<D> = (
-    *mut <D as Device>::Byte,   // y
-    *const <D as Device>::Byte, // x
+    MutPtr<D>,   // y
+    ConstPtr<D>, // x
 );
-
-pub trait Reform<D: Device>: Scheme<LayoutAttrs = LayoutAttrs, Params = Params<D>> {}
