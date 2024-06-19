@@ -7,7 +7,8 @@ pub struct LayoutAttrs {
     pub b: TensorLayout,
 }
 
-pub(super) struct SchemeLayout {
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub struct SchemeLayout {
     pub batch: usize,
     pub m: usize,
     pub n: usize,

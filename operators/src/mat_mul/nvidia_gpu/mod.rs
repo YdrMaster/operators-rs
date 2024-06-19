@@ -1,8 +1,16 @@
 ﻿use super::{layout::SchemeLayout, LayoutAttrs, MatMul, Params};
 use common::{locate_error, DataLayout, ErrorPosition, QueueOf, F16};
-use dev_nvidia_gpu::{cublas::cublas, cuda::AsRaw, preload_cublas, use_cublas, Device as Gpu};
+use dev_nvidia_gpu::{
+    cublas::cublas,
+    cuda::{self, bindings::CUdevice, AsRaw},
+    preload_cublas, use_cublas, Device as Gpu,
+};
 use half::f16;
-use std::ffi::c_void;
+use std::{
+    collections::HashMap,
+    ffi::c_void,
+    sync::{Mutex, OnceLock},
+};
 
 #[derive(Clone, Debug)]
 pub struct Operator {
@@ -42,6 +50,10 @@ impl common::Scheme for Scheme {
 
     type Params = Params<Gpu>;
     fn launch(&self, params: &Self::Params, stream: &QueueOf<Gpu>) {
+        if crate::is_recording() {
+            record_scheme(unsafe { stream.ctx().dev().as_raw() }, &self.0);
+        }
+
         let SchemeLayout {
             batch,
             m,
@@ -108,4 +120,23 @@ impl common::Scheme for Scheme {
             ));
         })
     }
+}
+
+#[inline(always)]
+fn record() -> &'static Mutex<HashMap<SchemeLayout, Vec<usize>>> {
+    static RECORD: OnceLock<Mutex<HashMap<SchemeLayout, Vec<usize>>>> = OnceLock::new();
+    RECORD.get_or_init(Default::default)
+}
+
+fn record_scheme(dev: CUdevice, scheme: &SchemeLayout) {
+    let mut map = record().lock().unwrap();
+    let vec = map
+        .entry(scheme.clone())
+        .or_insert_with(|| vec![0; cuda::Device::count() as _]);
+    vec[dev as usize] += 1;
+}
+
+pub fn get_record() -> Vec<(SchemeLayout, Vec<usize>)> {
+    let map = record().lock().unwrap();
+    map.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
 }

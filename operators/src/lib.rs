@@ -15,6 +15,7 @@ pub mod rope;
 pub mod swiglu;
 
 pub use common::*;
+pub use record::{is_recording, start_record, stop_record};
 
 #[allow(unused)]
 #[inline]
@@ -41,3 +42,5 @@ mod utils {
     pub(crate) type ConstPtr<D> = *const <D as common::Device>::Byte;
     pub(crate) type MutPtr<D> = *mut <D as common::Device>::Byte;
 }
+
+mod record;
