@@ -3,7 +3,6 @@ use cuda::{AsRaw, ContextResource, ContextSpore, Dim3, ModuleSpore, Ptx, Stream}
 use std::{
     ffi::{c_void, CStr},
     sync::{OnceLock, RwLock},
-    usize,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]

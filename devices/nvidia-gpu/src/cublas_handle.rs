@@ -30,7 +30,7 @@ pub fn use_cublas(stream: &Stream, f: impl FnOnce(&Cublas)) {
         .0;
 
     let pool = &pools()[idx];
-    let cublas = pool
+    let mut cublas = pool
         .pop()
         .map_or_else(|| Cublas::new(ctx), |spore| spore.sprout(ctx));
 
