@@ -1,5 +1,11 @@
 [workspace]
-members = ["common", "devices/cambricon-mlu", "devices/common-cpu", "devices/nvidia-gpu", "operators"]
+members = [
+    "common",
+    "devices/cambricon-mlu",
+    "devices/common-cpu",
+    "devices/nvidia-gpu",
+    "operators",
+]
 resolver = "2"
 
 [workspace.dependencies]
@@ -10,5 +16,5 @@ cublas = { git = "https://github.com/YdrMaster/cuda-driver", rev = "a4b3cf5" }
 nccl = { git = "https://github.com/YdrMaster/cuda-driver", rev = "a4b3cf5" }
 search-cuda-tools = { git = "https://github.com/YdrMaster/cuda-driver", rev = "a4b3cf5" }
 
-cndrv = { git = "https://github.com/YdrMaster/cndrv", rev = "fb46d04" }
-search-neuware-tools = { git = "https://github.com/YdrMaster/cndrv", rev = "fb46d04" }
+cndrv = "0.0"
+search-neuware-tools = "0.0"

@@ -3,6 +3,7 @@
 #[cfg(use_cuda)]
 pub mod nvidia_gpu;
 
+#[allow(unused)]
 mod layout;
 pub use layout::LayoutAttrs;
 

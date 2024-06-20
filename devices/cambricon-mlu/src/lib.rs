@@ -7,5 +7,5 @@ pub struct Device;
 
 impl common::Device for Device {
     type Byte = cndrv::DevByte;
-    type Queue<'ctx> = Queue<'ctx>;
+    type Queue<'ctx> = cndrv::Queue<'ctx>;
 }
