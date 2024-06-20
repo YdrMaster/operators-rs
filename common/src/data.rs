@@ -9,6 +9,8 @@ pub struct DataLayout {
     mantissa: u8,
 }
 
+const BITS8: usize = u8::BITS as usize;
+
 impl DataLayout {
     #[inline]
     pub const fn new(packed: usize, signed: bool, exponent: usize, mantissa: usize) -> Self {
@@ -16,15 +18,14 @@ impl DataLayout {
         assert!(exponent <= u8::MAX as usize);
         assert!(mantissa <= u8::MAX as usize);
         let signed = if signed { 1 } else { 0 };
+
         let total_bits = packed * (signed + exponent + mantissa);
-        assert!(total_bits % u8::BITS as usize == 0);
-        let nbyte = total_bits / u8::BITS as usize;
-        assert!(nbyte.is_power_of_two());
+        let nbyte = ((total_bits + BITS8 - 1) / BITS8).next_power_of_two();
         assert!(nbyte < (1 << 7));
-        let signed_nbyte = (signed << 7) | nbyte;
+
         Self {
             packed: packed as _,
-            signed_nbyte: signed_nbyte as _,
+            signed_nbyte: ((signed << 7) | nbyte) as _,
             exponent: exponent as _,
             mantissa: mantissa as _,
         }
@@ -51,8 +52,13 @@ impl DataLayout {
     }
 
     #[inline]
+    pub const fn padding(&self) -> usize {
+        self.nbits() - self.packed() * (self.signed() as usize + self.exponent() + self.mantissa())
+    }
+
+    #[inline]
     pub const fn nbits(&self) -> usize {
-        self.nbytes() * u8::BITS as usize
+        self.nbytes() * BITS8
     }
 
     #[inline]
@@ -78,7 +84,6 @@ pub(crate) mod types {
         };
         ($name:ident u($bits:expr)x($packed:expr)) => {
             #[allow(non_upper_case_globals)]
-            #[rustfmt::skip]
             pub const $name: $crate::DataLayout =
                 $crate::DataLayout::new($packed, false, 0, $bits);
         };
@@ -99,6 +104,7 @@ pub(crate) mod types {
         };
     }
 
+    layout!(Bool   u( 1)          );
     layout!(I8     i( 8)          );
     layout!(I16    i(16)          );
     layout!(I32    i(32)          );
