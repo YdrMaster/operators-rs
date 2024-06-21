@@ -1,4 +1,5 @@
-﻿use common::{locate_error, DataLayout, ErrorPosition, TensorLayout};
+﻿use common::{locate_error, ErrorPosition, TensorLayout};
+use digit_layout::DigitLayout;
 use std::mem::swap;
 
 pub struct LayoutAttrs {
@@ -32,7 +33,7 @@ pub struct SchemeLayout {
 
 impl SchemeLayout {
     pub fn new(
-        dt: DataLayout,
+        dt: DigitLayout,
         LayoutAttrs { c, a, b }: LayoutAttrs,
     ) -> Result<Self, ErrorPosition> {
         if c.dt() != dt || a.dt() != dt || b.dt() != dt {

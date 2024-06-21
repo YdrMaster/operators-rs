@@ -1,21 +1,22 @@
 ﻿use super::{layout::SchemeLayout, FuesdSoftmax, LayoutAttrs, Params};
-use common::{locate_error, DataLayout, ErrorPosition, QueueOf, F16};
+use common::{locate_error, ErrorPosition, QueueOf};
 use dev_nvidia_gpu::{
     cuda::{self, ComputeCapability, Ptx},
     Device as Gpu, __global__,
 };
+use digit_layout::{types::F16, DigitLayout};
 use log::warn;
 use std::ffi::{c_int, c_uint, CString};
 
 pub struct Config {
-    pub data_layout: DataLayout,
+    pub data_layout: DigitLayout,
     pub max_seq_len: usize,
     pub max_num_threads_block: usize,
     pub compute_capability: ComputeCapability,
 }
 
 impl Config {
-    pub fn config_for(dev: &cuda::Device, data_layout: DataLayout, max_seq_len: usize) -> Self {
+    pub fn config_for(dev: &cuda::Device, data_layout: DigitLayout, max_seq_len: usize) -> Self {
         Self {
             data_layout,
             max_seq_len,

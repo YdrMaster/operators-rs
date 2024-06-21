@@ -15,6 +15,7 @@ common = { path = "../common" }
 dev-common-cpu = { path = "../devices/common-cpu", package = "common-cpu", optional = true }
 dev-nvidia-gpu = { path = "../devices/nvidia-gpu", package = "nvidia-gpu", optional = true }
 dev-cambricon-mlu = { path = "../devices/cambricon-mlu", package = "cambricon-mlu", optional = true }
+digit-layout.workspace = true
 half = "2.4"
 gemm = "0.18"
 log = "0.4"

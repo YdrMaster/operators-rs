@@ -1,4 +1,5 @@
-﻿use common::{locate_error, DataLayout, ErrorPosition, TensorLayout};
+﻿use common::{locate_error, ErrorPosition, TensorLayout};
+use digit_layout::DigitLayout;
 
 pub struct LayoutAttrs {
     pub y: TensorLayout,
@@ -18,7 +19,7 @@ pub(super) struct SchemeLayout {
 
 impl SchemeLayout {
     pub fn new(
-        dt: DataLayout,
+        dt: DigitLayout,
         LayoutAttrs { y, x, w }: LayoutAttrs,
     ) -> Result<Self, ErrorPosition> {
         if y.dt() != dt {

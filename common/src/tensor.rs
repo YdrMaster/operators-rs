@@ -1,12 +1,13 @@
-﻿use crate::DataLayout;
-use std::{
+﻿use std::{
     alloc::{alloc, dealloc, Layout},
     ptr::{copy_nonoverlapping, NonNull},
 };
 
+use digit_layout::DigitLayout;
+
 /// | field   | type          |
 /// |:-------:|:-------------:|
-/// | dt      | DataLayout    |
+/// | dt      | DigitLayout    |
 /// | udim    | u32           |
 /// | offset  | usize         |
 /// | shape   | [usize; ndim] |
@@ -16,7 +17,7 @@ pub struct TensorLayout(NonNull<usize>);
 
 impl TensorLayout {
     pub fn new(
-        dt: DataLayout,
+        dt: DigitLayout,
         shape: impl AsRef<[usize]>,
         strides: impl AsRef<[isize]>,
         offset: usize,
@@ -29,7 +30,7 @@ impl TensorLayout {
         unsafe {
             let ptr = alloc(layout);
 
-            let cursor: *mut DataLayout = ptr.cast();
+            let cursor: *mut DigitLayout = ptr.cast();
             cursor.write(dt);
             let cursor: *mut u32 = cursor.add(1).cast();
             cursor.write(shape.len() as _);
@@ -45,7 +46,7 @@ impl TensorLayout {
     }
 
     #[inline]
-    pub fn dt(&self) -> DataLayout {
+    pub fn dt(&self) -> DigitLayout {
         unsafe { *self.0.cast().as_ref() }
     }
 

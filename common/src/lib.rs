@@ -1,11 +1,9 @@
 #![deny(warnings)]
 
-mod data;
 mod error;
 mod pool;
 mod tensor;
 
-pub use data::{types::*, DataLayout};
 pub use error::ErrorPosition;
 pub use pool::Pool;
 pub use tensor::TensorLayout;

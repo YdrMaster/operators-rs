@@ -1,10 +1,11 @@
 ﻿use super::{layout::SchemeLayout, LayoutAttrs, MatMul, Params};
-use common::{locate_error, DataLayout, ErrorPosition, QueueOf, F16};
+use common::{locate_error, ErrorPosition, QueueOf};
 use dev_nvidia_gpu::{
     cublas::cublas,
     cuda::{self, bindings::CUdevice, AsRaw},
     preload_cublas, use_cublas, Device as Gpu,
 };
+use digit_layout::{types::F16, DigitLayout};
 use half::f16;
 use std::{
     collections::HashMap,
@@ -14,13 +15,13 @@ use std::{
 
 #[derive(Clone, Debug)]
 pub struct Operator {
-    dt: DataLayout,
+    dt: DigitLayout,
 }
 
 impl common::Operator for Operator {
     type Device = Gpu;
 
-    type Config = DataLayout;
+    type Config = DigitLayout;
     type Error = ErrorPosition;
     #[inline]
     fn new(config: &Self::Config) -> Result<Self, Self::Error> {
