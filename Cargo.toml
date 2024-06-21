@@ -12,10 +12,10 @@ resolver = "2"
 digit-layout = "0.0"
 build-script-cfg = "0.0"
 
-cuda = { git = "https://github.com/YdrMaster/cuda-driver", rev = "62a7864" }
-cublas = { git = "https://github.com/YdrMaster/cuda-driver", rev = "62a7864" }
-nccl = { git = "https://github.com/YdrMaster/cuda-driver", rev = "62a7864" }
-search-cuda-tools = { git = "https://github.com/YdrMaster/cuda-driver", rev = "62a7864" }
+cuda = { git = "https://github.com/YdrMaster/cuda-driver", rev = "4523bad" }
+cublas = { git = "https://github.com/YdrMaster/cuda-driver", rev = "4523bad" }
+nccl = { git = "https://github.com/YdrMaster/cuda-driver", rev = "4523bad" }
+search-cuda-tools = { git = "https://github.com/YdrMaster/cuda-driver", rev = "4523bad" }
 
 cndrv = "0.0"
 search-neuware-tools = "0.0"
