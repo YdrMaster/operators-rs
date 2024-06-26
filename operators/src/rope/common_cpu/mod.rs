@@ -1,72 +1,74 @@
-﻿use super::{layout::SchemeLayout, LayoutAttrs, Params, Rope};
+﻿use super::{args::Meta, Args};
+use crate::{common_cpu::Handle as Cpu, utils::get_or_err};
 use common::{locate_error, ErrorPosition, QueueOf};
-use dev_common_cpu::Device as Cpu;
-use digit_layout::{types::F16, DigitLayout};
+use digit_layout::types::F16;
 use half::f16;
-use std::slice::{from_raw_parts, from_raw_parts_mut};
 
-pub struct Operator {
-    dt: DigitLayout,
-}
+pub struct Operator;
 
 impl common::Operator for Operator {
     type Handle = Cpu;
+    type Args = Args<Cpu>;
+    type SchemeError = ErrorPosition;
+    type LaunchError = ErrorPosition;
 
-    type Config = DigitLayout;
-    type Error = ErrorPosition;
-    #[inline]
-    fn new(config: &Self::Config) -> Result<Self, Self::Error> {
-        if *config == F16 {
-            Ok(Self { dt: *config })
-        } else {
-            Err(locate_error!())
+    fn new(_handle: &Self::Handle) -> Self {
+        Self
+    }
+
+    fn scheme(&mut self, args: &Self::Args) -> Result<(), Self::SchemeError> {
+        let _meta = args.meta()?;
+        Ok(())
+    }
+
+    fn launch(
+        &self,
+        args: &Self::Args,
+        _queue: &QueueOf<Self::Handle>,
+    ) -> Result<(), Self::LaunchError> {
+        let Meta { dt, n } = args.meta()?;
+        let Args {
+            t_layout,
+            t_base,
+            p_layout,
+            p_base,
+            theta,
+        } = args;
+        let &[_, nh, dh] = t_layout.shape() else {
+            unreachable!()
+        };
+        let &[st, sh, sd] = t_layout.strides() else {
+            unreachable!()
+        };
+        let &[sp] = p_layout.strides() else {
+            unreachable!()
+        };
+
+        if dt != F16 {
+            return Err(locate_error!());
         }
-    }
-}
 
-pub struct Scheme(SchemeLayout);
+        get_or_err!(n);
+        get_or_err!(nh);
+        get_or_err!(dh);
+        get_or_err!(st);
+        get_or_err!(sh);
+        get_or_err!(sd);
+        get_or_err!(sp);
 
-impl Rope<Cpu> for Scheme {}
+        let dh = dh as isize / 2;
+        let sd = sd * 2;
 
-impl common::Scheme for Scheme {
-    type Device = Cpu;
-    type Operator = Operator;
-
-    type LayoutAttrs = LayoutAttrs;
-    type Error = ErrorPosition;
-    #[inline]
-    fn new(op: &Operator, layout: Self::LayoutAttrs) -> Result<Self, Self::Error> {
-        SchemeLayout::new(op.dt, layout).map(Self)
-    }
-
-    type Params = Params<Cpu>;
-    fn launch(&self, params: &Self::Params, _queue: &QueueOf<Cpu>) {
-        let SchemeLayout {
-            n,
-            nh,
-            dh,
-            stride_token,
-            stride_head,
-            offset_t,
-            offset_pos,
-        } = self.0;
-        let dh = dh / 2;
-        let ts = stride_token / 2;
-        let hs = stride_head / 2;
-        let &(t, pos, theta) = params;
-
-        let t = unsafe { t.add(offset_t) }.cast::<(f16, f16)>();
-        let pos = unsafe { from_raw_parts(pos.add(offset_pos).cast::<u32>(), n) };
-
-        for (i, pos) in pos.iter().enumerate() {
-            let pos = *pos as f32;
-            for j in 0..nh {
-                let t = unsafe { t.offset(i as isize * ts + j as isize * hs) };
-                let slice = unsafe { from_raw_parts_mut(t, dh) };
-                for (k, slice) in slice.iter_mut().enumerate() {
-                    let freq = pos / theta.powf(k as f32 / dh as f32);
+        for i in 0..n as isize {
+            let p = unsafe { *p_base.offset(i * sp).cast::<u32>() };
+            for j in 0..nh as isize {
+                for k in 0..dh as isize {
+                    let t = unsafe {
+                        &mut *t_base.offset(i * st + j * sh + k * sd).cast::<(f16, f16)>()
+                    };
+                    let freq = p as f32 / theta.powf(k as f32 / dh as f32);
                     let (sin, cos) = freq.sin_cos();
-                    let (a, b) = slice;
+                    let (a, b) = t;
                     let a_ = a.to_f32();
                     let b_ = b.to_f32();
                     *a = f16::from_f32(a_ * cos - b_ * sin);
@@ -74,5 +76,6 @@ impl common::Scheme for Scheme {
                 }
             }
         }
+        Ok(())
     }
 }

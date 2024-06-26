@@ -1,7 +1,6 @@
-﻿use super::Args;
+﻿use super::args::{Args, Meta};
 use crate::{
     nvidia_gpu::{Handle as Gpu, Internal as Handle, ModuleBox},
-    rms_norm::args::Meta,
     utils::get_or_err,
 };
 use common::{locate_error, ErrorPosition, QueueOf};

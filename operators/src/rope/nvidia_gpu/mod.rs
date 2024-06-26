@@ -1,141 +1,132 @@
-﻿use super::{layout::SchemeLayout, LayoutAttrs, Params, Rope};
-use common::{locate_error, ErrorPosition, QueueOf};
-use dev_nvidia_gpu::{
-    cuda::{self, ComputeCapability, Ptx},
-    Device as Gpu, __global__,
+﻿use super::args::{Args, Meta};
+use crate::{
+    nvidia_gpu::{Handle as Gpu, Internal as Handle, ModuleBox},
+    utils::get_or_err,
 };
-use digit_layout::{types::F16, DigitLayout};
-use log::warn;
-use std::ffi::{c_int, c_uint, CString};
+use common::{locate_error, ErrorPosition, QueueOf};
+use cuda::ComputeCapability;
+use digit_layout::types::{F16, U32};
+use std::{ffi::CString, sync::Arc};
 
-pub struct Config {
-    pub data_layout: DigitLayout,
-    pub max_num_threads_block: usize,
-    pub compute_capability: ComputeCapability,
-}
-
-impl Config {
-    pub fn config_for(dev: &cuda::Device, data_layout: DigitLayout) -> Self {
-        Self {
-            data_layout,
-            max_num_threads_block: dev.max_block_dims().0,
-            compute_capability: dev.compute_capability(),
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
 pub struct Operator {
-    global: __global__,
-    max_num_threads_block: usize,
+    handle: Arc<Handle>,
+    scheme: Option<Arc<ModuleBox>>,
 }
-
-const NAME: &str = "rope_f16";
 
 impl common::Operator for Operator {
     type Handle = Gpu;
+    type Args = Args<Gpu>;
+    type SchemeError = ErrorPosition;
+    type LaunchError = ErrorPosition;
 
-    type Config = Config;
-    type Error = ErrorPosition;
-    fn new(config: &Self::Config) -> Result<Self, Self::Error> {
-        let &Self::Config {
-            data_layout,
-            max_num_threads_block,
-            compute_capability,
-        } = config;
-
-        const CODE: &str = include_str!("rope.cuh");
-
-        if data_layout != F16 {
-            return Err(locate_error!());
+    fn new(handle: &Self::Handle) -> Self {
+        Self {
+            handle: handle.0.clone(),
+            scheme: None,
         }
-        let code = format!(
-            r#"{CODE}
-
-    extern "C" __global__ void {NAME}(
-        half2 *__restrict__ t,
-        int const stride_token,
-        int const stride_head,
-        unsigned int const *__restrict__ pos,
-        float theta
-    ){{
-        padding(t, stride_token, stride_head, pos, theta);
-    }}"#
-        );
-
-        let (ptx, log) = Ptx::compile(code, compute_capability);
-        let ptx =
-            ptx.map_err(|e| locate_error!(format!("Failed to compile {NAME}: {e:?}\n{log}")))?;
-        if !log.is_empty() {
-            warn!("{log}");
-        }
-        Ok(Self {
-            global: __global__::load(&ptx),
-            max_num_threads_block,
-        })
     }
-}
 
-pub struct Scheme {
-    global: __global__,
+    fn scheme(&mut self, args: &Self::Args) -> Result<(), Self::SchemeError> {
+        let Meta { dt, n: _ } = args.meta()?;
+        if dt != F16 {
+            todo!()
+        }
+        self.scheme(self.handle.device().compute_capability())
+    }
 
-    grid: (c_uint, c_uint),
-    block: (c_uint, c_uint),
-    stride_token: c_int,
-    stride_head: c_int,
-    offset_t: usize,
-    offset_pos: usize,
-}
+    fn launch(
+        &self,
+        args: &Self::Args,
+        queue: &QueueOf<Self::Handle>,
+    ) -> Result<(), Self::LaunchError> {
+        let Meta { dt, n } = args.meta()?;
+        let Args {
+            t_layout,
+            t_base,
+            p_layout,
+            p_base,
+            theta,
+        } = args;
+        let &[_, nh, dh] = t_layout.shape() else {
+            unreachable!()
+        };
+        let &[st, sh, sd] = t_layout.strides() else {
+            unreachable!()
+        };
+        let &[sp] = p_layout.strides() else {
+            unreachable!()
+        };
 
-impl Rope<Gpu> for Scheme {}
-
-impl common::Scheme for Scheme {
-    type Device = Gpu;
-    type Operator = Operator;
-
-    type LayoutAttrs = LayoutAttrs;
-    type Error = ErrorPosition;
-    fn new(op: &Operator, layout: Self::LayoutAttrs) -> Result<Self, Self::Error> {
-        let SchemeLayout {
-            n,
-            nh,
-            dh,
-            stride_token,
-            stride_head,
-            offset_t,
-            offset_pos,
-        } = SchemeLayout::new(F16, layout)?;
-        let dh = dh / 2;
-        let stride_token = (stride_token / 2) as _;
-        let stride_head = (stride_head / 2) as _;
-        if op.max_num_threads_block % dh != 0 {
+        if dt != F16 {
             return Err(locate_error!());
         }
-        //                    nh == nh_h * nh_l
-        // max_num_threads_block >= nh_l x dh
-        let max_nh_l = (op.max_num_threads_block / dh).min(nh);
+
+        get_or_err!(n);
+        get_or_err!(nh);
+        get_or_err!(dh);
+        get_or_err!(st);
+        get_or_err!(sh);
+        get_or_err!(sd);
+        get_or_err!(sp);
+
+        let unit = dt.nbytes() as isize;
+        if sd != unit || sp != U32.nbytes() as isize {
+            return Err(locate_error!("Unsupported layout"));
+        };
+
+        let Some(m) = self.scheme.as_ref() else {
+            return Err(locate_error!("Scheme not set"));
+        };
+
+        let dh = dh / 2;
+        let st = (st / unit / 2) as i32;
+        let sh = (sh / unit / 2) as i32;
+        let params = cuda::params![t_base, st, sh, p_base, theta];
+
+        let max_num_threads_block = self.handle.device().max_block_dims().0;
+        if max_num_threads_block % dh != 0 {
+            return Err(locate_error!());
+        }
+
+        let max_nh_l = (max_num_threads_block / dh).min(nh);
         let nh_l = (1..=max_nh_l).rev().find(|nhl| nh % nhl == 0).unwrap();
         let nh_h = nh / nh_l;
-        Ok(Self {
-            global: op.global,
 
-            grid: (n as _, nh_h as _),
-            block: (nh_l as _, dh as _),
-            stride_token,
-            stride_head,
-            offset_t,
-            offset_pos,
-        })
+        m.launch(
+            CString::new(NAME).unwrap(),
+            (n as _, nh_h as _),
+            (nh_l as _, dh as _),
+            params.as_ptr(),
+            0,
+            queue,
+        );
+        Ok(())
     }
+}
 
-    type Params = Params<Gpu>;
-    fn launch(&self, params: &Self::Params, queue: &QueueOf<Gpu>) {
-        let name = CString::new(NAME).unwrap();
-        let (t, pos, theta) = params;
-        let t = unsafe { t.add(self.offset_t) };
-        let pos = unsafe { pos.add(self.offset_pos) };
-        let params = cuda::params![t, self.stride_token, self.stride_head, pos, theta];
-        self.global
-            .launch(&name, self.grid, self.block, params.as_ptr(), 0, queue);
+const NAME: &str = "rope_f16";
+const CODE: &str = include_str!("rope.cuh");
+impl Operator {
+    fn scheme(&mut self, cc: ComputeCapability) -> Result<(), ErrorPosition> {
+        let module = self
+            .handle
+            .compile(&NAME, cc, || {
+                format!(
+                    r#"{CODE}
+
+extern "C" __global__ void {NAME}(
+    half2 *__restrict__ t,
+    int const stride_token,
+    int const stride_head,
+    unsigned int const *__restrict__ pos,
+    float theta
+){{
+    padding(t, stride_token, stride_head, pos, theta);
+}}"#
+                )
+            })
+            .map_err(|(e, log)| locate_error!(format!("Failed to compile {NAME}: {e:?}\n{log}")))?;
+        self.scheme = Some(module);
+        Ok(())
     }
 }

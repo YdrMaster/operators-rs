@@ -1,76 +1,72 @@
-﻿use super::{layout::SchemeLayout, LayoutAttrs, Params, Swiglu};
+﻿use super::{args::Meta, Args};
+use crate::{common_cpu::Handle as Cpu, utils::get_or_err};
 use common::{locate_error, ErrorPosition, QueueOf};
-use dev_common_cpu::Device as Cpu;
-use digit_layout::{types::F16, DigitLayout};
+use digit_layout::types::F16;
 use half::f16;
-use std::{
-    iter::zip,
-    slice::{from_raw_parts, from_raw_parts_mut},
-};
 
-pub struct Operator {
-    dt: DigitLayout,
-}
+pub struct Operator;
 
 impl common::Operator for Operator {
     type Handle = Cpu;
+    type Args = Args<Cpu>;
+    type SchemeError = ErrorPosition;
+    type LaunchError = ErrorPosition;
 
-    type Config = DigitLayout;
-    type Error = ErrorPosition;
-    #[inline]
-    fn new(config: &Self::Config) -> Result<Self, Self::Error> {
-        if *config == F16 {
-            Ok(Self { dt: *config })
-        } else {
-            Err(locate_error!())
+    fn new(_handle: &Self::Handle) -> Self {
+        Self
+    }
+
+    fn scheme(&mut self, args: &Self::Args) -> Result<(), Self::SchemeError> {
+        let _meta = args.meta()?;
+        Ok(())
+    }
+
+    fn launch(
+        &self,
+        args: &Self::Args,
+        _queue: &QueueOf<Self::Handle>,
+    ) -> Result<(), Self::LaunchError> {
+        let Meta { dt, n, d } = args.meta()?;
+        let Args {
+            gate_layout,
+            gate_base,
+            up_layout,
+            up_base,
+        } = args;
+        let &[sgn, sgd] = gate_layout.strides() else {
+            unreachable!()
+        };
+        let &[sun, sud] = up_layout.strides() else {
+            unreachable!()
+        };
+
+        if dt != F16 {
+            return Err(locate_error!());
         }
-    }
-}
 
-pub struct Scheme(SchemeLayout);
-
-impl Swiglu<Cpu> for Scheme {}
-
-impl common::Scheme for Scheme {
-    type Device = Cpu;
-    type Operator = Operator;
-
-    type LayoutAttrs = LayoutAttrs;
-    type Error = ErrorPosition;
-    #[inline]
-    fn new(op: &Operator, layout: Self::LayoutAttrs) -> Result<Self, Self::Error> {
-        SchemeLayout::new(op.dt, layout).map(Self)
-    }
-
-    type Params = Params<Cpu>;
-    fn launch(&self, params: &Self::Params, _queue: &QueueOf<Cpu>) {
-        let SchemeLayout {
-            n,
-            d,
-            stride_gate,
-            stride_up,
-            offset_gate,
-            offset_up,
-        } = self.0;
-        let &(gate, up) = params;
-
-        let gate = unsafe { gate.add(offset_gate).cast::<f16>() };
-        let up = unsafe { up.add(offset_up).cast::<f16>() };
+        get_or_err!(n);
+        get_or_err!(d);
+        get_or_err!(sgn);
+        get_or_err!(sgd);
+        get_or_err!(sun);
+        get_or_err!(sud);
 
         for i in 0..n as isize {
-            let gate = unsafe { from_raw_parts_mut(gate.offset(i * stride_gate), d) };
-            let up = unsafe { from_raw_parts(up.offset(i * stride_up), d) };
-            for (gate, up) in zip(gate, up) {
-                let x = gate.to_f32();
-                let y = up.to_f32();
+            for j in 0..d as isize {
+                let gate = unsafe { &mut *gate_base.offset(i * sgn + j * sgd).cast::<f16>() };
+                let up = unsafe { *up_base.offset(i * sun + j * sud).cast::<f16>() };
+
+                let a = gate.to_f32();
+                let b = up.to_f32();
 
                 #[inline(always)]
                 fn sigmoid(x: f32) -> f32 {
                     1. / (1. + (-x).exp())
                 }
 
-                *gate = f16::from_f32(x * sigmoid(x) * y);
+                *gate = f16::from_f32(a * sigmoid(a) * b);
             }
         }
+        Ok(())
     }
 }
