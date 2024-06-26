@@ -5,20 +5,20 @@ edition = "2021"
 authors = ["YdrMaster <ydrml@hotmail.com>"]
 
 [features]
-default = ["common-cpu", "nvidia-gpu", "cambricon-mlu"]
-common-cpu = ["dev-common-cpu"]
-nvidia-gpu = ["dev-nvidia-gpu"]
-cambricon-mlu = ["dev-cambricon-mlu"]
+default = ["common-cpu", "nvidia-gpu"]
+common-cpu = ["gemm"]
+nvidia-gpu = ["cuda", "cublas"]
 
 [dependencies]
 common = { path = "../common" }
-dev-common-cpu = { path = "../devices/common-cpu", package = "common-cpu", optional = true }
-dev-nvidia-gpu = { path = "../devices/nvidia-gpu", package = "nvidia-gpu", optional = true }
-dev-cambricon-mlu = { path = "../devices/cambricon-mlu", package = "cambricon-mlu", optional = true }
 digit-layout.workspace = true
 half = "2.4"
-gemm = "0.18"
 log = "0.4"
+
+gemm = { version = "0.18", optional = true }
+
+cuda = { workspace = true, optional = true }
+cublas = { workspace = true, optional = true }
 
 [build-dependencies]
 build-script-cfg.workspace = true

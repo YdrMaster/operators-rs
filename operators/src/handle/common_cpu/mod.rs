@@ -1,9 +1,7 @@
-#![deny(warnings)]
-
-pub struct Device;
+pub struct Handle;
 pub struct ThisThread;
 
-impl common::Device for Device {
+impl common::Handle for Handle {
     type Byte = u8;
     type Queue<'ctx> = ThisThread;
 }

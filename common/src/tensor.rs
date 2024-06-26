@@ -1,44 +1,40 @@
-﻿use std::{
+﻿use crate::Argument;
+use digit_layout::DigitLayout;
+use std::{
     alloc::{alloc, dealloc, Layout},
     ptr::{copy_nonoverlapping, NonNull},
+    slice::from_raw_parts,
 };
 
-use digit_layout::DigitLayout;
-
-/// | field   | type          |
-/// |:-------:|:-------------:|
-/// | dt      | DigitLayout    |
-/// | udim    | u32           |
-/// | offset  | usize         |
-/// | shape   | [usize; ndim] |
-/// | strides | [isize; ndim] |
+/// | field    | type          |
+/// |:--------:|:-------------:|
+/// | dt       | DigitLayout   |
+/// | ndim     | u32           |
+/// | shape    | [usize; ndim] |
+/// | strides  | [isize; ndim] |
 #[repr(transparent)]
 pub struct TensorLayout(NonNull<usize>);
 
 impl TensorLayout {
     pub fn new(
         dt: DigitLayout,
-        shape: impl AsRef<[usize]>,
-        strides: impl AsRef<[isize]>,
-        offset: usize,
+        shape: impl AsRef<[Argument<usize>]>,
+        strides: impl AsRef<[Argument<isize>]>,
     ) -> Self {
         let shape = shape.as_ref();
         let strides = strides.as_ref();
         assert_eq!(shape.len(), strides.len());
 
-        let layout = Layout::array::<usize>(2 + shape.len() * 2).unwrap();
         unsafe {
-            let ptr = alloc(layout);
+            let ptr = alloc(Self::layout(shape.len()));
 
             let cursor: *mut DigitLayout = ptr.cast();
             cursor.write(dt);
             let cursor: *mut u32 = cursor.add(1).cast();
             cursor.write(shape.len() as _);
-            let cursor: *mut usize = cursor.add(1).cast();
-            cursor.write(offset);
-            let cursor: *mut usize = cursor.add(1).cast();
+            let cursor: *mut Argument<usize> = cursor.add(1).cast();
             copy_nonoverlapping(shape.as_ptr(), cursor, shape.len());
-            let cursor: *mut isize = cursor.add(shape.len()).cast();
+            let cursor: *mut Argument<isize> = cursor.add(shape.len()).cast();
             copy_nonoverlapping(strides.as_ptr(), cursor, strides.len());
 
             Self(NonNull::new_unchecked(ptr as _))
@@ -47,42 +43,41 @@ impl TensorLayout {
 
     #[inline]
     pub fn dt(&self) -> DigitLayout {
-        unsafe { *self.0.cast().as_ref() }
+        let ptr = self.0.cast();
+        unsafe { *ptr.as_ref() }
     }
 
     #[inline]
     pub fn ndim(&self) -> usize {
-        unsafe { *self.0.cast::<u32>().as_ptr().add(1) as _ }
+        let ptr = self.0.cast::<u32>().as_ptr();
+        unsafe { *ptr.add(1) as _ }
     }
 
     #[inline]
-    pub fn offset(&self) -> usize {
-        unsafe { *self.0.cast::<usize>().as_ptr().add(1) }
-    }
-
-    #[inline]
-    pub fn shape(&self) -> &[usize] {
+    pub fn shape(&self) -> &[Argument<usize>] {
+        let ptr = self.0.cast::<Argument<usize>>().as_ptr();
         let len = self.ndim();
-        unsafe {
-            let ptr = self.0.cast::<usize>().as_ptr().add(2);
-            std::slice::from_raw_parts(ptr, len)
-        }
+        unsafe { from_raw_parts(ptr.add(1), len) }
     }
 
     #[inline]
-    pub fn strides(&self) -> &[isize] {
+    pub fn strides(&self) -> &[Argument<isize>] {
+        let ptr = self.0.cast::<Argument<isize>>().as_ptr();
         let len = self.ndim();
-        unsafe {
-            let ptr = self.0.cast::<isize>().as_ptr().add(2 + len);
-            std::slice::from_raw_parts(ptr, len)
-        }
+        unsafe { from_raw_parts(ptr.add(1 + len), len) }
+    }
+
+    #[inline(always)]
+    fn layout(ndim: usize) -> Layout {
+        Layout::array::<usize>(1 + ndim * 2).unwrap()
     }
 }
 
 impl Drop for TensorLayout {
     #[inline]
     fn drop(&mut self) {
-        let layout = Layout::array::<usize>(2 + self.ndim()).unwrap();
-        unsafe { dealloc(self.0.cast().as_ptr(), layout) }
+        let ptr = self.0.cast().as_ptr();
+        let layout = Self::layout(self.ndim());
+        unsafe { dealloc(ptr, layout) }
     }
 }

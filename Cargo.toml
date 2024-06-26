@@ -1,21 +1,15 @@
 [workspace]
-members = [
-    "common",
-    "devices/cambricon-mlu",
-    "devices/common-cpu",
-    "devices/nvidia-gpu",
-    "operators",
-]
+members = ["common", "operators"]
 resolver = "2"
 
 [workspace.dependencies]
 digit-layout = "0.0"
 build-script-cfg = "0.0"
 
-cuda = { git = "https://github.com/YdrMaster/cuda-driver", rev = "4523bad" }
-cublas = { git = "https://github.com/YdrMaster/cuda-driver", rev = "4523bad" }
-nccl = { git = "https://github.com/YdrMaster/cuda-driver", rev = "4523bad" }
-search-cuda-tools = { git = "https://github.com/YdrMaster/cuda-driver", rev = "4523bad" }
+cuda = { git = "https://github.com/YdrMaster/cuda-driver", rev = "44af4cb" }
+cublas = { git = "https://github.com/YdrMaster/cuda-driver", rev = "44af4cb" }
+nccl = { git = "https://github.com/YdrMaster/cuda-driver", rev = "44af4cb" }
+search-cuda-tools = { git = "https://github.com/YdrMaster/cuda-driver", rev = "44af4cb" }
 
-cndrv = "0.0"
+cndrv = "0.1"
 search-neuware-tools = "0.0"

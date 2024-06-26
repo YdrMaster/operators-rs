@@ -10,7 +10,7 @@ pub struct Operator {
 }
 
 impl common::Operator for Operator {
-    type Device = Cpu;
+    type Handle = Cpu;
 
     type Config = DigitLayout;
     type Error = ErrorPosition;

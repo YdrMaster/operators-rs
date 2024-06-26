@@ -1,8 +1,0 @@
-[package]
-name = "common-cpu"
-version = "0.1.0"
-edition = "2021"
-authors = ["YdrMaster <ydrml@hotmail.com>"]
-
-[dependencies]
-common = { path = "../../common" }

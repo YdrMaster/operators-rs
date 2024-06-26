@@ -33,7 +33,7 @@ pub struct Operator {
 const NAME: &str = "reform";
 
 impl common::Operator for Operator {
-    type Device = Gpu;
+    type Handle = Gpu;
 
     type Config = Config;
     type Error = ErrorPosition;

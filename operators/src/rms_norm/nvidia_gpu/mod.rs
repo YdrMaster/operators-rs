@@ -1,244 +1,250 @@
-﻿use super::{layout::SchemeLayout, LayoutAttrs, Params, RmsNorm};
-use common::{locate_error, ErrorPosition, QueueOf};
-use dev_nvidia_gpu::{
-    cuda::{self, ComputeCapability, Ptx},
-    Device as Gpu, __global__,
+﻿use super::Args;
+use crate::{
+    nvidia_gpu::{Handle as Gpu, Internal as Handle, ModuleBox},
+    rms_norm::args::Meta,
+    utils::get_or_err,
 };
+use common::{locate_error, ErrorPosition, QueueOf};
+use cuda::ComputeCapability;
 use digit_layout::{types::F16, DigitLayout};
-use log::warn;
-use std::ffi::{c_int, c_uint, CString};
+use std::{ffi::CString, sync::Arc};
 
-pub struct Config {
-    pub data_layout: DigitLayout,
-    pub num_items_reduce: usize,
-    pub num_threads_warp: usize,
-    pub max_num_threads_block: usize,
-    pub compute_capability: ComputeCapability,
-}
-
-impl Config {
-    pub fn config_for(
-        dev: &cuda::Device,
-        data_layout: DigitLayout,
-        num_items_reduce: usize,
-    ) -> Self {
-        Self {
-            data_layout,
-            num_items_reduce,
-            num_threads_warp: 32,
-            max_num_threads_block: dev.max_block_dims().0,
-            compute_capability: dev.compute_capability(),
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-enum KernelType {
-    Padding {
-        num_items_reduce: usize,
-    },
-    Folding {
-        num_threads_block: usize,
-        num_items_reduce: usize,
-    },
-}
-
-#[derive(Clone, Debug)]
 pub struct Operator {
-    global: __global__,
-    name: CString,
-    ty: KernelType,
+    handle: Arc<Handle>,
+    scheme: Option<(Scheme, Arc<ModuleBox>)>,
 }
 
 impl common::Operator for Operator {
-    type Device = Gpu;
+    type Handle = Gpu;
+    type Args = Args<Gpu>;
+    type SchemeError = ErrorPosition;
+    type LaunchError = ErrorPosition;
 
-    type Config = Config;
-    type Error = ErrorPosition;
-    fn new(config: &Self::Config) -> Result<Self, Self::Error> {
-        let &Self::Config {
-            data_layout,
-            num_items_reduce,
-            num_threads_warp,
-            max_num_threads_block,
-            compute_capability,
-        } = config;
+    fn new(handle: &Self::Handle) -> Self {
+        Self {
+            handle: handle.0.clone(),
+            scheme: None,
+        }
+    }
 
-        const CODE: &str = include_str!("rms_norm.cuh");
+    fn scheme(&mut self, args: &Self::Args) -> Result<(), Self::SchemeError> {
+        let Meta { dt, n: _, d } = args.meta()?;
 
-        if data_layout != F16 {
+        if dt != F16 {
+            todo!()
+        }
+        #[allow(unreachable_code)]
+        let Some(&d) = d.get_static() else {
+            self.scheme = Some((Scheme::Common { dt }, todo!()));
+        };
+
+        let device = self.handle.device();
+        let cc = device.compute_capability();
+        let max_num_threads_block = device.max_block_dims().0;
+
+        if d <= max_num_threads_block {
+            self.padding_scheme(dt, d, cc)
+        } else {
+            self.folding_scheme(dt, d, cc, max_num_threads_block, device.warp_size())
+        }
+    }
+
+    fn launch(
+        &self,
+        args: &Self::Args,
+        queue: &QueueOf<Self::Handle>,
+    ) -> Result<(), Self::LaunchError> {
+        let Meta { dt, n, d } = args.meta()?;
+        let Args {
+            y_layout,
+            y_base,
+            x_layout,
+            x_base,
+            w_layout,
+            w_base,
+            epsilon,
+        } = args;
+        let &[nsy, dsy] = y_layout.strides() else {
+            unreachable!()
+        };
+        let &[nsx, dsx] = x_layout.strides() else {
+            unreachable!()
+        };
+        let &[dsw] = w_layout.strides() else {
+            unreachable!()
+        };
+
+        get_or_err!(n);
+        get_or_err!(d);
+        get_or_err!(nsy);
+        get_or_err!(dsy);
+        get_or_err!(nsx);
+        get_or_err!(dsx);
+        get_or_err!(dsw);
+
+        let unit = dt.nbytes() as isize;
+        if dsy != unit || dsx != unit || dsw != unit {
+            return Err(locate_error!("Unsupported layout"));
+        };
+
+        let (name, m, block_dims) = match self.scheme.as_ref() {
+            Some((Scheme::Common { dt: scheme_dt }, _)) => {
+                if dt != *scheme_dt {
+                    return Err(locate_error!());
+                }
+                todo!()
+            }
+            Some((
+                Scheme::Padding {
+                    dt: scheme_dt,
+                    d: scheme_d,
+                    name,
+                },
+                m,
+            )) => {
+                if dt != *scheme_dt || d != *scheme_d {
+                    return Err(locate_error!());
+                }
+                (name, m, d)
+            }
+            Some((
+                Scheme::Folding {
+                    dt: scheme_dt,
+                    d: scheme_d,
+                    block_size,
+                    name,
+                },
+                m,
+            )) => {
+                if dt != *scheme_dt || d != *scheme_d {
+                    return Err(locate_error!());
+                }
+                (name, m, *block_size)
+            }
+            None => return Err(locate_error!("Scheme not set")),
+        };
+
+        let nsy = (nsy / unit) as i32;
+        let nsx = (nsx / unit) as i32;
+        let params = cuda::params![y_base, nsy, x_base, nsx, w_base, epsilon];
+
+        m.launch(name, n as u32, block_dims as u32, params.as_ptr(), 0, queue);
+        Ok(())
+    }
+}
+
+enum Scheme {
+    Common {
+        dt: DigitLayout,
+    },
+    Padding {
+        dt: DigitLayout,
+        d: usize,
+        name: CString,
+    },
+    Folding {
+        dt: DigitLayout,
+        d: usize,
+        block_size: usize,
+        name: CString,
+    },
+}
+
+const CODE: &str = include_str!("rms_norm.cuh");
+impl Operator {
+    fn padding_scheme(
+        &mut self,
+        dt: DigitLayout,
+        d: usize,
+        cc: ComputeCapability,
+    ) -> Result<(), ErrorPosition> {
+        let name = format!("rms_norm_padding_f16_{d}");
+        let module = self
+            .handle
+            .compile(&name, cc, || {
+                format!(
+                    r#"{CODE}
+
+extern "C" __global__ void {name}(
+    half *__restrict__ y,
+    int  const stride_y,
+    half const *__restrict__ x,
+    int  const stride_x,
+    half const *__restrict__ w,
+    float epsilon
+){{
+    padding<{d}>
+    (y, stride_y, x, stride_x, w, epsilon);
+}}"#
+                )
+            })
+            .map_err(|(e, log)| locate_error!(format!("Failed to compile {name}: {e:?}\n{log}")))?;
+        self.scheme = Some((
+            Scheme::Padding {
+                dt,
+                d,
+                name: CString::new(name).unwrap(),
+            },
+            module,
+        ));
+        Ok(())
+    }
+
+    fn folding_scheme(
+        &mut self,
+        dt: DigitLayout,
+        d: usize,
+        cc: ComputeCapability,
+        max_num_threads_block: usize,
+        num_threads_warp: usize,
+    ) -> Result<(), ErrorPosition> {
+        if max_num_threads_block % d != 0 {
             return Err(locate_error!());
         }
-        if num_items_reduce <= max_num_threads_block {
-            let name = format!("rms_norm_padding_f16_{num_items_reduce}");
-            let code = format!(
-                r#"{CODE}
-
-            extern "C" __global__ void {name}(
-                half *__restrict__ y,
-                int  const stride_y,
-                half const *__restrict__ x,
-                int  const stride_x,
-                half const *__restrict__ w,
-                float epsilon
-            ){{
-                padding<{num_items_reduce}>
-                (y, stride_y, x, stride_x, w, epsilon);
-            }}"#
-            );
-
-            let (ptx, log) = Ptx::compile(code, compute_capability);
-            let ptx =
-                ptx.map_err(|e| locate_error!(format!("Failed to compile {name}: {e:?}\n{log}")))?;
-            if !log.is_empty() {
-                warn!("{log}");
-            }
-
-            Ok(Self {
-                global: __global__::load(&ptx),
-                name: CString::new(name).unwrap(),
-                ty: KernelType::Padding { num_items_reduce },
-            })
-        } else {
-            if max_num_threads_block % num_threads_warp != 0 {
-                return Err(locate_error!());
-            }
-            if num_items_reduce % num_threads_warp != 0 {
-                return Err(locate_error!());
-            }
-            let max_num_warp_block = max_num_threads_block / num_threads_warp;
-            // num_warp_block in [1, max_num_warp_block]
-            // num_threads_warp
-            // num_items_thread in [1, 2, 4, 8] // 8 = 128bit / sizeof(half)
-            // TODO 也许还能分得更好
-            let to_divid = num_items_reduce / num_threads_warp;
-            let num_warps_block = max_num_warp_block;
-            let num_threads_block = num_threads_warp * num_warps_block;
-            let num_items_thread = (to_divid + num_warps_block - 1) / num_warps_block;
-
-            let name = format!("rms_norm_folding_f16_{num_items_reduce}");
-            let code = format!(
-                r#"{CODE}
-
-            extern "C" __global__ void {name}(
-                half *__restrict__ y,
-                int  const stride_y,
-                half const *__restrict__ x,
-                int  const stride_x,
-                half const *__restrict__ w,
-                float epsilon
-            ){{
-                folding<{num_threads_block}, {num_items_thread}>
-                (y, stride_y, x, stride_x, w, epsilon, {num_items_reduce});
-            }}"#
-            );
-
-            let (ptx, log) = Ptx::compile(code, compute_capability);
-            let ptx =
-                ptx.map_err(|e| locate_error!(format!("Failed to compile {name}: {e:?}\n{log}")))?;
-            if !log.is_empty() {
-                warn!("{log}");
-            }
-
-            Ok(Self {
-                global: __global__::load(&ptx),
-                name: CString::new(name).unwrap(),
-                ty: KernelType::Folding {
-                    num_threads_block: num_warps_block * num_threads_warp,
-                    num_items_reduce,
-                },
-            })
+        if d % num_threads_warp != 0 {
+            return Err(locate_error!());
         }
-    }
-}
+        let max_num_warp_block = max_num_threads_block / num_threads_warp;
+        // num_warp_block in [1, max_num_warp_block]
+        // num_threads_warp
+        // num_items_thread in [1, 2, 4, 8] // 8 = 128bit / sizeof(half)
+        // TODO 也许还能分得更好
+        let to_divid = d / num_threads_warp;
+        let num_warps_block = max_num_warp_block;
+        let num_threads_block = num_threads_warp * num_warps_block;
+        let num_items_thread = (to_divid + num_warps_block - 1) / num_warps_block;
 
-pub struct Scheme {
-    global: __global__,
-    name: CString,
+        let name = format!("rms_norm_folding_f16_{d}");
+        let module = self
+            .handle
+            .compile(&name, cc, || {
+                format!(
+                    r#"{CODE}
 
-    num_blocks_grid: c_uint,
-    num_threads_block: c_uint,
-    stride_y: c_int,
-    stride_x: c_int,
-    offset_y: usize,
-    offset_x: usize,
-    offset_w: usize,
-}
+extern "C" __global__ void {name}(
+    half *__restrict__ y,
+    int  const stride_y,
+    half const *__restrict__ x,
+    int  const stride_x,
+    half const *__restrict__ w,
+    float epsilon
+){{
+    folding<{num_threads_block}, {num_items_thread}>
+    (y, stride_y, x, stride_x, w, epsilon, {d});
+}}"#
+                )
+            })
+            .map_err(|(e, log)| locate_error!(format!("Failed to compile {name}: {e:?}\n{log}")))?;
 
-impl RmsNorm<Gpu> for Scheme {}
-
-impl common::Scheme for Scheme {
-    type Device = Gpu;
-    type Operator = Operator;
-
-    type LayoutAttrs = LayoutAttrs;
-    type Error = ErrorPosition;
-    fn new(op: &Operator, layout: Self::LayoutAttrs) -> Result<Self, Self::Error> {
-        let SchemeLayout {
-            n,
-            d,
-            stride_y,
-            stride_x,
-            offset_y,
-            offset_x,
-            offset_w,
-        } = SchemeLayout::new(F16, layout)?;
-
-        match op.ty {
-            KernelType::Padding { num_items_reduce } => {
-                if d != num_items_reduce {
-                    return Err(locate_error!());
-                }
-                Ok(Self {
-                    global: op.global,
-                    name: op.name.clone(),
-
-                    num_blocks_grid: n as _,
-                    num_threads_block: d as _,
-                    stride_y: stride_y as _,
-                    stride_x: stride_x as _,
-                    offset_y,
-                    offset_x,
-                    offset_w,
-                })
-            }
-            KernelType::Folding {
-                num_threads_block,
-                num_items_reduce,
-            } => {
-                if d != num_items_reduce {
-                    return Err(locate_error!());
-                }
-                Ok(Self {
-                    global: op.global,
-                    name: op.name.clone(),
-
-                    num_blocks_grid: n as _,
-                    num_threads_block: num_threads_block as _,
-                    stride_y: stride_y as _,
-                    stride_x: stride_x as _,
-                    offset_y,
-                    offset_x,
-                    offset_w,
-                })
-            }
-        }
-    }
-
-    type Params = Params<Gpu>;
-    fn launch(&self, params: &Self::Params, queue: &QueueOf<Gpu>) {
-        let &(y, x, w, epsilon) = params;
-        let y = unsafe { y.add(self.offset_y) };
-        let x = unsafe { x.add(self.offset_x) };
-        let w = unsafe { w.add(self.offset_w) };
-        let params = cuda::params![y, self.stride_y, x, self.stride_x, w, epsilon];
-        self.global.launch(
-            &self.name,
-            self.num_blocks_grid,
-            self.num_threads_block,
-            params.as_ptr(),
-            0,
-            queue,
-        );
+        self.scheme = Some((
+            Scheme::Folding {
+                dt,
+                d,
+                block_size: num_threads_block,
+                name: CString::new(name).unwrap(),
+            },
+            module,
+        ));
+        Ok(())
     }
 }

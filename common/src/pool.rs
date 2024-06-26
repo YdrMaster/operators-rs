@@ -15,7 +15,7 @@ struct Item<T> {
     next: *mut Item<T>,
 }
 
-impl Default for Pool<()> {
+impl<T: Unpin> Default for Pool<T> {
     #[inline]
     fn default() -> Self {
         Self::new()

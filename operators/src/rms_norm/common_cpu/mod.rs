@@ -1,73 +1,78 @@
-﻿use super::{layout::SchemeLayout, LayoutAttrs, Params, RmsNorm};
+﻿use super::{args::Meta, Args};
+use crate::{common_cpu::Handle as Cpu, utils::get_or_err};
 use common::{locate_error, ErrorPosition, QueueOf};
-use dev_common_cpu::Device as Cpu;
-use digit_layout::{types::F16, DigitLayout};
+use digit_layout::types::F16;
 use half::f16;
-use std::{
-    iter::zip,
-    slice::{from_raw_parts, from_raw_parts_mut},
-};
 
-pub struct Operator {
-    dt: DigitLayout,
-}
+pub struct Operator;
 
 impl common::Operator for Operator {
-    type Device = Cpu;
+    type Handle = Cpu;
+    type Args = Args<Cpu>;
+    type SchemeError = ErrorPosition;
+    type LaunchError = ErrorPosition;
 
-    type Config = DigitLayout;
-    type Error = ErrorPosition;
-    #[inline]
-    fn new(config: &Self::Config) -> Result<Self, Self::Error> {
-        if *config == F16 {
-            Ok(Self { dt: *config })
-        } else {
-            Err(locate_error!())
+    fn new(_handle: &Self::Handle) -> Self {
+        Self
+    }
+
+    fn scheme(&mut self, args: &Self::Args) -> Result<(), Self::SchemeError> {
+        let _meta = args.meta()?;
+        Ok(())
+    }
+
+    fn launch(
+        &self,
+        args: &Self::Args,
+        _queue: &QueueOf<Self::Handle>,
+    ) -> Result<(), Self::LaunchError> {
+        let Meta { dt, n, d } = args.meta()?;
+        let Args {
+            y_layout,
+            y_base,
+            x_layout,
+            x_base,
+            w_layout,
+            w_base,
+            epsilon,
+        } = args;
+        let &[nsy, dsy] = y_layout.strides() else {
+            unreachable!()
+        };
+        let &[nsx, dsx] = x_layout.strides() else {
+            unreachable!()
+        };
+        let &[dsw] = w_layout.strides() else {
+            unreachable!()
+        };
+
+        if dt != F16 {
+            return Err(locate_error!());
         }
-    }
-}
 
-pub struct Scheme(SchemeLayout);
-
-impl RmsNorm<Cpu> for Scheme {}
-
-impl common::Scheme for Scheme {
-    type Device = Cpu;
-    type Operator = Operator;
-
-    type LayoutAttrs = LayoutAttrs;
-    type Error = ErrorPosition;
-    #[inline]
-    fn new(op: &Operator, layout: Self::LayoutAttrs) -> Result<Self, Self::Error> {
-        SchemeLayout::new(op.dt, layout).map(Self)
-    }
-
-    type Params = Params<Cpu>;
-    fn launch(&self, params: &Self::Params, _queue: &QueueOf<Cpu>) {
-        let SchemeLayout {
-            n,
-            d,
-            stride_y,
-            stride_x,
-            offset_y,
-            offset_x,
-            offset_w,
-        } = self.0;
-        let &(y, x, w, epsilon) = params;
-
-        let y = unsafe { y.add(offset_y) }.cast::<f16>();
-        let x = unsafe { x.add(offset_x) }.cast::<f16>();
-        let w = unsafe { from_raw_parts(w.add(offset_w).cast::<f16>(), d) };
+        get_or_err!(n);
+        get_or_err!(d);
+        get_or_err!(nsy);
+        get_or_err!(dsy);
+        get_or_err!(nsx);
+        get_or_err!(dsx);
+        get_or_err!(dsw);
 
         for i in 0..n as isize {
-            let y = unsafe { from_raw_parts_mut(y.offset(stride_y * i), d) };
-            let x = unsafe { from_raw_parts(x.offset(stride_x * i), d) };
-
-            // (Σx^2 / d + δ)^(-1/2)
-            let sum = x.iter().map(|x| x.to_f32()).map(|x| x * x).sum::<f32>();
+            let sum = (0..d as isize)
+                .map(|j| unsafe { *x_base.offset(i * nsx + j * dsx).cast::<f16>() })
+                .map(|x| x.to_f32().powi(2))
+                .sum::<f32>();
             let k = f16::from_f32((sum / (d as f32) + epsilon).sqrt().recip());
-
-            zip(y, zip(x, w)).for_each(|(y, (x, w))| *y = k * *w * *x);
+            for j in 0..d as isize {
+                unsafe {
+                    let y = y_base.offset(i * nsy + j * dsy).cast::<f16>();
+                    let x = x_base.offset(i * nsx + j * dsx).cast::<f16>();
+                    let w = w_base.offset(j * dsw).cast::<f16>();
+                    *y = k * *w * *x;
+                }
+            }
         }
+        Ok(())
     }
 }
