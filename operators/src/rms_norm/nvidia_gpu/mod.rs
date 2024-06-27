@@ -4,7 +4,7 @@ use crate::{
     utils::get_or_err,
 };
 use common::{locate_error, ErrorPosition, QueueOf};
-use cuda::ComputeCapability;
+use cuda::Version;
 use digit_layout::{types::F16, DigitLayout};
 use std::{ffi::CString, sync::Arc};
 
@@ -39,7 +39,7 @@ impl common::Operator for Operator {
 
         let device = self.handle.device();
         let cc = device.compute_capability();
-        let max_num_threads_block = device.max_block_dims().0;
+        let max_num_threads_block = device.block_limit().max_threads;
 
         if d <= max_num_threads_block {
             self.padding_scheme(dt, d, cc)
@@ -155,7 +155,7 @@ impl Operator {
         &mut self,
         dt: DigitLayout,
         d: usize,
-        cc: ComputeCapability,
+        cc: Version,
     ) -> Result<(), ErrorPosition> {
         let name = format!("rms_norm_padding_f16_{d}");
         let module = self
@@ -193,7 +193,7 @@ extern "C" __global__ void {name}(
         &mut self,
         dt: DigitLayout,
         d: usize,
-        cc: ComputeCapability,
+        cc: Version,
         max_num_threads_block: usize,
         num_threads_warp: usize,
     ) -> Result<(), ErrorPosition> {

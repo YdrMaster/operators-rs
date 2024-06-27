@@ -1,7 +1,6 @@
 ﻿use super::{Internal, Key};
 use cuda::{
-    bindings::nvrtcResult, ComputeCapability, ContextResource, ContextSpore, Dim3, ModuleSpore,
-    Ptx, Stream,
+    bindings::nvrtcResult, ContextResource, ContextSpore, Dim3, ModuleSpore, Ptx, Stream, Version,
 };
 use log::warn;
 use std::{
@@ -77,7 +76,7 @@ impl Drop for ModuleBox {
     fn drop(&mut self) {
         let key = replace(
             &mut self.key,
-            (String::new(), ComputeCapability { major: 0, minor: 0 }),
+            (String::new(), Version { major: 0, minor: 0 }),
         );
         if let Occupied(entry) = self.handle.modules.write().unwrap().entry(key) {
             if addr_eq(entry.get().as_ptr(), self as *const _) {

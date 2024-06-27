@@ -62,7 +62,7 @@ impl common::Operator for Operator {
         for i in 0..n as isize {
             let p = unsafe { *p_base.offset(i * sp).cast::<u32>() };
             for j in 0..nh as isize {
-                for k in 0..dh as isize {
+                for k in 0..dh {
                     let t = unsafe {
                         &mut *t_base.offset(i * st + j * sh + k * sd).cast::<(f16, f16)>()
                     };

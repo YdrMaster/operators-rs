@@ -1,4 +1,6 @@
 mod handle;
+
+pub mod fuesd_softmax;
 pub mod rms_norm;
 pub mod rope;
 pub mod swiglu;

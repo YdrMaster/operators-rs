@@ -4,7 +4,7 @@ use crate::{
     utils::{gcd, get_or_err},
 };
 use common::{locate_error, ErrorPosition, QueueOf};
-use cuda::ComputeCapability;
+use cuda::Version;
 use digit_layout::types::F16;
 use std::{ffi::CString, sync::Arc};
 
@@ -77,7 +77,7 @@ impl common::Operator for Operator {
         let su = (sun / unit) as i32;
         let params = cuda::params![gate_base, sg, up_base, su];
 
-        let max_num_threads_block = self.handle.device().max_block_dims().0;
+        let max_num_threads_block = self.handle.device().block_limit().max_threads;
         let block = gcd(max_num_threads_block, d);
 
         m.launch(
@@ -95,10 +95,10 @@ impl common::Operator for Operator {
 const NAME: &str = "swiglu_f16";
 const CODE: &str = include_str!("swiglu.cuh");
 impl Operator {
-    fn scheme(&mut self, cc: ComputeCapability) -> Result<(), ErrorPosition> {
+    fn scheme(&mut self, cc: Version) -> Result<(), ErrorPosition> {
         let module = self
             .handle
-            .compile(&NAME, cc, || {
+            .compile(NAME, cc, || {
                 format!(
                     r#"{CODE}
 

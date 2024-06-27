@@ -2,7 +2,7 @@ mod module;
 
 use common::Pool;
 use cublas::{CublasLtSpore, CublasSpore};
-use cuda::{bindings::nvrtcResult, ComputeCapability, Context, ContextSpore, Device};
+use cuda::{bindings::nvrtcResult, Context, ContextSpore, Device, Version};
 use module::cache_ptx;
 use std::{
     collections::HashMap,
@@ -36,7 +36,7 @@ pub(crate) struct Internal {
     modules: RwLock<HashMap<Key, Weak<ModuleBox>>>,
 }
 
-type Key = (String, ComputeCapability);
+type Key = (String, Version);
 
 impl Internal {
     #[inline]
@@ -47,7 +47,7 @@ impl Internal {
     pub fn compile(
         self: &Arc<Self>,
         name: impl AsRef<str>,
-        cc: ComputeCapability,
+        cc: Version,
         code: impl FnOnce() -> String,
     ) -> Result<Arc<ModuleBox>, (nvrtcResult, String)> {
         let key = (name.as_ref().to_string(), cc);
@@ -61,7 +61,7 @@ impl Internal {
             Some(module) => Ok(module),
             None => {
                 let ptx = cache_ptx(&key, code)?;
-                let module = ModuleBox::share(self.clone(), key.clone(), &*ptx);
+                let module = ModuleBox::share(self.clone(), key.clone(), &ptx);
                 let _ = self
                     .modules
                     .write()

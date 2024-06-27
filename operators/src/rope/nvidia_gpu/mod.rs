@@ -4,7 +4,7 @@ use crate::{
     utils::get_or_err,
 };
 use common::{locate_error, ErrorPosition, QueueOf};
-use cuda::ComputeCapability;
+use cuda::Version;
 use digit_layout::types::{F16, U32};
 use std::{ffi::CString, sync::Arc};
 
@@ -83,7 +83,7 @@ impl common::Operator for Operator {
         let sh = (sh / unit / 2) as i32;
         let params = cuda::params![t_base, st, sh, p_base, theta];
 
-        let max_num_threads_block = self.handle.device().max_block_dims().0;
+        let max_num_threads_block = self.handle.device().block_limit().max_threads;
         if max_num_threads_block % dh != 0 {
             return Err(locate_error!());
         }
@@ -107,10 +107,10 @@ impl common::Operator for Operator {
 const NAME: &str = "rope_f16";
 const CODE: &str = include_str!("rope.cuh");
 impl Operator {
-    fn scheme(&mut self, cc: ComputeCapability) -> Result<(), ErrorPosition> {
+    fn scheme(&mut self, cc: Version) -> Result<(), ErrorPosition> {
         let module = self
             .handle
-            .compile(&NAME, cc, || {
+            .compile(NAME, cc, || {
                 format!(
                     r#"{CODE}
 

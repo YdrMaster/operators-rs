@@ -1,74 +1,72 @@
-﻿use super::{layout::SchemeLayout, FuesdSoftmax, LayoutAttrs, Params};
+﻿use super::{args::Meta, Args};
+use crate::{common_cpu::Handle as Cpu, utils::get_or_err};
 use common::{locate_error, ErrorPosition, QueueOf};
-use dev_common_cpu::Device as Cpu;
-use digit_layout::{types::F16, DigitLayout};
+use digit_layout::types::F16;
 use half::f16;
-use std::slice::from_raw_parts_mut;
 
-pub struct Operator {
-    dt: DigitLayout,
-}
+pub struct Operator;
 
 impl common::Operator for Operator {
     type Handle = Cpu;
+    type Args = Args<Cpu>;
+    type SchemeError = ErrorPosition;
+    type LaunchError = ErrorPosition;
 
-    type Config = DigitLayout;
-    type Error = ErrorPosition;
-    #[inline]
-    fn new(config: &Self::Config) -> Result<Self, Self::Error> {
-        if *config == F16 {
-            Ok(Self { dt: *config })
-        } else {
-            Err(locate_error!())
+    fn new(_handle: &Self::Handle) -> Self {
+        Self
+    }
+
+    fn scheme(&mut self, args: &Self::Args) -> Result<(), Self::SchemeError> {
+        let _meta = args.meta()?;
+        Ok(())
+    }
+
+    fn launch(
+        &self,
+        args: &Self::Args,
+        _queue: &QueueOf<Self::Handle>,
+    ) -> Result<(), Self::LaunchError> {
+        let Meta { dt } = args.meta()?;
+        let Args {
+            att_layout,
+            att_base,
+        } = args;
+        let &[nh, seq_len, att_len] = att_layout.shape() else {
+            unreachable!()
+        };
+        let &[sh, ss, sa] = att_layout.strides() else {
+            unreachable!()
+        };
+
+        if dt != F16 {
+            return Err(locate_error!());
         }
-    }
-}
 
-pub struct Scheme(SchemeLayout);
+        get_or_err!(nh);
+        get_or_err!(seq_len);
+        get_or_err!(att_len);
+        get_or_err!(sh);
+        get_or_err!(ss);
+        get_or_err!(sa);
 
-impl FuesdSoftmax<Cpu> for Scheme {}
-
-impl common::Scheme for Scheme {
-    type Device = Cpu;
-    type Operator = Operator;
-
-    type LayoutAttrs = LayoutAttrs;
-    type Error = ErrorPosition;
-    #[inline]
-    fn new(op: &Operator, layout: Self::LayoutAttrs) -> Result<Self, Self::Error> {
-        SchemeLayout::new(op.dt, layout).map(Self)
-    }
-
-    type Params = Params<Cpu>;
-    fn launch(&self, params: &Self::Params, _queue: &QueueOf<Cpu>) {
-        let SchemeLayout {
-            nh,
-            seq_len,
-            att_len,
-            stride_head,
-            stride_token,
-            offset,
-        } = self.0;
-        let &att = params;
-
-        let att = unsafe { att.add(offset) }.cast::<f16>();
+        let nh = nh as isize;
         let seq_len = seq_len as isize;
         let att_len = att_len as isize;
 
-        for i in 0..nh as isize {
-            for r in 0..seq_len {
-                let ptr = unsafe { att.offset(i * stride_head + r * stride_token) };
-                let slice = unsafe { from_raw_parts_mut(ptr, att_len as _) };
-                let (att, tail) = slice.split_at_mut((att_len - seq_len + r + 1) as _);
+        for i in 0..nh {
+            for j in 0..seq_len {
+                let att = unsafe { att_base.offset(i * sh + j * ss) };
+                let att = |k: isize| unsafe { &mut *att.offset(k * sa).cast::<f16>() };
+                let causal = att_len - seq_len + j + 1;
 
-                let max = att
-                    .iter()
-                    .max_by(|a, b| a.partial_cmp(b).unwrap())
+                let max = (0..causal)
+                    .map(att)
+                    .max_by(|a, b| a.total_cmp(b))
                     .unwrap()
                     .to_f32();
 
-                let sum = att
-                    .iter_mut()
+                let sum = (0..causal)
+                    .map(att)
                     .map(|x| {
                         let exp = (x.to_f32() - max).exp();
                         *x = f16::from_f32(exp);
@@ -77,10 +75,11 @@ impl common::Scheme for Scheme {
                     .sum::<f32>();
 
                 let div = f16::from_f32(sum.recip());
-                att.iter_mut().for_each(|x| *x *= div);
+                (0..causal).map(att).for_each(|x| *x *= div);
 
-                tail.fill(f16::ZERO);
+                (causal..att_len).map(att).for_each(|x| *x = f16::ZERO);
             }
         }
+        Ok(())
     }
 }
