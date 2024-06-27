@@ -4,7 +4,7 @@ static __device__ void padding(
     half2 *__restrict__ t_,
     int const stride_token,
     int const stride_head,
-    unsigned int const *__restrict__ pos_,
+    unsigned int const *__restrict__ pos,
     float const theta) {
 
     auto// nt = gridDim.y,
@@ -18,11 +18,10 @@ static __device__ void padding(
         ih = ih_h * nh_l + ih_l,// head index
         i = threadIdx.x;        // element index
 
-    auto &x = t_[it * stride_token + ih * stride_head + i];
-    auto pos = float(pos_[it]);
-
     float sin, cos;
-    sincosf(pos / powf(theta, float(i) / float(dh)), &sin, &cos);
+    sincosf(float(pos[it]) / powf(theta, float(i) / float(dh)), &sin, &cos);
 
-    x = x * half2(cos, cos) + half2(-x.y, x.x) * half2(sin, sin);
+    t_ += it * stride_token + ih * stride_head + i;
+    auto const t = *t_;
+    *t_ = t * half2(cos, cos) + half2(-t.y, t.x) * half2(sin, sin);
 }

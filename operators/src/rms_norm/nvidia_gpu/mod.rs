@@ -197,9 +197,6 @@ extern "C" __global__ void {name}(
         max_num_threads_block: usize,
         num_threads_warp: usize,
     ) -> Result<(), ErrorPosition> {
-        if max_num_threads_block % d != 0 {
-            return Err(locate_error!());
-        }
         if d % num_threads_warp != 0 {
             return Err(locate_error!());
         }
@@ -213,7 +210,7 @@ extern "C" __global__ void {name}(
         let num_threads_block = num_threads_warp * num_warps_block;
         let num_items_thread = (to_divid + num_warps_block - 1) / num_warps_block;
 
-        let name = format!("rms_norm_folding_f16_{d}");
+        let name = format!("rms_norm_folding_f16_{num_threads_block}x{num_items_thread}");
         let module = self
             .handle
             .compile(&name, cc, || {
@@ -245,5 +242,52 @@ extern "C" __global__ void {name}(
             module,
         ));
         Ok(())
+    }
+}
+
+#[test]
+fn test() {
+    use common::{dyn_, Operator as _, TensorLayout};
+    use std::ptr::{null, null_mut};
+
+    cuda::init();
+    let Some(dev) = cuda::Device::fetch() else {
+        return;
+    };
+    println!("{}", dev.info());
+
+    let handle = Gpu::new(dev.context());
+    let mut op = Operator::new(&handle);
+
+    let mut scheme = |d: usize| {
+        op.scheme(&Args {
+            y_layout: TensorLayout::new(F16, &[dyn_(), d.into()], &[dyn_(); 2]),
+            y_base: null_mut(),
+            x_layout: TensorLayout::new(F16, &[dyn_(), d.into()], &[dyn_(); 2]),
+            x_base: null(),
+            w_layout: TensorLayout::new(F16, &[d.into()], &[dyn_()]),
+            w_base: null(),
+            epsilon: 1e-5,
+        })
+        .unwrap();
+        let (scheme, module) = op.scheme.as_ref().unwrap();
+        match scheme {
+            Scheme::Common { dt: _ } => todo!(),
+            Scheme::Padding { dt: _, d: _, name } => handle.apply(|ctx| {
+                println!("{}", module.load(name, ctx).info());
+            }),
+            Scheme::Folding {
+                dt: _,
+                d: _,
+                block_size: _,
+                name,
+            } => handle.apply(|ctx| {
+                println!("{}", module.load(name, ctx).info());
+            }),
+        }
+    };
+
+    for k in 8..=13 {
+        scheme(1 << k);
     }
 }

@@ -130,3 +130,34 @@ extern "C" __global__ void {NAME}(
         Ok(())
     }
 }
+
+#[test]
+fn test() {
+    use common::{dyn_, Operator as _, TensorLayout};
+    use std::ptr::{null, null_mut};
+
+    cuda::init();
+    let Some(dev) = cuda::Device::fetch() else {
+        return;
+    };
+    println!("{}", dev.info());
+
+    let handle = Gpu::new(dev.context());
+    let mut op = Operator::new(&handle);
+
+    <Operator as common::Operator>::scheme(
+        &mut op,
+        &Args {
+            t_layout: TensorLayout::new(F16, &[dyn_(); 3], &[dyn_(); 3]),
+            t_base: null_mut(),
+            p_layout: TensorLayout::new(U32, &[dyn_()], &[dyn_()]),
+            p_base: null(),
+            theta: 1e4,
+        },
+    )
+    .unwrap();
+    let module = op.scheme.as_ref().unwrap();
+    handle.apply(|ctx| {
+        println!("{}", module.load(CString::new(NAME).unwrap(), ctx).info());
+    })
+}

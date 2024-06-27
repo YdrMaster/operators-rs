@@ -79,6 +79,11 @@ impl<T: ArgVal> Argument<T> {
     }
 }
 
+#[inline(always)]
+pub fn dyn_<T: ArgVal>() -> Argument<T> {
+    Argument::dynamic()
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum MergeError {
     EmptyIter,

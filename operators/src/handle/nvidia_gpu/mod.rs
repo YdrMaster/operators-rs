@@ -2,8 +2,7 @@ mod module;
 
 use common::Pool;
 use cublas::{CublasLtSpore, CublasSpore};
-use cuda::{bindings::nvrtcResult, Context, ContextSpore, Device, Version};
-use module::cache_ptx;
+use cuda::{bindings::nvrtcResult, Context, ContextSpore, CurrentCtx, Device, Version};
 use std::{
     collections::HashMap,
     sync::{Arc, RwLock, Weak},
@@ -19,6 +18,7 @@ impl common::Handle for Handle {
 }
 
 impl Handle {
+    #[inline]
     pub fn new(context: Context) -> Self {
         Self(Arc::new(Internal {
             context,
@@ -26,6 +26,11 @@ impl Handle {
             cublas_lt: Default::default(),
             modules: Default::default(),
         }))
+    }
+
+    #[inline]
+    pub fn apply<T>(&self, f: impl FnOnce(&CurrentCtx) -> T) -> T {
+        self.0.context.apply(f)
     }
 }
 
@@ -60,8 +65,7 @@ impl Internal {
         match module {
             Some(module) => Ok(module),
             None => {
-                let ptx = cache_ptx(&key, code)?;
-                let module = ModuleBox::share(self.clone(), key.clone(), &ptx);
+                let module = ModuleBox::share(self.clone(), key.clone(), code);
                 let _ = self
                     .modules
                     .write()

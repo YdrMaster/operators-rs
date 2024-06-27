@@ -5,7 +5,7 @@ mod error;
 mod pool;
 mod tensor;
 
-pub use argument::{ArgVal, Argument};
+pub use argument::{dyn_, ArgVal, Argument};
 pub use error::ErrorPosition;
 pub use pool::Pool;
 pub use tensor::TensorLayout;
