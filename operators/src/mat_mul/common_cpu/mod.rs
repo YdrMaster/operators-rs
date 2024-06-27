@@ -1,74 +1,70 @@
-﻿use super::{layout::SchemeLayout, LayoutAttrs, MatMul, Params};
+﻿use super::{args::SchemeLayout, Args};
+use crate::common_cpu::Handle as Cpu;
 use common::{locate_error, ErrorPosition, QueueOf};
-use dev_common_cpu::Device as Cpu;
-use digit_layout::{types::F16, DigitLayout};
+use digit_layout::types::F16;
 use half::f16;
 
-pub struct Operator {
-    dt: DigitLayout,
-}
+pub struct Operator;
 
 impl common::Operator for Operator {
     type Handle = Cpu;
+    type Args = Args<Cpu>;
+    type SchemeError = ErrorPosition;
+    type LaunchError = ErrorPosition;
 
-    type Config = DigitLayout;
-    type Error = ErrorPosition;
-    #[inline]
-    fn new(config: &Self::Config) -> Result<Self, Self::Error> {
-        if *config == F16 {
-            Ok(Self { dt: *config })
-        } else {
-            Err(locate_error!())
-        }
-    }
-}
-
-pub struct Scheme(SchemeLayout);
-
-impl MatMul<Cpu> for Scheme {}
-
-impl common::Scheme for Scheme {
-    type Device = Cpu;
-    type Operator = Operator;
-
-    type LayoutAttrs = LayoutAttrs;
-    type Error = ErrorPosition;
-    #[inline]
-    fn new(op: &Operator, layout: Self::LayoutAttrs) -> Result<Self, Self::Error> {
-        SchemeLayout::new(op.dt, layout).map(Self)
+    fn new(_handle: &Self::Handle) -> Self {
+        Self
     }
 
-    type Params = Params<Cpu>;
-    fn launch(&self, params: &Self::Params, _queue: &QueueOf<Cpu>) {
+    fn scheme(&mut self, _args: &Self::Args) -> Result<(), Self::SchemeError> {
+        Ok(())
+    }
+
+    fn launch(
+        &self,
+        args: &Self::Args,
+        _queue: &QueueOf<Self::Handle>,
+    ) -> Result<(), Self::LaunchError> {
         let SchemeLayout {
+            dt,
+            ab_swap,
+            a_trans,
+            b_trans,
             batch,
             m,
             n,
             k,
-
             c_stride,
-            c_offset,
             c_ld,
-            ab_swap,
-
             a_stride,
-            a_offset,
             a_ld,
-            a_trans,
-
             b_stride,
-            b_offset,
             b_ld,
-            b_trans,
-        } = self.0;
-        let &(c, beta, a, b, alpha) = params;
-        let (a, b) = if ab_swap { (b, a) } else { (a, b) };
+        } = args.layout()?;
+        let &Args {
+            c_base,
+            beta,
+            a_base,
+            b_base,
+            alpha,
+            ..
+        } = args;
+
+        if dt != F16 {
+            return Err(locate_error!());
+        }
+
+        let (a, b) = if ab_swap {
+            (b_base, a_base)
+        } else {
+            (a_base, b_base)
+        };
         let (lhs_cs, lhs_rs) = if a_trans { (1, a_ld) } else { (a_ld, 1) };
         let (rhs_cs, rhs_rs) = if b_trans { (1, b_ld) } else { (b_ld, 1) };
 
-        let c = unsafe { c.add(c_offset) }.cast::<f16>();
-        let a = unsafe { a.add(a_offset) }.cast::<f16>();
-        let b = unsafe { b.add(b_offset) }.cast::<f16>();
+        let c = c_base.cast::<f16>();
+        let a = a.cast::<f16>();
+        let b = b.cast::<f16>();
 
         for i in 0..batch as isize {
             unsafe {
@@ -98,5 +94,6 @@ impl common::Scheme for Scheme {
                 )
             }
         }
+        Ok(())
     }
 }

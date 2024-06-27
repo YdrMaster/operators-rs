@@ -1,48 +1,51 @@
-﻿use common::{locate_error, ErrorPosition, TensorLayout};
+﻿use crate::utils::{ConstPtr, MutPtr};
+use common::{locate_error, ErrorPosition, Handle, TensorLayout};
 use digit_layout::DigitLayout;
-use std::mem::swap;
+use std::{mem::swap, slice::from_raw_parts};
 
-pub struct LayoutAttrs {
-    pub c: TensorLayout,
-    pub a: TensorLayout,
-    pub b: TensorLayout,
+pub struct Args<H: Handle> {
+    pub c_layout: TensorLayout,
+    pub c_base: MutPtr<H>,
+    pub beta: f32,
+    pub a_layout: TensorLayout,
+    pub a_base: ConstPtr<H>,
+    pub b_layout: TensorLayout,
+    pub b_base: ConstPtr<H>,
+    pub alpha: f32,
 }
 
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
-pub struct SchemeLayout {
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub(super) struct SchemeLayout {
+    pub dt: DigitLayout,
+    pub ab_swap: bool,
+    pub a_trans: bool,
+    pub b_trans: bool,
+
     pub batch: usize,
     pub m: usize,
     pub n: usize,
     pub k: usize,
 
     pub c_stride: isize,
-    pub c_offset: usize,
     pub c_ld: isize,
-    pub ab_swap: bool,
 
     pub a_stride: isize,
-    pub a_offset: usize,
     pub a_ld: isize,
-    pub a_trans: bool,
 
     pub b_stride: isize,
-    pub b_offset: usize,
     pub b_ld: isize,
-    pub b_trans: bool,
 }
 
-impl SchemeLayout {
-    pub fn new(
-        dt: DigitLayout,
-        LayoutAttrs { c, a, b }: LayoutAttrs,
-    ) -> Result<Self, ErrorPosition> {
-        if c.dt() != dt || a.dt() != dt || b.dt() != dt {
-            return Err(locate_error!("Inconsistent data types"));
+impl<H: Handle> Args<H> {
+    pub(super) fn layout(&self) -> Result<SchemeLayout, ErrorPosition> {
+        let dt = self.c_layout.dt();
+        if self.a_layout.dt() != dt || self.b_layout.dt() != dt {
+            return Err(locate_error!());
         }
         // 确认矩阵结构匹配
-        let mut c = Matrix::try_from(&c)?;
-        let mut a = Matrix::try_from(&a)?;
-        let mut b = Matrix::try_from(&b)?;
+        let mut c = Matrix::try_from(&self.c_layout)?;
+        let mut a = Matrix::try_from(&self.a_layout)?;
+        let mut b = Matrix::try_from(&self.b_layout)?;
         if c.r != a.r || c.c != b.c || a.c != b.r {
             return Err(locate_error!("Inconsistent matrix shapes"));
         }
@@ -76,51 +79,62 @@ impl SchemeLayout {
                 }
             };
         }
-        let (a_ld, a_transpose) = trans!(a);
-        let (b_ld, b_transpose) = trans!(b);
-        Ok(Self {
+        let (a_ld, a_trans) = trans!(a);
+        let (b_ld, b_trans) = trans!(b);
+        Ok(SchemeLayout {
+            dt,
+            ab_swap,
+            a_trans,
+            b_trans,
+
             batch,
             m: c.r,
             n: c.c,
             k: a.c,
 
             c_stride: c.stride,
-            c_offset: c.offset,
             c_ld: c.cs,
-            ab_swap,
 
             a_stride: a.stride,
-            a_offset: a.offset,
             a_ld,
-            a_trans: a_transpose,
 
             b_stride: b.stride,
-            b_offset: b.offset,
             b_ld,
-            b_trans: b_transpose,
         })
     }
 }
 
 #[derive(Clone, Debug)]
 struct Matrix {
-    pub batch: usize,
-    pub stride: isize,
-    pub r: usize,
-    pub c: usize,
-    pub rs: isize,
-    pub cs: isize,
-    pub offset: usize,
+    batch: usize,
+    stride: isize,
+    r: usize,
+    c: usize,
+    rs: isize,
+    cs: isize,
 }
 
 impl TryFrom<&TensorLayout> for Matrix {
     type Error = ErrorPosition;
 
     fn try_from(tensor: &TensorLayout) -> Result<Self, Self::Error> {
-        let [batch @ .., r, c] = tensor.shape() else {
+        let shape = tensor.shape();
+        let strides = tensor.strides();
+
+        if shape.iter().any(|&x| x.is_dynamic()) {
+            return Err(locate_error!("Dynamic shape is not supported"));
+        }
+        if strides.iter().any(|&x| x.is_dynamic()) {
+            return Err(locate_error!("Dynamic stride is not supported"));
+        }
+
+        let shape = unsafe { from_raw_parts(shape.as_ptr().cast::<usize>(), shape.len()) };
+        let strides = unsafe { from_raw_parts(strides.as_ptr().cast::<isize>(), strides.len()) };
+
+        let [batch @ .., r, c] = shape else {
             return Err(locate_error!("Invalid matrix shape"));
         };
-        let [stride @ .., rs, cs] = tensor.strides() else {
+        let [stride @ .., rs, cs] = strides else {
             unreachable!();
         };
         let unit = tensor.dt().nbytes() as isize;
@@ -142,7 +156,6 @@ impl TryFrom<&TensorLayout> for Matrix {
             c: *c,
             rs: rs / unit,
             cs: cs / unit,
-            offset: tensor.offset(),
         })
     }
 }

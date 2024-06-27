@@ -1,8 +1,11 @@
 mod module;
 
 use common::Pool;
-use cublas::{CublasLtSpore, CublasSpore};
-use cuda::{bindings::nvrtcResult, Context, ContextSpore, CurrentCtx, Device, Version};
+use cublas::{Cublas, CublasLtSpore, CublasSpore};
+use cuda::{
+    bindings::nvrtcResult, Context, ContextResource, ContextSpore, CurrentCtx, Device, Stream,
+    Version,
+};
 use std::{
     collections::HashMap,
     sync::{Arc, RwLock, Weak},
@@ -47,6 +50,15 @@ impl Internal {
     #[inline]
     pub fn device(&self) -> Device {
         self.context.device()
+    }
+
+    pub fn cublas(&self, stream: &Stream, f: impl FnOnce(&Cublas)) {
+        let cublas = self.cublas.pop().map_or_else(
+            || Cublas::new(stream.ctx()),
+            |cublas| cublas.sprout(stream.ctx()),
+        );
+        f(&cublas);
+        self.cublas.push(cublas.sporulate());
     }
 
     pub fn compile(
