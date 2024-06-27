@@ -258,8 +258,8 @@ fn test() {
 
     let handle = Gpu::new(dev.context());
     let mut op = Operator::new(&handle);
-
-    let mut scheme = |d: usize| {
+    for k in 8..=13 {
+        let d = 1 << k;
         op.scheme(&Args {
             y_layout: TensorLayout::new(F16, &[dyn_(), d.into()], &[dyn_(); 2]),
             y_base: null_mut(),
@@ -285,9 +285,5 @@ fn test() {
                 println!("{}", module.load(name, ctx).info());
             }),
         }
-    };
-
-    for k in 8..=13 {
-        scheme(1 << k);
     }
 }
