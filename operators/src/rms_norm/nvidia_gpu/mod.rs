@@ -274,7 +274,11 @@ fn test() {
         match scheme {
             Scheme::Common { dt: _ } => todo!(),
             Scheme::Padding { dt: _, d: _, name } => handle.apply(|ctx| {
-                println!("{}", module.load(name, ctx).info());
+                println!(
+                    "{}\n{}",
+                    name.to_str().unwrap(),
+                    module.load(name, ctx).info()
+                );
             }),
             Scheme::Folding {
                 dt: _,
@@ -282,7 +286,11 @@ fn test() {
                 block_size: _,
                 name,
             } => handle.apply(|ctx| {
-                println!("{}", module.load(name, ctx).info());
+                println!(
+                    "{}\n{}",
+                    name.to_str().unwrap(),
+                    module.load(name, ctx).info()
+                );
             }),
         }
     }

@@ -158,6 +158,9 @@ fn test() {
     .unwrap();
     let module = op.scheme.as_ref().unwrap();
     handle.apply(|ctx| {
-        println!("{}", module.load(CString::new(NAME).unwrap(), ctx).info());
+        println!(
+            "{NAME}\n{}",
+            module.load(CString::new(NAME).unwrap(), ctx).info()
+        );
     })
 }
