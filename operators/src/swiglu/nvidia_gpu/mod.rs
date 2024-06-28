@@ -1,4 +1,4 @@
-﻿use super::args::{Args, Meta};
+﻿use super::{args::Meta, Args, Swiglu};
 use crate::{
     nvidia_gpu::{Handle as Gpu, Internal as Handle, ModuleBox},
     utils::{gcd, get_or_err},
@@ -13,6 +13,8 @@ pub struct Operator {
     max_threads_block: usize,
     scheme: Option<Arc<ModuleBox>>,
 }
+
+impl Swiglu<Gpu> for Operator {}
 
 impl common::Operator for Operator {
     type Handle = Gpu;

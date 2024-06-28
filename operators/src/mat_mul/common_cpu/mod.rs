@@ -1,4 +1,4 @@
-﻿use super::{args::SchemeLayout, Args};
+﻿use super::{args::SchemeLayout, Args, MatMul};
 use crate::common_cpu::Handle as Cpu;
 use common::{locate_error, ErrorPosition, QueueOf};
 use digit_layout::types::F16;
@@ -6,16 +6,20 @@ use half::f16;
 
 pub struct Operator;
 
+impl MatMul<Cpu> for Operator {}
+
 impl common::Operator for Operator {
     type Handle = Cpu;
     type Args = Args<Cpu>;
     type SchemeError = ErrorPosition;
     type LaunchError = ErrorPosition;
 
+    #[inline]
     fn new(_handle: &Self::Handle) -> Self {
         Self
     }
 
+    #[inline]
     fn scheme(&mut self, _args: &Self::Args) -> Result<(), Self::SchemeError> {
         Ok(())
     }

@@ -1,4 +1,4 @@
-﻿use super::args::{Args, Meta};
+﻿use super::{args::Meta, Args, FusedSoftmax};
 use crate::{
     nvidia_gpu::{Handle as Gpu, Internal as Handle, ModuleBox},
     utils::get_or_err,
@@ -16,6 +16,8 @@ pub struct Operator {
     handle: Arc<Handle>,
     scheme: Option<(Scheme, Arc<ModuleBox>)>,
 }
+
+impl FusedSoftmax<Gpu> for Operator {}
 
 impl common::Operator for Operator {
     type Handle = Gpu;

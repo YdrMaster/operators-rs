@@ -1,4 +1,4 @@
-﻿use super::{args::SchemeLayout, Args};
+﻿use super::{args::SchemeLayout, Args, MatMul};
 use crate::nvidia_gpu::{Handle as Gpu, Internal as Handle};
 use common::{locate_error, ErrorPosition, QueueOf};
 use cublas::cublas;
@@ -10,6 +10,8 @@ use std::{ffi::c_void, sync::Arc};
 pub struct Operator {
     handle: Arc<Handle>,
 }
+
+impl MatMul<Gpu> for Operator {}
 
 impl common::Operator for Operator {
     type Handle = Gpu;

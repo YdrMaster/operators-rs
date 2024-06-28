@@ -23,4 +23,18 @@ macro_rules! get_or_err {
     };
 }
 
-pub(crate) use get_or_err;
+macro_rules! op_trait {
+    ($name:ident) => {
+        pub trait $name<H: common::Handle>:
+            common::Operator<
+            Handle = H,
+            Args = Args<H>,
+            SchemeError = common::ErrorPosition,
+            LaunchError = common::ErrorPosition,
+        >
+        {
+        }
+    };
+}
+
+pub(crate) use {get_or_err, op_trait};

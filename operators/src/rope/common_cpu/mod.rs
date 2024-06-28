@@ -1,4 +1,4 @@
-﻿use super::{args::Meta, Args};
+﻿use super::{args::Meta, Args, Rope};
 use crate::{common_cpu::Handle as Cpu, utils::get_or_err};
 use common::{locate_error, ErrorPosition, QueueOf};
 use digit_layout::types::F16;
@@ -6,16 +6,20 @@ use half::f16;
 
 pub struct Operator;
 
+impl Rope<Cpu> for Operator {}
+
 impl common::Operator for Operator {
     type Handle = Cpu;
     type Args = Args<Cpu>;
     type SchemeError = ErrorPosition;
     type LaunchError = ErrorPosition;
 
+    #[inline]
     fn new(_handle: &Self::Handle) -> Self {
         Self
     }
 
+    #[inline]
     fn scheme(&mut self, args: &Self::Args) -> Result<(), Self::SchemeError> {
         let _meta = args.meta()?;
         Ok(())

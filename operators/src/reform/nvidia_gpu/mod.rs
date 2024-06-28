@@ -1,4 +1,4 @@
-﻿use super::args::{Args, Meta};
+﻿use super::{args::Meta, Args, Reform};
 use crate::nvidia_gpu::{Handle as Gpu, Internal as Handle, ModuleBox};
 use common::{locate_error, Argument, ErrorPosition, QueueOf};
 use cuda::Version;
@@ -10,6 +10,8 @@ pub struct Operator {
     warp_size: usize,
     scheme: Option<Arc<ModuleBox>>,
 }
+
+impl Reform<Gpu> for Operator {}
 
 impl common::Operator for Operator {
     type Handle = Gpu;
