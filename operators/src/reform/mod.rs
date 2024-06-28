@@ -1,15 +1,5 @@
-﻿// #[cfg(use_cpu)]
-// pub mod common_cpu;
-#[cfg(use_cuda)]
+﻿#[cfg(use_cuda)]
 pub mod nvidia_gpu;
 
-#[allow(unused)]
-mod layout;
-pub use layout::LayoutAttrs;
-
-use crate::utils::*;
-op_trait!(Reform);
-type Params<D> = (
-    MutPtr<D>,   // y
-    ConstPtr<D>, // x
-);
+mod args;
+pub use args::Args;

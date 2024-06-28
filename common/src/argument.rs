@@ -1,4 +1,7 @@
-﻿use std::ops::{Deref, DerefMut};
+﻿use std::{
+    ops::{Deref, DerefMut},
+    slice::from_raw_parts,
+};
 
 pub trait ArgVal {
     fn default_dyn() -> Self;
@@ -104,5 +107,13 @@ impl<T: ArgVal + PartialEq> Argument<T> {
             }
         }
         Ok(acc)
+    }
+
+    pub fn lock(slice: &[Self]) -> Option<&[T]> {
+        if slice.iter().any(|arg| arg.is_dynamic()) {
+            None
+        } else {
+            Some(unsafe { from_raw_parts(slice.as_ptr().cast(), slice.len()) })
+        }
     }
 }

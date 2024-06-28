@@ -1,7 +1,7 @@
 ﻿use crate::utils::{ConstPtr, MutPtr};
-use common::{locate_error, ErrorPosition, Handle, TensorLayout};
+use common::{locate_error, Argument, ErrorPosition, Handle, TensorLayout};
 use digit_layout::DigitLayout;
-use std::{mem::swap, slice::from_raw_parts};
+use std::mem::swap;
 
 pub struct Args<H: Handle> {
     pub c_layout: TensorLayout,
@@ -118,18 +118,12 @@ impl TryFrom<&TensorLayout> for Matrix {
     type Error = ErrorPosition;
 
     fn try_from(tensor: &TensorLayout) -> Result<Self, Self::Error> {
-        let shape = tensor.shape();
-        let strides = tensor.strides();
-
-        if shape.iter().any(|&x| x.is_dynamic()) {
+        let Some(shape) = Argument::lock(tensor.shape()) else {
             return Err(locate_error!("Dynamic shape is not supported"));
-        }
-        if strides.iter().any(|&x| x.is_dynamic()) {
-            return Err(locate_error!("Dynamic stride is not supported"));
-        }
-
-        let shape = unsafe { from_raw_parts(shape.as_ptr().cast::<usize>(), shape.len()) };
-        let strides = unsafe { from_raw_parts(strides.as_ptr().cast::<isize>(), strides.len()) };
+        };
+        let Some(strides) = Argument::lock(tensor.strides()) else {
+            return Err(locate_error!("Dynamic strides is not supported"));
+        };
 
         let [batch @ .., r, c] = shape else {
             return Err(locate_error!("Invalid matrix shape"));

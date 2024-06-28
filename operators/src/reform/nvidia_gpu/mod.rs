@@ -1,61 +1,159 @@
-﻿use super::{layout::SchemeLayout, LayoutAttrs, Params, Reform};
-use common::{locate_error, ErrorPosition, QueueOf};
-use dev_nvidia_gpu::{
-    cuda::{self, ComputeCapability, Ptx},
-    Device as Gpu, __global__,
-};
-use log::warn;
-use std::ffi::{c_int, c_uint, CString};
+﻿use super::args::{Args, Meta};
+use crate::nvidia_gpu::{Handle as Gpu, Internal as Handle, ModuleBox};
+use common::{locate_error, Argument, ErrorPosition, QueueOf};
+use cuda::Version;
+use std::{ffi::CString, sync::Arc};
 
-pub struct Config {
-    pub num_threads_warp: usize,
-    pub max_num_threads_block: usize,
-    pub compute_capability: ComputeCapability,
-}
-
-impl Config {
-    pub fn config_for(dev: &cuda::Device) -> Self {
-        Self {
-            num_threads_warp: 32,
-            max_num_threads_block: dev.max_block_dims().0,
-            compute_capability: dev.compute_capability(),
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
 pub struct Operator {
-    global: __global__,
-    pub num_threads_warp: usize,
-    pub max_num_threads_block: usize,
+    handle: Arc<Handle>,
+    max_warps_block: usize,
+    warp_size: usize,
+    scheme: Option<Arc<ModuleBox>>,
 }
-
-const NAME: &str = "reform";
 
 impl common::Operator for Operator {
     type Handle = Gpu;
+    type Args = Args<Gpu>;
+    type SchemeError = ErrorPosition;
+    type LaunchError = ErrorPosition;
 
-    type Config = Config;
-    type Error = ErrorPosition;
-    fn new(config: &Self::Config) -> Result<Self, Self::Error> {
-        let &Self::Config {
-            num_threads_warp,
-            max_num_threads_block,
-            compute_capability,
-        } = config;
+    fn new(handle: &Self::Handle) -> Self {
+        let max_threads_block = handle.0.device().block_limit().max_threads;
+        let warp_size = handle.0.device().warp_size();
+        assert_eq!(max_threads_block % warp_size, 0);
+        Self {
+            handle: handle.0.clone(),
+            max_warps_block: max_threads_block / warp_size,
+            warp_size,
+            scheme: None,
+        }
+    }
 
-        const CODE: &str = include_str!("reform.cuh");
+    fn scheme(&mut self, args: &Self::Args) -> Result<(), Self::SchemeError> {
+        let _ = args.meta()?;
+        self.scheme(self.handle.device().compute_capability())
+    }
 
-        let code = format!(
-            r#"{CODE}
+    fn launch(
+        &self,
+        args: &Self::Args,
+        queue: &QueueOf<Self::Handle>,
+    ) -> Result<(), Self::LaunchError> {
+        let Meta { dt } = args.meta()?;
+        let Args {
+            dst_layout,
+            dst_base,
+            src_layout,
+            src_base,
+        } = args;
+
+        let Some(shape) = Argument::lock(dst_layout.shape()) else {
+            return Err(locate_error!("dst_layout.shape is dynamic"));
+        };
+        let Some(shape_) = Argument::lock(src_layout.shape()) else {
+            return Err(locate_error!("src_layout.shape is dynamic"));
+        };
+        if shape != shape_ {
+            return Err(locate_error!());
+        }
+        let Some(dst_strides) = Argument::lock(dst_layout.strides()) else {
+            return Err(locate_error!("dst_layout.strides is dynamic"));
+        };
+        let Some(src_strides) = Argument::lock(src_layout.strides()) else {
+            return Err(locate_error!("src_layout.strides is dynamic"));
+        };
+
+        let [r @ .., c, z] = shape else {
+            unreachable!()
+        };
+        let [dst_rs @ .., dst_cs, dst_zs] = dst_strides else {
+            unreachable!()
+        };
+        let [src_rs @ .., src_cs, src_zs] = src_strides else {
+            unreachable!()
+        };
+        assert_eq!(dst_rs.len(), r.len());
+        assert_eq!(src_rs.len(), r.len());
+
+        let unit = dt.nbytes() as isize;
+        if *dst_zs != unit || *src_zs != unit {
+            return Err(locate_error!());
+        }
+
+        let Some(m) = self.scheme.as_ref() else {
+            return Err(locate_error!("scheme is not set"));
+        };
+
+        let r = match r {
+            [] => 1,
+            &[r] => r,
+            r => {
+                for (i, r) in r.iter().enumerate().skip(1) {
+                    let r = *r as isize;
+                    if r * dst_rs[i] != dst_rs[i - 1] || r * src_rs[i] != src_rs[i - 1] {
+                        return Err(locate_error!("目前要求前序维度必须连续"));
+                    }
+                }
+                r.iter().product()
+            }
+        };
+
+        let z = z * unit as usize;
+
+        if z % self.warp_size != 0 {
+            return Err(locate_error!());
+        }
+        let bytes_thread = z / self.warp_size;
+        if bytes_thread > 32 || !bytes_thread.is_power_of_two() {
+            return Err(locate_error!());
+        }
+
+        let grid = (r, (c + self.max_warps_block - 1) / self.max_warps_block);
+        let block = ((c + grid.1 - 1) / grid.1, self.warp_size);
+
+        let grid = (grid.0 as u32, grid.1 as u32);
+        let block = (block.0 as u32, block.1 as u32);
+        let dst_rs = dst_rs.last().copied().unwrap_or(0) as i32 / z as i32;
+        let dst_cs = *dst_cs as i32 / z as i32;
+        let src_rs = src_rs.last().copied().unwrap_or(0) as i32 / z as i32;
+        let src_cs = *src_cs as i32 / z as i32;
+        let c = *c as u32;
+        let bytes_thread = bytes_thread as u32;
+
+        let name = CString::new(NAME).unwrap();
+        let params = cuda::params![
+            dst_base,
+            dst_rs,
+            dst_cs,
+            src_base,
+            src_rs,
+            src_cs,
+            c,
+            bytes_thread
+        ];
+        m.launch(&name, grid, block, params.as_ptr(), 0, queue);
+
+        Ok(())
+    }
+}
+
+const NAME: &str = "reform";
+const CODE: &str = include_str!("reform.cuh");
+impl Operator {
+    fn scheme(&mut self, cc: Version) -> Result<(), ErrorPosition> {
+        let module = self
+            .handle
+            .compile(NAME, cc, || {
+                format!(
+                    r#"{CODE}
 
 extern "C" __global__ void {NAME}(
     void       *__restrict__ dst,
-    unsigned int const rsa,
-    unsigned int const csa,
+    int const rsa,
+    int const csa,
     void const *__restrict__ src,
-    unsigned int const rsb,
-    unsigned int const csb,
+    int const rsb,
+    int const csb,
     unsigned int const ncols,
     unsigned int const bytes_per_thread
 ){{
@@ -69,102 +167,44 @@ extern "C" __global__ void {NAME}(
     }}
 }}
 "#
+                )
+            })
+            .map_err(|(e, log)| locate_error!(format!("Failed to compile {NAME}: {e:?}\n{log}")))?;
+        self.scheme = Some(module);
+        Ok(())
+    }
+}
+
+#[test]
+fn test() {
+    use common::{dyn_, Operator as _, TensorLayout};
+    use digit_layout::types::F16;
+    use std::ptr::{null, null_mut};
+
+    cuda::init();
+    let Some(dev) = cuda::Device::fetch() else {
+        return;
+    };
+    println!("{}", dev.info());
+
+    let handle = Gpu::new(dev.context());
+    let mut op = Operator::new(&handle);
+
+    <Operator as common::Operator>::scheme(
+        &mut op,
+        &Args {
+            dst_layout: TensorLayout::new(F16, &[dyn_(); 2], &[dyn_(); 2]),
+            dst_base: null_mut(),
+            src_layout: TensorLayout::new(F16, &[dyn_(); 2], &[dyn_(); 2]),
+            src_base: null(),
+        },
+    )
+    .unwrap();
+    let module = op.scheme.as_ref().unwrap();
+    handle.apply(|ctx| {
+        println!(
+            "{NAME}\n{}",
+            module.load(CString::new(NAME).unwrap(), ctx).info()
         );
-
-        let (ptx, log) = Ptx::compile(code, compute_capability);
-        let ptx = ptx
-            .map_err(|e| locate_error!(format!("Failed to compile fused_softmax: {e:?}\n{log}")))?;
-        if !log.is_empty() {
-            warn!("{log}");
-        }
-        Ok(Self {
-            global: __global__::load(&ptx),
-            num_threads_warp,
-            max_num_threads_block,
-        })
-    }
-}
-
-pub struct Scheme {
-    global: __global__,
-
-    grid: (c_uint, c_uint),
-    block: (c_uint, c_uint),
-    dst_rs: c_int,
-    dst_cs: c_int,
-    src_rs: c_int,
-    src_cs: c_int,
-    c: c_uint,
-    bytes_per_thread: usize,
-    dst_offset: usize,
-    src_offset: usize,
-}
-
-impl Reform<Gpu> for Scheme {}
-
-impl common::Scheme for Scheme {
-    type Device = Gpu;
-    type Operator = Operator;
-
-    type LayoutAttrs = LayoutAttrs;
-    type Error = ErrorPosition;
-    fn new(op: &Operator, layout: Self::LayoutAttrs) -> Result<Self, Self::Error> {
-        let SchemeLayout {
-            r,
-            c,
-            z,
-            dst_rs,
-            dst_cs,
-            src_rs,
-            src_cs,
-            dst_offset,
-            src_offset,
-        } = SchemeLayout::new(layout)?;
-
-        if z % op.num_threads_warp != 0 {
-            return Err(locate_error!());
-        }
-        let bytes_per_thread = z / op.num_threads_warp;
-        if bytes_per_thread > 32 || !bytes_per_thread.is_power_of_two() {
-            return Err(locate_error!());
-        }
-
-        let max_warp_per_block = op.max_num_threads_block / op.num_threads_warp;
-        let grid = (r, (c + max_warp_per_block - 1) / max_warp_per_block);
-        let block = ((c + grid.1 - 1) / grid.1, op.num_threads_warp);
-
-        Ok(Self {
-            global: op.global,
-            grid: (grid.0 as _, grid.1 as _),
-            block: (block.0 as _, block.1 as _),
-            dst_rs: (dst_rs / z as isize) as _,
-            dst_cs: (dst_cs / z as isize) as _,
-            src_rs: (src_rs / z as isize) as _,
-            src_cs: (src_cs / z as isize) as _,
-            c: c as _,
-            bytes_per_thread,
-            dst_offset,
-            src_offset,
-        })
-    }
-
-    type Params = Params<Gpu>;
-    fn launch(&self, params: &Self::Params, queue: &QueueOf<Gpu>) {
-        let name = CString::new(NAME).unwrap();
-        let &(dst, src) = params;
-        let dst = unsafe { dst.add(self.dst_offset) };
-        let src = unsafe { src.add(self.src_offset) };
-        let params = cuda::params![
-            dst,
-            self.dst_rs,
-            self.dst_cs,
-            src,
-            self.src_rs,
-            self.src_cs,
-            self.c,
-            self.bytes_per_thread
-        ];
-        self.global
-            .launch(&name, self.grid, self.block, params.as_ptr(), 0, queue);
-    }
+    })
 }

@@ -1,11 +1,11 @@
 template<class Tmem>
 static __device__ void reform(
     void *__restrict__ dst,
-    unsigned int const rsa,
-    unsigned int const csa,
+    int const rsa,
+    int const csa,
     void const *__restrict__ src,
-    unsigned int const rsb,
-    unsigned int const csb,
+    int const rsb,
+    int const csb,
     unsigned int const ncols) {
 
     auto row = blockIdx.y,
