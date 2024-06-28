@@ -11,5 +11,6 @@ cublas = { git = "https://github.com/YdrMaster/cuda-driver", rev = "877df52" }
 nccl = { git = "https://github.com/YdrMaster/cuda-driver", rev = "877df52" }
 search-cuda-tools = { git = "https://github.com/YdrMaster/cuda-driver", rev = "877df52" }
 
-cndrv = "0.1"
+cndrv = { git = "https://github.com/InfiniTensor/cndrv", rev = "cd7a09e" }
+cnnl = { git = "https://github.com/InfiniTensor/cndrv", rev = "cd7a09e" }
 search-neuware-tools = "0.0"

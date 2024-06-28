@@ -5,9 +5,10 @@ edition = "2021"
 authors = ["YdrMaster <ydrml@hotmail.com>"]
 
 [features]
-default = ["common-cpu", "nvidia-gpu"]
+default = ["common-cpu", "nvidia-gpu", "cambricon-mlu"]
 common-cpu = ["gemm"]
 nvidia-gpu = ["cuda", "cublas"]
+cambricon-mlu = ["cndrv", "cnnl"]
 
 [dependencies]
 common = { path = "../common" }
@@ -19,6 +20,9 @@ gemm = { version = "0.18", optional = true }
 
 cuda = { workspace = true, optional = true }
 cublas = { workspace = true, optional = true }
+
+cndrv = { workspace = true, optional = true }
+cnnl = { workspace = true, optional = true }
 
 [build-dependencies]
 build-script-cfg.workspace = true

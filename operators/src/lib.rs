@@ -20,5 +20,12 @@ pub extern crate cublas;
 #[cfg(use_cuda)]
 pub extern crate cuda;
 
+#[cfg(use_neuware)]
+pub use handle::cambricon_mlu;
+#[cfg(use_neuware)]
+pub extern crate cndrv;
+#[cfg(use_neuware)]
+pub extern crate cnnl;
+
 mod record;
 mod utils;
