@@ -10,6 +10,7 @@ use std::{ffi::CString, sync::Arc};
 
 pub struct Operator {
     handle: Arc<Handle>,
+    max_threads_block: usize,
     scheme: Option<Arc<ModuleBox>>,
 }
 
@@ -22,6 +23,7 @@ impl common::Operator for Operator {
     fn new(handle: &Self::Handle) -> Self {
         Self {
             handle: handle.0.clone(),
+            max_threads_block: handle.0.device().block_limit().max_threads,
             scheme: None,
         }
     }
@@ -83,12 +85,11 @@ impl common::Operator for Operator {
         let sh = (sh / unit / 2) as i32;
         let params = cuda::params![t_base, st, sh, p_base, theta];
 
-        let max_num_threads_block = self.handle.device().block_limit().max_threads;
-        if max_num_threads_block % dh != 0 {
+        if self.max_threads_block % dh != 0 {
             return Err(locate_error!());
         }
 
-        let max_nh_l = (max_num_threads_block / dh).min(nh);
+        let max_nh_l = (self.max_threads_block / dh).min(nh);
         let nh_l = (1..=max_nh_l).rev().find(|nhl| nh % nhl == 0).unwrap();
         let nh_h = nh / nh_l;
 
