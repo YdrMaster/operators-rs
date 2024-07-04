@@ -1,7 +1,7 @@
 ﻿use crate::utils::{ConstPtr, MutPtr};
 use common::{locate_error, Argument, ErrorPosition, Handle, TensorLayout};
 use digit_layout::DigitLayout;
-use std::iter::zip;
+use std::{cmp::Ordering, iter::zip};
 
 pub struct Args<H: Handle> {
     pub dst_layout: TensorLayout,
@@ -36,71 +36,113 @@ impl<H: Handle> Args<H> {
 pub(super) struct Scheme(Vec<isize>);
 
 impl Scheme {
-    pub fn from<H: Handle>(args: &Args<H>) -> Result<Self, ErrorPosition> {
+    pub fn new<H: Handle>(args: &Args<H>) -> Result<Self, ErrorPosition> {
         let Args {
             dst_layout: dst_,
             src_layout: src_,
             ..
         } = args;
-
+        // # 检查基本属性
         let unit = dst_.dt().nbytes();
         if src_.dt().nbytes() != unit {
             return Err(locate_error!());
         }
-
         let ndim = dst_.ndim();
         if src_.ndim() != ndim {
             return Err(locate_error!());
         }
-        // 检查形状
-        let mut shape = vec![0isize; ndim];
-        let mut dst = vec![0isize; ndim];
-        let mut src = vec![0isize; ndim];
+        // # 输入形状
+        #[derive(Clone, PartialEq, Eq, Debug)]
+        struct Dim {
+            len: usize,
+            dst: isize,
+            src: isize,
+        }
+        let mut dims = Vec::with_capacity(ndim);
         {
             let dd = dst_.shape();
             let ds = src_.shape();
             let sd = dst_.strides();
             let ss = src_.strides();
             for i in 0..ndim {
+                // 合并形状
                 let d = *Argument::merge(&[dd[i], ds[i]]).map_err(|_| locate_error!())?;
-                shape[i] = *d.get_static().ok_or_else(|| locate_error!())? as _;
-                dst[i] = *sd[i].get_static().ok_or_else(|| locate_error!())?;
-                src[i] = *ss[i].get_static().ok_or_else(|| locate_error!())?;
-            }
-        }
-        // 合并连续维度
-        let mut unit = unit as _;
-        'out: loop {
-            for i in 0..ndim {
-                if dst[i] == unit && src[i] == unit {
-                    unit *= shape[i];
-                    shape[i] = 1;
-                    dst[i] = 0;
-                    src[i] = 0;
-                    continue 'out;
+                // 静态化
+                let dim = Dim {
+                    len: *d.get_static().ok_or_else(|| locate_error!())?,
+                    dst: *sd[i].get_static().ok_or_else(|| locate_error!())?,
+                    src: *ss[i].get_static().ok_or_else(|| locate_error!())?,
+                };
+                // 剔除初始的 1 长维度
+                if dim.len != 1 {
+                    if dim.dst == 0 {
+                        return Err(locate_error!("Reducing is not allowed for reform."));
+                    }
+                    dims.push(dim);
                 }
             }
-            break;
         }
-        // 移除无效维度
-        let mut i = 0;
-        while i < shape.len() {
-            if shape[i] == 1 {
-                shape.swap_remove(i);
-                dst.swap_remove(i);
-                src.swap_remove(i);
-            } else {
-                i += 1;
+        // # 排序
+        impl PartialOrd for Dim {
+            fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+                Some(self.cmp(other))
             }
         }
-        // 合并空间
-        let ndim = shape.len();
+        impl Ord for Dim {
+            /// dst 降序 -> src 降序 -> len 升序
+            fn cmp(&self, other: &Self) -> Ordering {
+                use Ordering::Equal as Eq;
+                match self.dst.cmp(&other.dst) {
+                    Eq => match self.src.cmp(&other.src) {
+                        Eq => self.len.cmp(&other.len),
+                        neq => neq.reverse(),
+                    },
+                    neq => neq.reverse(),
+                }
+            }
+        }
+        dims.sort_unstable();
+        // # 合并连续维度
+        let mut unit = unit as _;
+        let mut ndim = dims.len();
+        // ## 合并末尾连续维度到 unit
+        for dim in dims.iter_mut().rev() {
+            if dim.dst == unit && dim.src == unit {
+                unit *= dim.len as isize;
+                ndim -= 1;
+            } else {
+                break;
+            }
+        }
+        dims.truncate(ndim);
+        // ## 合并任意连续维度
+        for i in (1..dims.len()).rev() {
+            let (head, tail) = dims.split_at_mut(i);
+            let f = &mut head[i - 1]; // f for front
+            let b = &mut tail[0]; // b for back
+            let len = b.len as isize;
+            if b.dst * len == f.dst && b.src * len == f.src {
+                *f = Dim {
+                    len: b.len * f.len,
+                    dst: b.dst,
+                    src: b.src,
+                };
+                *b = Dim {
+                    len: 1,
+                    dst: 0,
+                    src: 0,
+                };
+                ndim -= 1;
+            }
+        }
+        // # 合并空间
         let mut layout = vec![0isize; 1 + ndim * 3];
         layout[0] = unit as _;
-        layout[1..][..ndim].copy_from_slice(&shape);
-        layout[1 + ndim..][..ndim].copy_from_slice(&dst);
-        layout[1 + ndim * 2..][..ndim].copy_from_slice(&src);
-
+        for (i, Dim { len, dst, src }) in dims.into_iter().filter(|d| d.len != 1).enumerate() {
+            layout[1 + i] = len as _;
+            layout[1 + ndim + i] = dst;
+            layout[1 + ndim * 2 + i] = src;
+        }
         Ok(Self(layout))
     }
 
@@ -138,24 +180,52 @@ fn test_scheme() {
     use crate::common_cpu::Handle as Cpu;
     use digit_layout::types::F16;
     use std::ptr::{null, null_mut};
-    let args = Args::<Cpu> {
-        dst_layout: TensorLayout::new(
-            F16,
-            &[1.into(), 2.into(), 3.into(), 4.into()],
-            &[48.into(), 24.into(), 8.into(), 2.into()],
-        ),
-        dst_base: null_mut(),
-        src_layout: TensorLayout::new(
-            F16,
-            &[1.into(), 2.into(), 3.into(), 4.into()],
-            &[48.into(), 8.into(), 16.into(), 2.into()],
-        ),
-        src_base: null(),
-    };
-    let scheme = Scheme::from(&args).unwrap();
-    println!("ndim = {}", scheme.ndim());
-    println!("unit = {}", scheme.unit());
-    println!("shape = {:?}", scheme.shape());
-    println!("dst_strides = {:?}", scheme.dst_strides());
-    println!("src_strides = {:?}", scheme.src_strides());
+
+    {
+        let shape = [
+            Argument::from(4),
+            3.into(),
+            2.into(),
+            1.into(),
+            2.into(),
+            3.into(),
+            4.into(),
+        ];
+        let args = Args::<Cpu> {
+            dst_layout: TensorLayout::new(
+                F16,
+                &shape,
+                &[
+                    288.into(), // 4
+                    96.into(),  // 3
+                    48.into(),  // 2
+                    48.into(),  // 1
+                    24.into(),  // 2
+                    8.into(),   // 3
+                    2.into(),   // 4
+                ],
+            ),
+            dst_base: null_mut(),
+            src_layout: TensorLayout::new(
+                F16,
+                &shape,
+                &[
+                    576.into(), // 4
+                    192.into(), // 3
+                    96.into(),  // 2
+                    48.into(),  // 1
+                    8.into(),   // 2
+                    16.into(),  // 3
+                    2.into(),   // 4
+                ],
+            ),
+            src_base: null(),
+        };
+        let scheme = Scheme::new(&args).unwrap();
+        assert_eq!(scheme.ndim(), 3);
+        assert_eq!(scheme.unit(), 8);
+        assert_eq!(scheme.shape(), [24, 2, 3]);
+        assert_eq!(scheme.dst_strides(), [48, 24, 8]);
+        assert_eq!(scheme.src_strides(), [96, 8, 16]);
+    }
 }

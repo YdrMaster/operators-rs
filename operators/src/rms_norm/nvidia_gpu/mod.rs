@@ -34,7 +34,7 @@ impl common::Operator for Operator {
         if dt != F16 {
             todo!()
         }
-        #[allow(unreachable_code)]
+        #[allow(unreachable_code, clippy::diverging_sub_expression)]
         let Some(&d) = d.get_static() else {
             self.scheme = Some((Scheme::Common { dt }, todo!()));
         };
