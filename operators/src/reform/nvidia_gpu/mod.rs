@@ -1,8 +1,15 @@
-﻿use super::{args::Meta, Args, Reform};
-use crate::nvidia_gpu::{Handle as Gpu, Internal as Handle, ModuleBox};
-use common::{locate_error, Argument, ErrorPosition, QueueOf};
+﻿use super::{Args, Reform};
+use crate::{
+    nvidia_gpu::{Handle as Gpu, Internal as Handle, ModuleBox},
+    reform::args::Scheme,
+};
+use common::{locate_error, ErrorPosition, QueueOf};
 use cuda::Version;
-use std::{ffi::CString, sync::Arc};
+use std::{
+    ffi::CString,
+    slice::{from_raw_parts, from_raw_parts_mut},
+    sync::Arc,
+};
 
 pub struct Operator {
     handle: Arc<Handle>,
@@ -31,8 +38,7 @@ impl common::Operator for Operator {
         }
     }
 
-    fn scheme(&mut self, args: &Self::Args) -> Result<(), Self::SchemeError> {
-        let _ = args.meta()?;
+    fn scheme(&mut self, _args: &Self::Args) -> Result<(), Self::SchemeError> {
         self.scheme(self.handle.device().compute_capability())
     }
 
@@ -41,100 +47,103 @@ impl common::Operator for Operator {
         args: &Self::Args,
         queue: &QueueOf<Self::Handle>,
     ) -> Result<(), Self::LaunchError> {
-        let Meta { dt } = args.meta()?;
-        let Args {
-            dst_layout,
-            dst_base,
-            src_layout,
-            src_base,
-        } = args;
+        let scheme = Scheme::new(args)?;
+        let unit = scheme.unit();
 
-        let Some(shape) = Argument::lock(dst_layout.shape()) else {
-            return Err(locate_error!("dst_layout.shape is dynamic"));
-        };
-        let Some(shape_) = Argument::lock(src_layout.shape()) else {
-            return Err(locate_error!("src_layout.shape is dynamic"));
-        };
-        if shape != shape_ {
-            return Err(locate_error!());
-        }
-        let Some(dst_strides) = Argument::lock(dst_layout.strides()) else {
-            return Err(locate_error!("dst_layout.strides is dynamic"));
-        };
-        let Some(src_strides) = Argument::lock(src_layout.strides()) else {
-            return Err(locate_error!("src_layout.strides is dynamic"));
-        };
-
-        let [r @ .., c, z] = shape else {
-            unreachable!()
-        };
-        let [dst_rs @ .., dst_cs, dst_zs] = dst_strides else {
-            unreachable!()
-        };
-        let [src_rs @ .., src_cs, src_zs] = src_strides else {
-            unreachable!()
-        };
-        assert_eq!(dst_rs.len(), r.len());
-        assert_eq!(src_rs.len(), r.len());
-
-        let unit = dt.nbytes() as isize;
-        if *dst_zs != unit || *src_zs != unit {
-            return Err(locate_error!());
+        struct Layout {
+            r: u32,
+            c: u32,
+            dst_rs: i32,
+            dst_cs: i32,
+            src_rs: i32,
+            src_cs: i32,
         }
 
+        let Layout {
+            r,
+            c,
+            dst_rs,
+            dst_cs,
+            src_rs,
+            src_cs,
+        } = match scheme.ndim() {
+            0 => {
+                let dst = unsafe { from_raw_parts_mut(args.dst_base, unit) };
+                let src = unsafe { from_raw_parts(args.src_base, unit) };
+                queue.memcpy_d2d(dst, src);
+                return Ok(());
+            }
+            1 => {
+                let &[dst_cs] = scheme.dst_strides() else {
+                    unreachable!()
+                };
+                let &[src_cs] = scheme.src_strides() else {
+                    unreachable!()
+                };
+                Layout {
+                    r: 1,
+                    c: scheme.shape().next().unwrap() as _,
+                    dst_rs: 0,
+                    dst_cs: dst_cs as _,
+                    src_rs: 0,
+                    src_cs: src_cs as _,
+                }
+            }
+            2 => {
+                let mut shape = scheme.shape();
+                let r = shape.next().unwrap();
+                let c = shape.next().unwrap();
+                let &[dst_rs, dst_cs] = scheme.dst_strides() else {
+                    unreachable!()
+                };
+                let &[src_rs, src_cs] = scheme.src_strides() else {
+                    unreachable!()
+                };
+                Layout {
+                    r: r as _,
+                    c: c as _,
+                    dst_rs: dst_rs as _,
+                    dst_cs: dst_cs as _,
+                    src_rs: src_rs as _,
+                    src_cs: src_cs as _,
+                }
+            }
+            _ => return Err(locate_error!("Not supported yet")),
+        };
+
+        let name = CString::new(NAME).unwrap();
         let Some(m) = self.scheme.as_ref() else {
             return Err(locate_error!("scheme is not set"));
         };
-
-        let r = match r {
-            [] => 1,
-            &[r] => r,
-            r => {
-                for (i, r) in r.iter().enumerate().skip(1) {
-                    let r = *r as isize;
-                    if r * dst_rs[i] != dst_rs[i - 1] || r * src_rs[i] != src_rs[i - 1] {
-                        return Err(locate_error!("目前要求前序维度必须连续"));
-                    }
-                }
-                r.iter().product()
-            }
-        };
-
-        let z = z * unit as usize;
-
-        if z % self.warp_size != 0 {
+        if unit % self.warp_size != 0 {
             return Err(locate_error!());
         }
-        let bytes_thread = z / self.warp_size;
+        let bytes_thread = (unit / self.warp_size) as u32;
         if bytes_thread > 32 || !bytes_thread.is_power_of_two() {
             return Err(locate_error!());
         }
 
-        let grid = (r, (c + self.max_warps_block - 1) / self.max_warps_block);
-        let block = ((c + grid.1 - 1) / grid.1, self.warp_size);
+        let warps = self.max_warps_block as u32;
+        let grid = (r, (c + warps - 1) / warps);
+        let block = ((c + grid.1 - 1) / grid.1, self.warp_size as u32);
 
-        let grid = (grid.0 as u32, grid.1 as u32);
-        let block = (block.0 as u32, block.1 as u32);
-        let dst_rs = dst_rs.last().copied().unwrap_or(0) as i32 / z as i32;
-        let dst_cs = *dst_cs as i32 / z as i32;
-        let src_rs = src_rs.last().copied().unwrap_or(0) as i32 / z as i32;
-        let src_cs = *src_cs as i32 / z as i32;
-        let c = *c as u32;
-        let bytes_thread = bytes_thread as u32;
+        let unit = unit as i32;
+        let dst_rs = dst_rs / unit;
+        let dst_cs = dst_cs / unit;
+        let src_rs = src_rs / unit;
+        let src_cs = src_cs / unit;
 
-        let name = CString::new(NAME).unwrap();
         let params = cuda::params![
-            dst_base,
+            args.dst_base,
             dst_rs,
             dst_cs,
-            src_base,
+            args.src_base,
             src_rs,
             src_cs,
             c,
             bytes_thread
         ];
         m.launch(&name, grid, block, params.as_ptr(), 0, queue);
-
         Ok(())
     }
 }
