@@ -136,19 +136,23 @@ impl Scheme {
             }
         }
         // # 合并空间
-        let mut layout = vec![0isize; 1 + ndim * 3];
+        let mut layout = vec![0isize; 2 + ndim * 3];
         layout[0] = unit as _;
+        layout[ndim + 1] = 1;
         for (i, Dim { len, dst, src }) in dims.into_iter().filter(|d| d.len != 1).enumerate() {
             layout[1 + i] = len as _;
-            layout[1 + ndim + i] = dst;
-            layout[1 + ndim * 2 + i] = src;
+            layout[2 + ndim + i] = dst;
+            layout[2 + ndim * 2 + i] = src;
+        }
+        for i in (1..=ndim).rev() {
+            layout[i] *= layout[i + 1];
         }
         Ok(Self(layout))
     }
 
     #[inline]
     pub fn ndim(&self) -> usize {
-        (self.0.len() - 1) / 3
+        (self.0.len() - 2) / 3
     }
 
     #[inline]
@@ -157,21 +161,34 @@ impl Scheme {
     }
 
     #[inline]
-    pub fn shape(&self) -> &[usize] {
+    pub fn count(&self) -> usize {
+        self.0[1] as _
+    }
+
+    #[inline]
+    pub fn idx_strides(&self) -> &[isize] {
         let ndim = self.ndim();
-        unsafe { std::mem::transmute(&self.0[1..][..ndim]) }
+        &self.0[2..][..ndim]
     }
 
     #[inline]
     pub fn dst_strides(&self) -> &[isize] {
         let ndim = self.ndim();
-        &self.0[1 + ndim..][..ndim]
+        &self.0[2 + ndim..][..ndim]
     }
 
     #[inline]
     pub fn src_strides(&self) -> &[isize] {
         let ndim = self.ndim();
-        &self.0[1 + ndim * 2..][..ndim]
+        &self.0[2 + ndim * 2..][..ndim]
+    }
+
+    #[inline]
+    pub fn shape(&self) -> impl Iterator<Item = usize> + '_ {
+        let ndim = self.ndim();
+        self.0[1..][..ndim + 1]
+            .windows(2)
+            .map(|pair| (pair[0] / pair[1]) as usize)
     }
 }
 
@@ -224,8 +241,10 @@ fn test_scheme() {
         let scheme = Scheme::new(&args).unwrap();
         assert_eq!(scheme.ndim(), 3);
         assert_eq!(scheme.unit(), 8);
-        assert_eq!(scheme.shape(), [24, 2, 3]);
+        assert_eq!(scheme.count(), 24 * 2 * 3);
+        assert_eq!(scheme.idx_strides(), [6, 3, 1]);
         assert_eq!(scheme.dst_strides(), [48, 24, 8]);
         assert_eq!(scheme.src_strides(), [96, 8, 16]);
+        assert_eq!(scheme.shape().collect::<Vec<_>>(), [24, 2, 3]);
     }
 }

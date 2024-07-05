@@ -6,7 +6,7 @@ authors = ["YdrMaster <ydrml@hotmail.com>"]
 
 [features]
 default = ["common-cpu", "nvidia-gpu", "cambricon-mlu"]
-common-cpu = ["gemm"]
+common-cpu = ["gemm", "rayon"]
 nvidia-gpu = ["cuda", "cublas"]
 cambricon-mlu = ["cndrv", "cnnl"]
 
@@ -17,6 +17,7 @@ half = "2.4"
 log = "0.4"
 
 gemm = { version = "0.18", optional = true }
+rayon = { version = "1.10", optional = true }
 
 cuda = { workspace = true, optional = true }
 cublas = { workspace = true, optional = true }
