@@ -106,9 +106,10 @@ impl common::Operator for Operator {
             return Err(locate_error!("gate and up not continuous"));
         }
 
+        let strides = [(sgn / unit) as _, 1];
         let dt = DataType::from(dt);
-        let input = Tensor::new(dt, &[n as _, (2 * d) as _], &[sgn as _, unit as _]);
-        let output = Tensor::new(dt, &[n as _, d as _], &[sgn as _, sgd as _]);
+        let input = Tensor::new(dt, &[n as _, (2 * d) as _], &strides);
+        let output = Tensor::new(dt, &[n as _, d as _], &strides);
 
         self.handle.cnnl(queue, |handle| {
             cnnl!(cnnlBiasActivationGluForward_v2(

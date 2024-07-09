@@ -6,11 +6,11 @@ resolver = "2"
 digit-layout = "0.0"
 build-script-cfg = "0.0"
 
-cuda = { git = "https://github.com/YdrMaster/cuda-driver", rev = "0befb35" }
-cublas = { git = "https://github.com/YdrMaster/cuda-driver", rev = "0befb35" }
-nccl = { git = "https://github.com/YdrMaster/cuda-driver", rev = "0befb35" }
-search-cuda-tools = { git = "https://github.com/YdrMaster/cuda-driver", rev = "0befb35" }
+cuda = { git = "https://github.com/YdrMaster/cuda-driver", rev = "343b0e0" }
+cublas = { git = "https://github.com/YdrMaster/cuda-driver", rev = "343b0e0" }
+nccl = { git = "https://github.com/YdrMaster/cuda-driver", rev = "343b0e0" }
+search-cuda-tools = { git = "https://github.com/YdrMaster/cuda-driver", rev = "343b0e0" }
 
-cndrv = { git = "https://github.com/InfiniTensor/cndrv", rev = "1dab7ce" }
-cnnl = { git = "https://github.com/InfiniTensor/cndrv", rev = "1dab7ce" }
+cndrv = { git = "https://github.com/InfiniTensor/cndrv", rev = "ab2b1c9" }
+cnnl = { git = "https://github.com/InfiniTensor/cndrv", rev = "ab2b1c9" }
 search-neuware-tools = "0.0"
