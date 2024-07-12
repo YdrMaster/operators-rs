@@ -1,5 +1,4 @@
-﻿use core::fmt;
-use std::error::Error;
+﻿use std::{error::Error, fmt};
 
 #[derive(Clone)]
 pub struct ErrorPosition {
@@ -12,11 +11,11 @@ impl Error for ErrorPosition {}
 
 impl ErrorPosition {
     #[inline]
-    pub const fn new(file: &'static str, line: u32, message: String) -> Self {
+    pub fn new(file: &'static str, line: u32, message: fmt::Arguments) -> Self {
         Self {
             file,
             line,
-            message,
+            message: fmt::format(message),
         }
     }
 }
@@ -60,11 +59,11 @@ impl fmt::Display for ErrorPosition {
 
 #[macro_export]
 macro_rules! locate_error {
-    ($msg:expr) => {
-        $crate::ErrorPosition::new(file!(), line!(), $msg.to_string())
-    };
     () => {
-        locate_error!("Error occurred")
+        $crate::ErrorPosition::new(file!(), line!(), std::format_args!("Error occurred"))
+    };
+    ($($arg:tt)*) => {
+        $crate::ErrorPosition::new(file!(), line!(), std::format_args!($($arg)*))
     };
 }
 

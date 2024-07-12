@@ -114,7 +114,7 @@ extern "C" __global__ void {NAME}(
 }}"#
                 )
             })
-            .map_err(|(e, log)| locate_error!(format!("Failed to compile {NAME}: {e:?}\n{log}")))?;
+            .map_err(|(e, log)| locate_error!("Failed to compile {NAME}: {e:?}\n{log}"))?;
         self.scheme = Some(module);
         Ok(())
     }

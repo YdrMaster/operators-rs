@@ -120,7 +120,7 @@ impl common::Operator for Operator {
         }
         let bytes_thread = (unit / self.warp_size) as u32;
         if bytes_thread > 32 || !bytes_thread.is_power_of_two() {
-            return Err(locate_error!());
+            return Err(locate_error!("bytes_thread = {bytes_thread}"));
         }
 
         let warps = self.max_warps_block as u32;
@@ -180,7 +180,7 @@ extern "C" __global__ void {NAME}(
 "#
                 )
             })
-            .map_err(|(e, log)| locate_error!(format!("Failed to compile {NAME}: {e:?}\n{log}")))?;
+            .map_err(|(e, log)| locate_error!("Failed to compile {NAME}: {e:?}\n{log}"))?;
         self.scheme = Some(module);
         Ok(())
     }

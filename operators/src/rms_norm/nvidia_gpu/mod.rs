@@ -179,7 +179,7 @@ extern "C" __global__ void {name}(
 }}"#
                 )
             })
-            .map_err(|(e, log)| locate_error!(format!("Failed to compile {name}: {e:?}\n{log}")))?;
+            .map_err(|(e, log)| locate_error!("Failed to compile {name}: {e:?}\n{log}"))?;
         self.scheme = Some((
             Scheme::Padding {
                 dt,
@@ -232,7 +232,7 @@ extern "C" __global__ void {name}(
 }}"#
                 )
             })
-            .map_err(|(e, log)| locate_error!(format!("Failed to compile {name}: {e:?}\n{log}")))?;
+            .map_err(|(e, log)| locate_error!("Failed to compile {name}: {e:?}\n{log}"))?;
 
         self.scheme = Some((
             Scheme::Folding {
