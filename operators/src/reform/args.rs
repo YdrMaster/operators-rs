@@ -1,6 +1,6 @@
 ﻿use crate::utils::{ConstPtr, MutPtr};
 use common::{locate_error, Argument, ErrorPosition, Handle, TensorLayout};
-use std::cmp::Ordering;
+use std::{cmp::Ordering, iter::zip};
 
 pub struct Args<H: Handle> {
     pub dst_layout: TensorLayout,
@@ -9,6 +9,8 @@ pub struct Args<H: Handle> {
     pub src_base: ConstPtr<H>,
 }
 
+#[derive(Clone, Debug)]
+#[repr(transparent)]
 pub(super) struct Scheme(Vec<isize>);
 
 impl Scheme {
@@ -126,6 +128,47 @@ impl Scheme {
         Ok(Self(layout))
     }
 
+    /// 拆分 unit 到更小的规模以利于并行
+    pub fn distribute_unit(&self, candidates: impl IntoIterator<Item = usize>) -> Self {
+        let unit = candidates
+            .into_iter()
+            .find(|n| self.unit() % n == 0)
+            .unwrap();
+        if unit == self.unit() {
+            return Self(self.0.clone());
+        }
+
+        let ndim = self.ndim();
+        let mut layout = vec![0isize; 2 + (ndim + 1) * 3];
+        layout[0] = unit as _;
+
+        let (_, tail) = layout.split_at_mut(1);
+        let (idx, tail) = tail.split_at_mut(ndim + 2);
+        let (dst, src) = tail.split_at_mut(ndim + 1);
+
+        let (_, tail) = self.0.split_at(1);
+        let (idx_, tail) = tail.split_at(ndim + 1);
+        let (dst_, src_) = tail.split_at(ndim);
+
+        idx[ndim + 1] = 1;
+        let extra = (self.unit() / unit) as isize;
+        for (new, old) in zip(idx, idx_) {
+            *new = *old * extra;
+        }
+
+        fn copy_value(new: &mut [isize], old: &[isize], unit: usize) {
+            let [head @ .., tail] = new else {
+                unreachable!()
+            };
+            head.copy_from_slice(old);
+            *tail = unit as _;
+        }
+        copy_value(dst, dst_, unit);
+        copy_value(src, src_, unit);
+
+        Self(layout)
+    }
+
     #[inline]
     pub fn ndim(&self) -> usize {
         (self.0.len() - 2) / 3
@@ -222,5 +265,62 @@ fn test_scheme() {
         assert_eq!(scheme.dst_strides(), [48, 24, 8]);
         assert_eq!(scheme.src_strides(), [96, 8, 16]);
         assert_eq!(scheme.shape().collect::<Vec<_>>(), [24, 2, 3]);
+    }
+    {
+        let shape = [
+            Argument::from(32),
+            2.into(),
+            32.into(),
+            456.into(),
+            128.into(),
+        ];
+        let args = Args::<Cpu> {
+            dst_layout: TensorLayout::new(
+                F16,
+                &shape,
+                &[
+                    (33554432 * 2).into(),
+                    (16777216 * 2).into(),
+                    (524288 * 2).into(),
+                    (128 * 2).into(),
+                    (1 * 2).into(),
+                ],
+            ),
+            dst_base: null_mut(),
+            src_layout: TensorLayout::new(
+                F16,
+                &shape,
+                &[
+                    (33554432 * 2).into(),
+                    (16777216 * 2).into(),
+                    (524288 * 2).into(),
+                    (128 * 2).into(),
+                    (1 * 2).into(),
+                ],
+            ),
+            src_base: null(),
+        };
+        let scheme = Scheme::new(&args).unwrap();
+        #[rustfmt::skip]
+        assert_eq!(
+            scheme.0,
+            [
+                116736,
+                2048, 1,
+                1048576,
+                1048576,
+            ]
+        );
+        let scheme = scheme.distribute_unit((0..=5).rev().map(|n| 32 * (1 << n)));
+        #[rustfmt::skip]
+        assert_eq!(
+            scheme.0,
+            [
+                1024,
+                116736 / 1024 * 2048, 116736 / 1024, 1,
+                1048576, 1024,
+                1048576, 1024,
+            ]
+        );
     }
 }

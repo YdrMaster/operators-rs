@@ -47,7 +47,7 @@ impl common::Operator for Operator {
         args: &Self::Args,
         queue: &QueueOf<Self::Handle>,
     ) -> Result<(), Self::LaunchError> {
-        let scheme = Scheme::new(args)?;
+        let scheme = Scheme::new(args)?.distribute_unit((0..=5).rev().map(|n| 32 * (1 << n)));
         let unit = scheme.unit();
 
         struct Layout {
