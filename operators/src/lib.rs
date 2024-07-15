@@ -19,6 +19,8 @@ pub use handle::nvidia_gpu;
 pub extern crate cublas;
 #[cfg(use_cuda)]
 pub extern crate cuda;
+#[cfg(use_nccl)]
+pub extern crate nccl;
 
 #[cfg(use_neuware)]
 pub use handle::cambricon_mlu;

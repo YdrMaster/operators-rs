@@ -252,10 +252,10 @@ fn test() {
     use common::{dyn_, Operator as _, TensorLayout};
     use std::ptr::{null, null_mut};
 
-    cuda::init();
-    let Some(dev) = cuda::Device::fetch() else {
+    if let Err(cuda::NoDevice) = cuda::init() {
         return;
-    };
+    }
+    let dev = cuda::Device::new(0);
     println!("{}", dev.info());
 
     let handle = Gpu::new(dev.context());
