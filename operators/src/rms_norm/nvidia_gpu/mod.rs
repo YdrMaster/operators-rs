@@ -160,11 +160,9 @@ impl Operator {
         cc: Version,
     ) -> Result<(), ErrorPosition> {
         let name = format!("rms_norm_padding_f16_{d}");
-        let module = self
-            .handle
-            .compile(&name, cc, || {
-                format!(
-                    r#"{CODE}
+        let module = self.handle.compile_kernel(&name, cc, || {
+            format!(
+                r#"{CODE}
 
 extern "C" __global__ void {name}(
     half *__restrict__ y,
@@ -177,9 +175,8 @@ extern "C" __global__ void {name}(
     padding<{d}>
     (y, stride_y, x, stride_x, w, epsilon);
 }}"#
-                )
-            })
-            .map_err(|(e, log)| locate_error!("Failed to compile {name}: {e:?}\n{log}"))?;
+            )
+        });
         self.scheme = Some((
             Scheme::Padding {
                 dt,
@@ -213,11 +210,9 @@ extern "C" __global__ void {name}(
         let num_items_thread = (to_divid + num_warps_block - 1) / num_warps_block;
 
         let name = format!("rms_norm_folding_f16_{num_threads_block}x{num_items_thread}");
-        let module = self
-            .handle
-            .compile(&name, cc, || {
-                format!(
-                    r#"{CODE}
+        let module = self.handle.compile_kernel(&name, cc, || {
+            format!(
+                r#"{CODE}
 
 extern "C" __global__ void {name}(
     half *__restrict__ y,
@@ -230,9 +225,8 @@ extern "C" __global__ void {name}(
     folding<{num_threads_block}, {num_items_thread}>
     (y, stride_y, x, stride_x, w, epsilon, {d});
 }}"#
-                )
-            })
-            .map_err(|(e, log)| locate_error!("Failed to compile {name}: {e:?}\n{log}"))?;
+            )
+        });
 
         self.scheme = Some((
             Scheme::Folding {

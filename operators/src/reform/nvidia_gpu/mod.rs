@@ -1,8 +1,5 @@
-﻿use super::{Args, Reform};
-use crate::{
-    nvidia_gpu::{Handle as Gpu, Internal as Handle, ModuleBox},
-    reform::args::Scheme,
-};
+﻿use super::{args::Scheme, Args, Reform};
+use crate::nvidia_gpu::{Handle as Gpu, Internal as Handle, ModuleBox};
 use common::{locate_error, ErrorPosition, QueueOf};
 use cuda::Version;
 use std::{
@@ -152,11 +149,9 @@ const NAME: &str = "reform";
 const CODE: &str = include_str!("reform.cuh");
 impl Operator {
     fn scheme(&mut self, cc: Version) -> Result<(), ErrorPosition> {
-        let module = self
-            .handle
-            .compile(NAME, cc, || {
-                format!(
-                    r#"{CODE}
+        self.scheme = Some(self.handle.compile_kernel(NAME, cc, || {
+            format!(
+                r#"{CODE}
 
 extern "C" __global__ void {NAME}(
     void       *__restrict__ dst,
@@ -178,10 +173,8 @@ extern "C" __global__ void {NAME}(
     }}
 }}
 "#
-                )
-            })
-            .map_err(|(e, log)| locate_error!("Failed to compile {NAME}: {e:?}\n{log}"))?;
-        self.scheme = Some(module);
+            )
+        }));
         Ok(())
     }
 }

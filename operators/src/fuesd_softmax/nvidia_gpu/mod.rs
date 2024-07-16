@@ -125,11 +125,9 @@ impl Operator {
         let padding = format!("fused_softmax_padding_{max_threads_block}");
         let folding = format!("fused_softmax_folding_{max_threads_block}");
 
-        let module = self
-            .handle
-            .compile(NAME, cc, || {
-                format!(
-                    r#"{CODE}
+        let module = self.handle.compile_kernel(NAME, cc, || {
+            format!(
+                r#"{CODE}
 
 extern "C" __global__ void {padding}(
     half *__restrict__ att,
@@ -153,9 +151,8 @@ extern "C" __global__ void {folding}(
     (att, {mask}(), att_len, stride_z, stride_y, stride_x);
 }}
 "#
-                )
-            })
-            .map_err(|(e, log)| locate_error!("Failed to compile {NAME}: {e:?}\n{log}"))?;
+            )
+        });
         self.scheme = Some((
             Scheme {
                 max_threads_block,

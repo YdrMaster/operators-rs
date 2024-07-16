@@ -98,11 +98,9 @@ const NAME: &str = "swiglu_f16";
 const CODE: &str = include_str!("swiglu.cuh");
 impl Operator {
     fn scheme(&mut self, cc: Version) -> Result<(), ErrorPosition> {
-        let module = self
-            .handle
-            .compile(NAME, cc, || {
-                format!(
-                    r#"{CODE}
+        self.scheme = Some(self.handle.compile_kernel(NAME, cc, || {
+            format!(
+                r#"{CODE}
 
 extern "C" __global__ void {NAME}(
     half *__restrict__ gate,
@@ -112,10 +110,8 @@ extern "C" __global__ void {NAME}(
 ){{
     swiglu(gate, stride_gate, up, stride_up);
 }}"#
-                )
-            })
-            .map_err(|(e, log)| locate_error!("Failed to compile {NAME}: {e:?}\n{log}"))?;
-        self.scheme = Some(module);
+            )
+        }));
         Ok(())
     }
 }

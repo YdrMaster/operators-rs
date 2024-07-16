@@ -1,5 +1,6 @@
 mod handle;
 
+pub mod arg_max;
 pub mod fuesd_softmax;
 pub mod mat_mul;
 pub mod reform;

@@ -7,7 +7,7 @@ authors = ["YdrMaster <ydrml@hotmail.com>"]
 [features]
 default = ["common-cpu", "nvidia-gpu", "cambricon-mlu"]
 common-cpu = ["gemm", "rayon"]
-nvidia-gpu = ["cuda", "cublas", "nccl"]
+nvidia-gpu = ["cuda", "cublas", "nccl", "libloading"]
 cambricon-mlu = ["cndrv", "cnnl"]
 
 [dependencies]
@@ -22,6 +22,7 @@ rayon = { version = "1.10", optional = true }
 cuda = { workspace = true, optional = true }
 cublas = { workspace = true, optional = true }
 nccl = { workspace = true, optional = true }
+libloading = { version = "0.8", optional = true }
 
 cndrv = { workspace = true, optional = true }
 cnnl = { workspace = true, optional = true }

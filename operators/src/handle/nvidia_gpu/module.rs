@@ -1,13 +1,12 @@
 ﻿use super::{Internal, Key};
 use cuda::{
     bindings::nvrtcResult, ContextResource, ContextSpore, CurrentCtx, Dim3, KernelFn, ModuleSpore,
-    Ptx, Stream, Version,
+    Ptx, Stream,
 };
 use log::warn;
 use std::{
     collections::{hash_map::Entry::Occupied, HashMap},
     ffi::{c_void, CStr},
-    mem::replace,
     ptr::addr_eq,
     sync::{Arc, OnceLock, RwLock},
 };
@@ -63,11 +62,7 @@ impl ModuleBox {
 impl Drop for ModuleBox {
     #[inline]
     fn drop(&mut self) {
-        let key = replace(
-            &mut self.key,
-            (String::new(), Version { major: 0, minor: 0 }),
-        );
-        if let Occupied(entry) = self.handle.modules.write().unwrap().entry(key) {
+        if let Occupied(entry) = self.handle.modules.write().unwrap().entry(self.key.clone()) {
             if addr_eq(entry.get().as_ptr(), self as *const _) {
                 entry.remove();
             }

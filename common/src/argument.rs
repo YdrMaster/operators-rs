@@ -30,7 +30,7 @@ impl ArgVal for usize {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[repr(transparent)]
 pub struct Argument<T>(T);
 

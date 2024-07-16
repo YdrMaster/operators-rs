@@ -1,11 +1,10 @@
+mod library;
 mod module;
 
 use common::Pool;
 use cublas::{Cublas, CublasLtSpore, CublasSpore};
-use cuda::{
-    bindings::nvrtcResult, Context, ContextResource, ContextSpore, CurrentCtx, Device, Stream,
-    Version,
-};
+use cuda::{Context, ContextResource, ContextSpore, CurrentCtx, Device, Stream, Version};
+use libloading::Library;
 use std::{
     collections::HashMap,
     sync::{Arc, RwLock, Weak},
@@ -61,12 +60,12 @@ impl Internal {
         self.cublas.push(cublas.sporulate());
     }
 
-    pub fn compile(
+    pub fn compile_kernel(
         self: &Arc<Self>,
         name: impl AsRef<str>,
         cc: Version,
         code: impl FnOnce() -> String,
-    ) -> Result<Arc<ModuleBox>, (nvrtcResult, String)> {
+    ) -> Arc<ModuleBox> {
         let key = (name.as_ref().to_string(), cc);
         let module = self
             .modules
@@ -75,7 +74,7 @@ impl Internal {
             .get(&key)
             .and_then(|m| m.upgrade());
         match module {
-            Some(module) => Ok(module),
+            Some(module) => module,
             None => {
                 let module = ModuleBox::share(self.clone(), key.clone(), code);
                 let _ = self
@@ -83,9 +82,19 @@ impl Internal {
                     .write()
                     .unwrap()
                     .insert(key, Arc::downgrade(&module));
-                Ok(module)
+                module
             }
         }
+    }
+
+    #[allow(unused)]
+    pub fn compile(
+        self: &Arc<Self>,
+        name: impl AsRef<str>,
+        cc: Version,
+        code: impl FnOnce() -> String,
+    ) -> Arc<Library> {
+        library::cache_lib(&(name.as_ref().to_string(), cc), code).unwrap()
     }
 }
 
