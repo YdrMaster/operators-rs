@@ -2,7 +2,7 @@
 use crate::common_cpu::Handle as Cpu;
 use common::{locate_error, ErrorPosition, QueueOf};
 use half::f16;
-use std::{cmp::Ordering::Equal, slice::from_raw_parts};
+use std::{cmp::Ordering::Equal, os::raw::c_int, slice::from_raw_parts};
 
 pub struct Operator;
 
@@ -42,7 +42,7 @@ impl common::Operator for Operator {
             ty::F32 => argmax::<f32>(args.data_base, meta.n).into_raw(),
             e => return Err(locate_error!("Unsupported data layout: {e:?}")),
         };
-        unsafe { args.kv_pair_base.cast::<(u64, u64)>().write(kv) };
+        unsafe { args.kv_pair_base.cast::<(c_int, c_int)>().write(kv) };
         Ok(())
     }
 }

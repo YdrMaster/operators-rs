@@ -1,7 +1,9 @@
 ﻿use crate::utils::{ConstPtr, MutPtr};
-use common::{locate_error, ErrorPosition, Handle, TensorLayout};
+use common::{locate_error, ErrorPosition, Handle, TensorLayout, Workspace};
 use digit_layout::{layout, DigitLayout};
 use std::{
+    ffi::c_int,
+    hash::{Hash, Hasher},
     marker::PhantomData,
     mem::{align_of, size_of},
 };
@@ -11,33 +13,34 @@ pub struct Args<H: Handle> {
     pub kv_pair_base: MutPtr<H>,
     pub data: TensorLayout,
     pub data_base: ConstPtr<H>,
+    pub workspace: Workspace<H>,
 }
 
 #[repr(C)]
 pub struct KVpair<T> {
-    pub idx: u64,
-    pub val: u64,
+    pub idx: c_int,
+    pub val: c_int,
     pub _phantom: PhantomData<T>,
 }
 
 impl<T: Copy> KVpair<T> {
-    pub fn new(idx: u64, val: T) -> Self {
-        const { assert!(size_of::<T>() <= size_of::<u64>()) }
-        const { assert!(align_of::<T>() <= align_of::<u64>()) }
+    pub fn new(idx: c_int, val: T) -> Self {
+        const { assert!(size_of::<T>() <= size_of::<c_int>()) }
+        const { assert!(align_of::<T>() <= align_of::<c_int>()) }
 
-        let mut val64 = 0u64;
-        let ptr = std::ptr::from_mut(&mut val64).cast::<T>();
+        let mut val_bytes = 0;
+        let ptr = std::ptr::from_mut(&mut val_bytes).cast::<T>();
         unsafe { ptr.write(val) };
 
         Self {
             idx,
-            val: val64,
+            val: val_bytes,
             _phantom: PhantomData,
         }
     }
 
     #[inline(always)]
-    pub fn into_raw(self) -> (u64, u64) {
+    pub fn into_raw(self) -> (c_int, c_int) {
         (self.idx, self.val)
     }
 }
@@ -48,6 +51,14 @@ layout!(KV_PAIR u(64)x(2));
 pub(super) struct Meta {
     pub dt: DigitLayout,
     pub n: usize,
+}
+
+impl Hash for Meta {
+    #[inline(always)]
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.dt.to_u32().hash(state);
+        self.n.hash(state);
+    }
 }
 
 impl<H: Handle> Args<H> {

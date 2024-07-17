@@ -4,12 +4,14 @@ mod module;
 use common::Pool;
 use cublas::{Cublas, CublasLtSpore, CublasSpore};
 use cuda::{Context, ContextResource, ContextSpore, CurrentCtx, Device, Stream, Version};
+use digit_layout::DigitLayout;
 use libloading::Library;
 use std::{
     collections::HashMap,
     sync::{Arc, RwLock, Weak},
 };
 
+pub(crate) use library::{EXPORT, EXPORT_H};
 pub(crate) use module::ModuleBox;
 
 pub struct Handle(pub(crate) Arc<Internal>);
@@ -109,5 +111,31 @@ impl Drop for Internal {
                 drop(cublas.sprout(ctx));
             }
         });
+    }
+}
+
+pub(crate) fn dt_name(dt: DigitLayout) -> &'static str {
+    use digit_layout::types as ty;
+    match dt {
+        ty::U8 => "unsigned char",
+        ty::U16 => "unsigned short",
+        ty::U32 => "unsigned int",
+        ty::U64 => "unsigned long long",
+
+        ty::I8 => "char",
+        ty::I16 => "short",
+        ty::I32 => "int",
+        ty::I64 => "long long",
+
+        ty::F16 => "half",
+        ty::F32 => "float",
+        ty::F64 => "double",
+        ty::BF16 => "nv_bfloat16",
+        ty::F16x2 => "half2",
+        ty::BF16x2 => "nv_bfloat162",
+
+        ty::BOOL => "bool",
+
+        _ => panic!("Unknown digit layout: {dt:?}"),
     }
 }

@@ -7,10 +7,14 @@ use std::{
     env::temp_dir,
     ffi::OsStr,
     fs,
+    io::ErrorKind::NotFound,
     path::{Path, PathBuf},
-    process::{Command, Stdio},
-    sync::{Arc, OnceLock, RwLock},
+    process::{Command, Output, Stdio},
+    sync::{Arc, Once, OnceLock, RwLock},
 };
+
+pub(crate) const EXPORT_H: &str = "#include \"../export.h\"";
+pub(crate) const EXPORT: &str = "__C __export ";
 
 pub(super) fn cache_lib(
     key: &Key,
@@ -66,15 +70,48 @@ pub(super) fn cache_lib(
 struct XMake(Command);
 
 impl XMake {
+    fn check() {
+        const ERR: &str = "xmake detection failed";
+        const MSG: &str = "
+This project requires xmake to build cub device-wide code.
+See [this page](https://xmake.io/#/getting_started?id=installation) to install xmake.";
+
+        match Command::new("xmake").arg("--version").output() {
+            Ok(output) => {
+                if !output.status.success() {
+                    let code = output
+                        .status
+                        .code()
+                        .map_or("-".into(), |code| code.to_string());
+                    let log = read_output(&output);
+                    panic!("{ERR}.\n\nstatus code: {code}\n\n{log}\n{MSG}");
+                } else {
+                    // xmake detected, nothing to do
+                }
+            }
+            Err(e) if e.kind() == NotFound => {
+                panic!("xmake not found.\n{MSG}");
+            }
+            Err(e) => {
+                panic!("{ERR}: {e}\n{MSG}");
+            }
+        }
+    }
+
     fn new(command: &str) -> Self {
+        static CHECKED: Once = Once::new();
+        CHECKED.call_once(Self::check);
+
         let mut xmake = Command::new("xmake");
         xmake.arg(command);
         Self(xmake)
     }
+
     fn arg(mut self, arg: impl AsRef<OsStr>) -> Self {
         self.0.arg(arg);
         self
     }
+
     fn run(mut self, dir: impl AsRef<Path>) -> Result<(), String> {
         let output = self
             .0
@@ -83,26 +120,7 @@ impl XMake {
             .stderr(Stdio::piped())
             .output()
             .unwrap();
-        let mut log = String::new();
-        if !output.stdout.is_empty() {
-            log += "stdout:\n\n";
-            log += &String::from_utf8_lossy(&output.stdout);
-            if log.ends_with('\n') {
-                log.push('\n');
-            } else {
-                log += "\n\n";
-            }
-        }
-        if !output.stderr.is_empty() {
-            log += "stderr:\n\n";
-            log += &String::from_utf8_lossy(&output.stderr);
-            if log.ends_with('\n') {
-                log.push('\n');
-            } else {
-                log += "\n\n";
-            }
-        }
-
+        let log = read_output(&output);
         if output.status.success() {
             warn!("{log}");
             Ok(())
@@ -110,6 +128,29 @@ impl XMake {
             Err(log)
         }
     }
+}
+
+fn read_output(output: &Output) -> String {
+    let mut log = String::new();
+    if !output.stdout.is_empty() {
+        log += "stdout:\n\n";
+        log += &String::from_utf8_lossy(&output.stdout);
+        if log.ends_with('\n') {
+            log.push('\n');
+        } else {
+            log += "\n\n";
+        }
+    }
+    if !output.stderr.is_empty() {
+        log += "stderr:\n\n";
+        log += &String::from_utf8_lossy(&output.stderr);
+        if log.ends_with('\n') {
+            log.push('\n');
+        } else {
+            log += "\n\n";
+        }
+    }
+    log
 }
 
 #[test]

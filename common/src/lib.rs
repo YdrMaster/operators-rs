@@ -22,6 +22,12 @@ pub trait Handle {
 pub type ByteOf<D> = <D as Handle>::Byte;
 pub type QueueOf<'ctx, D> = <D as Handle>::Queue<'ctx>;
 
+#[derive(Clone, Copy, Debug)]
+pub struct Workspace<H: Handle> {
+    pub ptr: *mut ByteOf<H>,
+    pub len: usize,
+}
+
 pub trait Operator {
     type Handle: Handle;
     type Args;
