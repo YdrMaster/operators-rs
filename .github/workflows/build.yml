@@ -26,16 +26,21 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: cuda-toolkit
-        uses: Jimver/cuda-toolkit@v0.2.16
-        with:
-          method: 'network'
-
       - name: Check format
         run: cargo fmt --check
 
       - name: Update to latest deps
         run: cargo update
+
+      - name: cuda-toolkit
+        uses: Jimver/cuda-toolkit@v0.2.16
+        with:
+          method: 'network'
+
+      - name: Install xmake
+        uses: xmake-io/github-action-setup-xmake@v1
+        with:
+          xmake-version: latest
 
       - name: Run test
         run: cargo test
