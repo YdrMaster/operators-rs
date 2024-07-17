@@ -62,7 +62,12 @@ pub(super) fn cache_lib(
         .run(&dir)
         .map_err(|e| locate_error!("xmake install failed: {e}"))?;
 
-    let lib = Arc::new(unsafe { Library::new(dir.join("bin").join("lib")) }.unwrap());
+    let lib_path: PathBuf = if cfg!(windows) {
+        dir.join("bin").join("lib")
+    } else {
+        dir.join("lib").join("liblib.so")
+    };
+    let lib = Arc::new(unsafe { Library::new(lib_path) }.unwrap());
     cache.write().unwrap().insert(key.clone(), lib.clone());
     Ok(lib)
 }
