@@ -18,7 +18,11 @@ pub struct Operator {
     scheme: Option<Scheme>,
 }
 
-impl ArgMax<Gpu> for Operator {}
+impl ArgMax<Gpu> for Operator {
+    fn workspace(&self) -> usize {
+        self.scheme.as_ref().expect("Scheme not set").workspace
+    }
+}
 
 impl common::Operator for Operator {
     type Handle = Gpu;
@@ -151,7 +155,7 @@ impl Scheme {
 
 #[test]
 fn test() {
-    use super::KV_PAIR;
+    use super::KVPair;
     use common::{Operator as _, TensorLayout, Workspace};
     use digit_layout::types::F16;
 
@@ -167,7 +171,7 @@ fn test() {
     <Operator as common::Operator>::scheme(
         &mut op,
         &Args {
-            kv_pair: TensorLayout::new(KV_PAIR, &[], &[]),
+            kv_pair: TensorLayout::new(KVPair::<()>::LAYOUT, &[], &[]),
             kv_pair_base: null_mut(),
             data: TensorLayout::new(F16, &[32000.into()], &[2.into()]),
             data_base: null(),

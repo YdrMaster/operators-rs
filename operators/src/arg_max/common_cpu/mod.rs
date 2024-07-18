@@ -1,12 +1,17 @@
-﻿use super::{args::KVpair, ArgMax, Args};
+﻿use super::{ArgMax, Args, KVPair};
 use crate::common_cpu::Handle as Cpu;
 use common::{locate_error, ErrorPosition, QueueOf};
 use half::f16;
-use std::{cmp::Ordering::Equal, os::raw::c_int, slice::from_raw_parts};
+use std::{cmp::Ordering::Equal, slice::from_raw_parts};
 
 pub struct Operator;
 
-impl ArgMax<Cpu> for Operator {}
+impl ArgMax<Cpu> for Operator {
+    #[inline]
+    fn workspace(&self) -> usize {
+        0
+    }
+}
 
 impl common::Operator for Operator {
     type Handle = Cpu;
@@ -42,16 +47,16 @@ impl common::Operator for Operator {
             ty::F32 => argmax::<f32>(args.data_base, meta.n).into_raw(),
             e => return Err(locate_error!("Unsupported data layout: {e:?}")),
         };
-        unsafe { args.kv_pair_base.cast::<(c_int, c_int)>().write(kv) };
+        unsafe { args.kv_pair_base.cast::<KVPair<()>>().write(kv) };
         Ok(())
     }
 }
 
-fn argmax<T: PartialOrd + Copy>(ptr: *const u8, len: usize) -> KVpair<T> {
+fn argmax<T: PartialOrd + Copy>(ptr: *const u8, len: usize) -> KVPair<T> {
     let (key, val) = unsafe { from_raw_parts(ptr.cast::<T>(), len) }
         .iter()
         .enumerate()
         .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(Equal))
         .unwrap();
-    KVpair::new(key as _, *val)
+    KVPair::new(key as _, *val)
 }

@@ -4,6 +4,9 @@ pub mod common_cpu;
 pub mod nvidia_gpu;
 
 mod args;
-pub use args::{Args, KVpair, KV_PAIR};
+mod kv_pair;
 
-crate::utils::op_trait!(ArgMax);
+pub use args::Args;
+pub use kv_pair::KVPair;
+
+crate::utils::op_trait!(ArgMax; fn workspace(&self) -> usize;);

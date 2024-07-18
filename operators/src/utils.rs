@@ -24,16 +24,14 @@ macro_rules! get_or_err {
 }
 
 macro_rules! op_trait {
-    ($name:ident) => {
+    ($name:ident $(;$body:item)?) => {
         pub trait $name<H: common::Handle>:
             common::Operator<
             Handle = H,
             Args = Args<H>,
             SchemeError = common::ErrorPosition,
             LaunchError = common::ErrorPosition,
-        >
-        {
-        }
+        >{$($body)*}
     };
 }
 
