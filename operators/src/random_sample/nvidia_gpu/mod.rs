@@ -1,15 +1,16 @@
-﻿use super::{args::Meta, Args, RandomSample};
+﻿use super::{
+    args::{Meta, SampleArgs},
+    Args, RandomSample,
+};
 use crate::nvidia_gpu::{dt_name, Handle as Gpu, Internal as Handle, EXPORT, EXPORT_H};
 use common::{locate_error, ErrorPosition, QueueOf};
 use cuda::{
     bindings::{CUresult, CUstream},
-    AsRaw, DevByte,
+    AsRaw, DevByte, Stream,
 };
 use libloading::{Library, Symbol};
 use std::{
     collections::HashMap,
-    os::raw::c_uint,
-    ptr::{null, null_mut},
     sync::{Arc, Mutex, OnceLock},
 };
 
@@ -58,101 +59,208 @@ impl common::Operator for Operator {
             return Err(locate_error!("Workspace out of range"));
         }
         if args.detail.is_argmax() {
-            let result = unsafe {
-                scheme.func()(
-                    args.workspace.ptr,
-                    (&args.workspace.len as *const usize).cast_mut(),
-                    args.kv_pair_base,
-                    args.data_base,
-                    meta.n as _,
-                    queue.as_raw(),
-                )
-            };
-            if SUCCESS != result {
-                return Err(locate_error!("ArgMax failed with cuda error: {result}"));
-            }
+            scheme.argmax(
+                args.workspace.ptr,
+                args.workspace.len,
+                args.kv_pair_base,
+                args.data_base,
+                queue,
+            )
         } else {
-            todo!()
+            scheme.sample(
+                args.workspace.ptr,
+                args.workspace.len,
+                args.kv_pair_base,
+                args.data_base,
+                args.detail,
+                queue,
+            )
         }
-        Ok(())
     }
 }
 
-type Func = unsafe extern "C" fn(
-    *mut DevByte,
-    *mut usize,
-    *mut DevByte,
-    *const DevByte,
-    c_uint,
+const SUCCESS: i32 = CUresult::CUDA_SUCCESS as _;
+type ArgMaxFunc = unsafe extern "C" fn(
+    *mut DevByte,   // workspace_ptr
+    usize,          // workspace_len
+    *mut DevByte,   // kv_pair
+    *const DevByte, // data
+    usize,          // n
+    CUstream,       // stream
+) -> i32;
+type SampleFunc = unsafe extern "C" fn(
+    *mut DevByte,   // workspace_ptr
+    usize,          // workspace_len
+    *mut DevByte,   // kv_pair
+    *const DevByte, // data
+    usize,          // n
+
+    f32,   // random
+    f32,   // temperature
+    f32,   // topp
+    usize, // topk
+
     CUstream,
 ) -> i32;
-const SUCCESS: i32 = CUresult::CUDA_SUCCESS as _;
 
 struct Scheme {
     meta: Meta,
-    name: String,
+    argmax: String,
+    sample: String,
     workspace: usize,
     lib: Arc<Library>,
 }
 
 impl Scheme {
     fn new(meta: Meta, handle: &Arc<Handle>) -> Self {
+        const CODE: &str = include_str!("sample.cuh");
         let dt = dt_name(meta.dt);
-        let name = format!("argmax_{dt}");
-        let lib = handle.compile(&name, handle.device().compute_capability(), || {
-            format!(
-                r#"
+        let workspace_name = format!("workspace_{dt}");
+        let argmax_name = format!("arg_max_{dt}");
+        let sample_name = format!("random_sample_{dt}");
+        let lib = handle.compile(
+            format!("random_sample_{dt}"),
+            handle.device().compute_capability(),
+            || {
+                format!(
+                    r#"
 {EXPORT_H}
-#include <cub/device/device_reduce.cuh>
-#include <cuda_fp16.h>
+{CODE}
 
-{EXPORT}cudaError argmax_{dt}(
-    void *temp_storage, size_t *temp_storage_bytes,
-    cub::KeyValuePair<int, {dt}> *output, {dt} const *data, unsigned int n,
-    cudaStream_t stream) {{
-    return cub::DeviceReduce::ArgMax(
-        temp_storage, *temp_storage_bytes,
-        data, output, n,
+{EXPORT}cudaError {workspace_name}(
+    size_t *workspace_len, size_t n
+) {{
+    return random_sample_workspace<{dt}>(workspace_len, n);
+}}
+
+{EXPORT}cudaError {argmax_name}(
+    void *workspace_ptr, size_t workspace_len,
+    cub::KeyValuePair<int, {dt}> *kv_pair,
+    {dt} *const data, size_t n,
+    cudaStream_t stream
+) {{
+    return arg_max(
+        workspace_ptr, workspace_len,
+        kv_pair, data, n,
         stream);
-}}"#
-            )
-        });
+}}
 
-        let mut name = name;
-        name.push('\0');
-        let mut scheme = Self {
+{EXPORT}cudaError {sample_name}(
+    void *workspace_ptr, size_t workspace_len,
+    cub::KeyValuePair<int, {dt}> *kv_pair,
+    {dt} *const data, size_t n,
+
+    float random,
+    float temperature,
+    float topp,
+    size_t topk,
+
+    cudaStream_t stream
+) {{
+    return random_sample(
+        workspace_ptr, workspace_len,
+        kv_pair, data, n,
+
+        random,
+        temperature,
+        topp,
+        topk,
+
+        stream);
+}}
+"#
+                )
+            },
+        );
+
+        let mut ans = Self {
             meta,
-            name,
             lib,
+            argmax: argmax_name,
+            sample: sample_name,
             workspace: 0,
         };
-        scheme.fill_workspace();
-        scheme
+        ans.argmax.push('\0');
+        ans.sample.push('\0');
+        ans.fill_workspace(workspace_name);
+        ans
     }
 
-    fn fill_workspace(&mut self) {
+    fn fill_workspace(&mut self, mut workspace_name: String) {
         static CACHE: OnceLock<Mutex<HashMap<Meta, usize>>> = OnceLock::new();
         let cache = CACHE.get_or_init(Default::default);
 
         if let Some(workspace) = cache.lock().unwrap().get(&self.meta) {
             self.workspace = *workspace;
         } else {
-            assert_eq!(SUCCESS, unsafe {
-                self.func()(
-                    null_mut(),
-                    &mut self.workspace,
-                    null_mut(),
-                    null(),
-                    0,
-                    null_mut(),
-                )
-            });
+            type Func = unsafe extern "C" fn(*mut usize, usize) -> i32;
+            workspace_name.push('\0');
+            let func: Symbol<Func> = unsafe { self.lib.get(workspace_name.as_bytes()) }.unwrap();
+            assert_eq!(SUCCESS, unsafe { func(&mut self.workspace, self.meta.n) });
         }
     }
 
-    #[inline(always)]
-    fn func(&self) -> Symbol<Func> {
-        unsafe { self.lib.get(self.name.as_bytes()) }.unwrap()
+    fn argmax(
+        &self,
+        workspace_ptr: *mut DevByte,
+        workspace_len: usize,
+        kv_pair: *mut DevByte,
+        data: *const DevByte,
+        stream: &Stream,
+    ) -> Result<(), ErrorPosition> {
+        if workspace_len < self.workspace {
+            return Err(locate_error!("Workspace out of range"));
+        }
+        let func: Symbol<ArgMaxFunc> = unsafe { self.lib.get(self.argmax.as_bytes()) }.unwrap();
+        let result = unsafe {
+            func(
+                workspace_ptr,
+                workspace_len,
+                kv_pair,
+                data,
+                self.meta.n,
+                stream.as_raw(),
+            )
+        };
+        if result == SUCCESS {
+            Ok(())
+        } else {
+            Err(locate_error!("ArgMax failed with cuda error code {result}"))
+        }
+    }
+
+    fn sample(
+        &self,
+        workspace_ptr: *mut DevByte,
+        workspace_len: usize,
+        kv_pair: *mut DevByte,
+        data: *const DevByte,
+        detail: SampleArgs,
+        stream: &Stream,
+    ) -> Result<(), ErrorPosition> {
+        if workspace_len < self.workspace {
+            return Err(locate_error!("Workspace out of range"));
+        }
+        let func: Symbol<SampleFunc> = unsafe { self.lib.get(self.sample.as_bytes()) }.unwrap();
+        let result = unsafe {
+            func(
+                workspace_ptr,
+                workspace_len,
+                kv_pair,
+                data,
+                self.meta.n,
+                rand::random(),
+                detail.temperature,
+                detail.top_p,
+                detail.top_k,
+                stream.as_raw(),
+            )
+        };
+        if result == SUCCESS {
+            Ok(())
+        } else {
+            Err(locate_error!("ArgMax failed with cuda error code {result}"))
+        }
     }
 }
 

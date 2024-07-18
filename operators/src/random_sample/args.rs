@@ -16,6 +16,7 @@ pub struct Args<H: Handle> {
     pub workspace: Workspace<H>,
 }
 
+#[derive(Clone, Copy, Debug)]
 pub struct SampleArgs {
     pub temperature: f32,
     pub top_p: f32,
