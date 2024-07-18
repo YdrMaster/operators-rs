@@ -1,8 +1,9 @@
+mod between_f32;
 mod handle;
 
-pub mod arg_max;
 pub mod fuesd_softmax;
 pub mod mat_mul;
+pub mod random_sample;
 pub mod reform;
 pub mod rms_norm;
 pub mod rope;

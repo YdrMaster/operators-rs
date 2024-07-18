@@ -9,4 +9,4 @@ mod kv_pair;
 pub use args::Args;
 pub use kv_pair::KVPair;
 
-crate::utils::op_trait!(ArgMax; fn workspace(&self) -> usize;);
+crate::utils::op_trait!(RandomSample; fn workspace(&self) -> usize;);

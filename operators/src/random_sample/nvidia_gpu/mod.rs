@@ -1,4 +1,4 @@
-﻿use super::{args::Meta, ArgMax, Args};
+﻿use super::{args::Meta, Args, RandomSample};
 use crate::nvidia_gpu::{dt_name, Handle as Gpu, Internal as Handle, EXPORT, EXPORT_H};
 use common::{locate_error, ErrorPosition, QueueOf};
 use cuda::{
@@ -18,7 +18,7 @@ pub struct Operator {
     scheme: Option<Scheme>,
 }
 
-impl ArgMax<Gpu> for Operator {
+impl RandomSample<Gpu> for Operator {
     fn workspace(&self) -> usize {
         self.scheme.as_ref().expect("Scheme not set").workspace
     }
@@ -57,21 +57,24 @@ impl common::Operator for Operator {
         if args.workspace.len < scheme.workspace {
             return Err(locate_error!("Workspace out of range"));
         }
-        let result = unsafe {
-            scheme.func()(
-                args.workspace.ptr,
-                (&args.workspace.len as *const usize).cast_mut(),
-                args.kv_pair_base,
-                args.data_base,
-                meta.n as _,
-                queue.as_raw(),
-            )
-        };
-        if SUCCESS == result {
-            Ok(())
+        if args.detail.is_argmax() {
+            let result = unsafe {
+                scheme.func()(
+                    args.workspace.ptr,
+                    (&args.workspace.len as *const usize).cast_mut(),
+                    args.kv_pair_base,
+                    args.data_base,
+                    meta.n as _,
+                    queue.as_raw(),
+                )
+            };
+            if SUCCESS != result {
+                return Err(locate_error!("ArgMax failed with cuda error: {result}"));
+            }
         } else {
-            Err(locate_error!("ArgMax failed with cuda error: {result}"))
+            todo!()
         }
+        Ok(())
     }
 }
 
@@ -155,8 +158,7 @@ impl Scheme {
 
 #[test]
 fn test() {
-    use super::KVPair;
-    use common::{Operator as _, TensorLayout, Workspace};
+    use common::Operator as _;
     use digit_layout::types::F16;
 
     if let Err(cuda::NoDevice) = cuda::init() {
@@ -168,20 +170,6 @@ fn test() {
     let handle = Gpu::new(dev.context());
     let mut op = Operator::new(&handle);
 
-    <Operator as common::Operator>::scheme(
-        &mut op,
-        &Args {
-            kv_pair: TensorLayout::new(KVPair::<()>::LAYOUT, &[], &[]),
-            kv_pair_base: null_mut(),
-            data: TensorLayout::new(F16, &[32000.into()], &[2.into()]),
-            data_base: null(),
-            workspace: Workspace {
-                ptr: null_mut(),
-                len: 0,
-            },
-        },
-    )
-    .unwrap();
-
+    <Operator as common::Operator>::scheme(&mut op, &Args::new(F16, 32000)).unwrap();
     println!("workspace = {}", op.scheme.as_ref().unwrap().workspace);
 }

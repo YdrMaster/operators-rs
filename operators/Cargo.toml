@@ -14,6 +14,7 @@ cambricon-mlu = ["cndrv", "cnnl"]
 common = { path = "../common" }
 digit-layout.workspace = true
 half = "2.4"
+rand = "0.8"
 log = "0.4"
 
 gemm = { version = "0.18", optional = true }
