@@ -11,6 +11,10 @@ impl RandomSample<Cpu> for Operator {
     fn workspace(&self) -> usize {
         0
     }
+    #[inline]
+    fn scheme_n(&self) -> usize {
+        0
+    }
 }
 
 impl common::Operator for Operator {

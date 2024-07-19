@@ -1,7 +1,7 @@
 ﻿use super::Key;
 use common::{locate_error, ErrorPosition};
 use libloading::Library;
-use log::warn;
+use log::info;
 use std::{
     collections::HashMap,
     env::temp_dir,
@@ -127,7 +127,7 @@ See [this page](https://xmake.io/#/getting_started?id=installation) to install x
             .unwrap();
         let log = read_output(&output);
         if output.status.success() {
-            warn!("{log}");
+            info!("{log}");
             Ok(())
         } else {
             Err(log)

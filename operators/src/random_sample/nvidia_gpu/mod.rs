@@ -23,6 +23,9 @@ impl RandomSample<Gpu> for Operator {
     fn workspace(&self) -> usize {
         self.scheme.as_ref().expect("Scheme not set").workspace
     }
+    fn scheme_n(&self) -> usize {
+        self.scheme.as_ref().unwrap().meta.n
+    }
 }
 
 impl common::Operator for Operator {

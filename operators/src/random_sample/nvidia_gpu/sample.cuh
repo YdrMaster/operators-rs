@@ -176,7 +176,7 @@ cudaError random_sample(
         indices_in, indices_out,
         n,
         stream));
-    auto block = cub::Min()(1024, n);
+    auto block = cub::Min()((size_t) 1024, n);
     auto grid = (n + block - 1) / block;
     partial_softmax_kernel<<<grid, block, 0, stream>>>(sorted, n, temperature);
     set_softmax_max_kernel<<<1, 1, 0, stream>>>(sorted);
