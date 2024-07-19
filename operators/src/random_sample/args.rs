@@ -43,8 +43,20 @@ impl<H: Handle> Args<H> {
     }
 }
 
-impl SampleArgs {
+impl Default for SampleArgs {
     #[inline]
+    fn default() -> Self {
+        Self::ARG_MAX
+    }
+}
+
+impl SampleArgs {
+    pub const ARG_MAX: Self = Self {
+        temperature: 0.,
+        top_p: 1.,
+        top_k: usize::MAX,
+    };
+
     pub fn new(temperature: f32, top_p: f32, top_k: usize) -> Result<Self, ErrorPosition> {
         if temperature < 0.0 {
             return Err(locate_error!("Temperature must be non-negative"));
@@ -54,7 +66,7 @@ impl SampleArgs {
         }
         Ok(Self {
             temperature,
-            top_p,
+            top_p: f32::min(top_p, 1.),
             top_k,
         })
     }

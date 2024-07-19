@@ -2,18 +2,15 @@
 use crate::{between_f32::BetweenF32, common_cpu::Handle as Cpu, random_sample::args::SampleArgs};
 use common::{locate_error, ErrorPosition, QueueOf};
 use half::f16;
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use std::{cmp::Ordering::Equal, slice::from_raw_parts};
 
 pub struct Operator;
 
 impl RandomSample<Cpu> for Operator {
-    #[inline]
-    fn workspace(&self) -> usize {
-        0
-    }
-    #[inline]
-    fn scheme_n(&self) -> usize {
-        0
+    type Workspace<'ctx> = Vec<u8>;
+    fn workspace<'ctx>(&self, _queue: &QueueOf<'ctx, Cpu>) -> Self::Workspace<'ctx> {
+        vec![]
     }
 }
 
@@ -96,10 +93,10 @@ where
     T: BetweenF32 + Copy,
 {
     // sort
-    let mut logits = unsafe { from_raw_parts(ptr.cast::<T>(), len) }
-        .iter()
-        .enumerate()
-        .map(|(idx, val)| KVPair::new(idx as _, val.f32()))
+    let ptr = ptr as usize;
+    let mut logits = (0..len)
+        .into_par_iter()
+        .map(|idx| KVPair::new(idx as _, unsafe { (ptr as *const T).add(idx).read() }.f32()))
         .collect::<Vec<_>>();
     logits.sort_unstable();
     let max = logits[0].val();

@@ -6,11 +6,13 @@ use crate::nvidia_gpu::{dt_name, Handle as Gpu, Internal as Handle, EXPORT, EXPO
 use common::{locate_error, ErrorPosition, QueueOf};
 use cuda::{
     bindings::{CUresult, CUstream},
-    AsRaw, DevByte, Stream,
+    AsRaw, DevByte, DevMem, Stream,
 };
 use libloading::{Library, Symbol};
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use std::{
     collections::HashMap,
+    mem::size_of,
     sync::{Arc, Mutex, OnceLock},
 };
 
@@ -20,11 +22,17 @@ pub struct Operator {
 }
 
 impl RandomSample<Gpu> for Operator {
-    fn workspace(&self) -> usize {
-        self.scheme.as_ref().expect("Scheme not set").workspace
-    }
-    fn scheme_n(&self) -> usize {
-        self.scheme.as_ref().unwrap().meta.n
+    type Workspace<'ctx> = DevMem<'ctx>;
+
+    fn workspace<'ctx>(&self, queue: &QueueOf<'ctx, Gpu>) -> Self::Workspace<'ctx> {
+        let scheme = self.scheme.as_ref().unwrap();
+        let mut workspace = queue.malloc::<u8>(scheme.workspace);
+        let host = (0..scheme.meta.n)
+            .into_par_iter()
+            .map(|i| i as u32)
+            .collect::<Vec<_>>();
+        queue.memcpy_h2d(&mut workspace[..scheme.meta.n * size_of::<u32>()], &host);
+        workspace
     }
 }
 

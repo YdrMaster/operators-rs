@@ -24,7 +24,7 @@ macro_rules! get_or_err {
 }
 
 macro_rules! op_trait {
-    ($name:ident $(;{$body:item})*) => {
+    ($name:ident $($body:item)*) => {
         pub trait $name<H: common::Handle>:
             common::Operator<
             Handle = H,
