@@ -15,5 +15,5 @@ cndrv = { git = "https://github.com/InfiniTensor/cndrv", rev = "36acd5f" }
 cnnl = { git = "https://github.com/InfiniTensor/cndrv", rev = "36acd5f" }
 search-neuware-tools = "0.0"
 
-asacendcl = { git = "https://github.com/InfiniTensor/asacendcl", rev = "1e7a696" }
-search-asacend-tools = { git = "https://github.com/InfiniTensor/asacendcl", rev = "1e7a696" }
+ascendcl = { git = "https://github.com/InfiniTensor/ascendcl", rev = "1e7a696" }
+search-ascend-tools = { git = "https://github.com/InfiniTensor/ascendcl", rev = "1e7a696" }

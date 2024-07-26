@@ -31,5 +31,10 @@ pub extern crate cndrv;
 #[cfg(use_neuware)]
 pub extern crate cnnl;
 
+#[cfg(use_ascend)]
+pub use handle::ascend_card;
+#[cfg(use_ascend)]
+pub extern crate ascendcl;
+
 mod record;
 mod utils;

@@ -5,10 +5,11 @@ edition = "2021"
 authors = ["YdrMaster <ydrml@hotmail.com>"]
 
 [features]
-default = ["common-cpu", "nvidia-gpu", "cambricon-mlu"]
+default = ["common-cpu", "nvidia-gpu", "cambricon-mlu", "ascend-card"]
 common-cpu = ["gemm", "rayon"]
 nvidia-gpu = ["cuda", "cublas", "nccl", "libloading"]
 cambricon-mlu = ["cndrv", "cnnl"]
+ascend-card = ["ascendcl"]
 
 [dependencies]
 common = { path = "../common" }
@@ -28,7 +29,10 @@ libloading = { version = "0.8", optional = true }
 cndrv = { workspace = true, optional = true }
 cnnl = { workspace = true, optional = true }
 
+ascendcl = { workspace = true, optional = true }
+
 [build-dependencies]
 build-script-cfg.workspace = true
 search-cuda-tools.workspace = true
 search-neuware-tools.workspace = true
+search-ascend-tools.workspace = true
