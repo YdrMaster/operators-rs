@@ -6,11 +6,14 @@ resolver = "2"
 digit-layout = "0.0"
 build-script-cfg = "0.0"
 
-cuda = { git = "https://github.com/YdrMaster/cuda-driver", rev = "fb088b6" }
-cublas = { git = "https://github.com/YdrMaster/cuda-driver", rev = "fb088b6" }
-nccl = { git = "https://github.com/YdrMaster/cuda-driver", rev = "fb088b6" }
-search-cuda-tools = { git = "https://github.com/YdrMaster/cuda-driver", rev = "fb088b6" }
+cuda = { git = "https://github.com/YdrMaster/cuda-driver", rev = "d089ada" }
+cublas = { git = "https://github.com/YdrMaster/cuda-driver", rev = "d089ada" }
+nccl = { git = "https://github.com/YdrMaster/cuda-driver", rev = "d089ada" }
+search-cuda-tools = { git = "https://github.com/YdrMaster/cuda-driver", rev = "d089ada" }
 
-cndrv = { git = "https://github.com/InfiniTensor/cndrv", rev = "ab2b1c9" }
-cnnl = { git = "https://github.com/InfiniTensor/cndrv", rev = "ab2b1c9" }
+cndrv = { git = "https://github.com/InfiniTensor/cndrv", rev = "36acd5f" }
+cnnl = { git = "https://github.com/InfiniTensor/cndrv", rev = "36acd5f" }
 search-neuware-tools = "0.0"
+
+asacendcl = { git = "https://github.com/InfiniTensor/asacendcl", rev = "1e7a696" }
+search-asacend-tools = { git = "https://github.com/InfiniTensor/asacendcl", rev = "1e7a696" }
