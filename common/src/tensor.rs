@@ -73,6 +73,19 @@ impl TensorLayout {
     }
 }
 
+impl Clone for TensorLayout {
+    #[inline]
+    fn clone(&self) -> Self {
+        let layout = Self::layout(self.ndim());
+        let src = self.0.cast::<u8>().as_ptr();
+        unsafe {
+            let dst = alloc(layout);
+            copy_nonoverlapping(src, dst, layout.size());
+            Self(NonNull::new_unchecked(dst as _))
+        }
+    }
+}
+
 impl Drop for TensorLayout {
     #[inline]
     fn drop(&mut self) {

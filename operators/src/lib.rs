@@ -9,6 +9,8 @@ pub mod rms_norm;
 pub mod rope;
 pub mod swiglu;
 
+pub mod mlp;
+
 pub use common::*;
 pub use record::{is_recording, start_record, stop_record};
 
