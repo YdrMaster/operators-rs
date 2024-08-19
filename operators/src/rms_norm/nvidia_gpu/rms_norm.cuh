@@ -3,38 +3,39 @@
 #include <cub/block/block_store.cuh>
 
 // assert BLOCK_SIZE >= blockDim.x
-template<unsigned int BLOCK_SIZE, class Tdata>
+template<unsigned int BLOCK_SIZE, class Tw, class Ta>
 static __device__ void padding(
-    Tdata *__restrict__ y_,
+    Ta *__restrict__ y_,
     int const stride_y,
-    Tdata const *__restrict__ x_,
+    Ta const *__restrict__ x_,
     int const stride_x,
-    Tdata const *__restrict__ w_,
+    Tw const *__restrict__ w_,
     float const epsilon) {
     auto y = y_ + blockIdx.x * stride_y + threadIdx.x;
-    auto x = x_[blockIdx.x * stride_x + threadIdx.x];
-    auto w = w_[threadIdx.x];
+    float const
+        x = x_[blockIdx.x * stride_x + threadIdx.x],
+        w = w_[threadIdx.x];
 
     using BlockOp = cub::BlockReduce<float, BLOCK_SIZE>;
     __shared__ typename BlockOp::TempStorage temp_storage;
     auto acc = BlockOp(temp_storage).Reduce(x * x, cub::Sum());
 
-    __shared__ Tdata rms;
+    __shared__ float rms;
     if (threadIdx.x == 0) {
-        rms = Tdata(rsqrtf(acc / float(blockDim.x) + epsilon));
+        rms = rsqrtf(acc / float(blockDim.x) + epsilon);
     }
     __syncthreads();
 
-    *y = rms * x * w;
+    *y = Ta(rms * x * w);
 }
 
-template<unsigned int BLOCK_SIZE, unsigned int NUM_ITEMS_THREAD, class Tdata>
+template<unsigned int BLOCK_SIZE, unsigned int NUM_ITEMS_THREAD, class Tw, class Ta>
 static __device__ void folding(
-    Tdata *__restrict__ y,
+    Ta *__restrict__ y,
     int const stride_y,
-    Tdata const *__restrict__ x,
+    Ta const *__restrict__ x,
     int const stride_x,
-    Tdata const *__restrict__ w,
+    Tw const *__restrict__ w,
     float const epsilon,
     unsigned int const items_size) {
     y += blockIdx.x * stride_y;

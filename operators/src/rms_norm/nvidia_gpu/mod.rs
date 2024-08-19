@@ -5,7 +5,7 @@ use crate::{
 };
 use common::{locate_error, ErrorPosition, QueueOf};
 use cuda::Version;
-use digit_layout::{types::F16, DigitLayout};
+use digit_layout::DigitLayout;
 use std::{ffi::CString, sync::Arc};
 
 pub struct Operator {
@@ -29,14 +29,16 @@ impl common::Operator for Operator {
     }
 
     fn scheme(&mut self, args: &Self::Args) -> Result<(), Self::SchemeError> {
-        let Meta { dt, n: _, d } = args.meta()?;
+        let Meta {
+            dt_w,
+            dt_a,
+            n: _,
+            d,
+        } = args.meta()?;
 
-        if dt != F16 {
-            todo!()
-        }
         #[allow(unreachable_code, clippy::diverging_sub_expression)]
         let Some(&d) = d.get_static() else {
-            self.scheme = Some((Scheme::Common { dt }, todo!()));
+            self.scheme = Some((Scheme::Common { dt_w, dt_a }, todo!()));
         };
 
         let device = self.handle.device();
@@ -44,9 +46,9 @@ impl common::Operator for Operator {
         let max_num_threads_block = device.block_limit().max_threads;
 
         if d <= max_num_threads_block {
-            self.padding_scheme(dt, d, cc)
+            self.padding_scheme(dt_w, dt_a, d, cc)
         } else {
-            self.folding_scheme(dt, d, cc, max_num_threads_block, device.warp_size())
+            self.folding_scheme(dt_w, dt_a, d, cc, max_num_threads_block, device.warp_size())
         }
     }
 
@@ -55,7 +57,7 @@ impl common::Operator for Operator {
         args: &Self::Args,
         queue: &QueueOf<Self::Handle>,
     ) -> Result<(), Self::LaunchError> {
-        let Meta { dt, n, d } = args.meta()?;
+        let Meta { dt_w, dt_a, n, d } = args.meta()?;
         let Args {
             y_layout,
             y_base,
@@ -83,44 +85,23 @@ impl common::Operator for Operator {
         get_or_err!(dsx);
         get_or_err!(dsw);
 
-        let unit = dt.nbytes() as isize;
-        if dsy != unit || dsx != unit || dsw != unit {
+        let unit = dt_a.nbytes() as isize;
+        if dsy != unit || dsx != unit || dsw != dt_w.nbytes() as isize {
             return Err(locate_error!("Unsupported layout"));
         };
 
         let (name, m, block_dims) = match self.scheme.as_ref() {
-            Some((Scheme::Common { dt: scheme_dt }, _)) => {
-                if dt != *scheme_dt {
+            Some((s, m)) => {
+                if !s.is_match(dt_w, dt_a, d) {
                     return Err(locate_error!());
                 }
-                todo!()
-            }
-            Some((
-                Scheme::Padding {
-                    dt: scheme_dt,
-                    d: scheme_d,
-                    name,
-                },
-                m,
-            )) => {
-                if dt != *scheme_dt || d != *scheme_d {
-                    return Err(locate_error!());
+                match s {
+                    Scheme::Common { .. } => todo!(),
+                    Scheme::Padding { name, .. } => (name, m, d),
+                    Scheme::Folding {
+                        name, block_size, ..
+                    } => (name, m, *block_size),
                 }
-                (name, m, d)
-            }
-            Some((
-                Scheme::Folding {
-                    dt: scheme_dt,
-                    d: scheme_d,
-                    block_size,
-                    name,
-                },
-                m,
-            )) => {
-                if dt != *scheme_dt || d != *scheme_d {
-                    return Err(locate_error!());
-                }
-                (name, m, *block_size)
             }
             None => return Err(locate_error!("Scheme not set")),
         };
@@ -136,40 +117,66 @@ impl common::Operator for Operator {
 
 enum Scheme {
     Common {
-        dt: DigitLayout,
+        dt_w: DigitLayout,
+        dt_a: DigitLayout,
     },
     Padding {
-        dt: DigitLayout,
+        dt_w: DigitLayout,
+        dt_a: DigitLayout,
         d: usize,
         name: CString,
     },
     Folding {
-        dt: DigitLayout,
+        dt_w: DigitLayout,
+        dt_a: DigitLayout,
         d: usize,
         block_size: usize,
         name: CString,
     },
 }
 
+impl Scheme {
+    fn is_match(&self, dt_w_: DigitLayout, dt_a_: DigitLayout, d_: usize) -> bool {
+        match *self {
+            Scheme::Common { dt_w, dt_a } => dt_w == dt_w_ && dt_a == dt_a_,
+            Scheme::Padding { dt_w, dt_a, d, .. } => dt_w == dt_w_ && dt_a == dt_a_ && d == d_,
+            Scheme::Folding { dt_w, dt_a, d, .. } => dt_w == dt_w_ && dt_a == dt_a_ && d == d_,
+        }
+    }
+}
+
 const CODE: &str = include_str!("rms_norm.cuh");
+
+fn dt_name(digit_layout: DigitLayout) -> &'static str {
+    use digit_layout::types as ty;
+    match digit_layout {
+        ty::F16 => "half",
+        ty::F32 => "float",
+        _ => unimplemented!(),
+    }
+}
+
 impl Operator {
     fn padding_scheme(
         &mut self,
-        dt: DigitLayout,
+        dt_w: DigitLayout,
+        dt_a: DigitLayout,
         d: usize,
         cc: Version,
     ) -> Result<(), ErrorPosition> {
-        let name = format!("rms_norm_padding_f16_{d}");
+        let name = format!("rms_norm_padding_w{}a{}_{d}", dt_w.nbits(), dt_a.nbits());
+        let tw = dt_name(dt_w);
+        let ta = dt_name(dt_a);
         let module = self.handle.compile_kernel(&name, cc, || {
             format!(
                 r#"{CODE}
 
 extern "C" __global__ void {name}(
-    half *__restrict__ y,
+    {ta} *__restrict__ y,
     int  const stride_y,
-    half const *__restrict__ x,
+    {ta} const *__restrict__ x,
     int  const stride_x,
-    half const *__restrict__ w,
+    {tw} const *__restrict__ w,
     float epsilon
 ){{
     padding<{d}>
@@ -179,7 +186,8 @@ extern "C" __global__ void {name}(
         });
         self.scheme = Some((
             Scheme::Padding {
-                dt,
+                dt_w,
+                dt_a,
                 d,
                 name: CString::new(name).unwrap(),
             },
@@ -190,7 +198,8 @@ extern "C" __global__ void {name}(
 
     fn folding_scheme(
         &mut self,
-        dt: DigitLayout,
+        dt_w: DigitLayout,
+        dt_a: DigitLayout,
         d: usize,
         cc: Version,
         max_num_threads_block: usize,
@@ -209,17 +218,24 @@ extern "C" __global__ void {name}(
         let num_threads_block = num_threads_warp * num_warps_block;
         let num_items_thread = (to_divid + num_warps_block - 1) / num_warps_block;
 
-        let name = format!("rms_norm_folding_f16_{num_threads_block}x{num_items_thread}");
+        let name = format!(
+            "rms_norm_padding_w{}a{}_{num_threads_block}x{num_items_thread}",
+            dt_w.nbits(),
+            dt_a.nbits()
+        );
+        let tw = dt_name(dt_w);
+        let ta = dt_name(dt_a);
+
         let module = self.handle.compile_kernel(&name, cc, || {
             format!(
                 r#"{CODE}
 
 extern "C" __global__ void {name}(
-    half *__restrict__ y,
+    {ta} *__restrict__ y,
     int  const stride_y,
-    half const *__restrict__ x,
+    {ta} const *__restrict__ x,
     int  const stride_x,
-    half const *__restrict__ w,
+    {tw} const *__restrict__ w,
     float epsilon
 ){{
     folding<{num_threads_block}, {num_items_thread}>
@@ -230,7 +246,8 @@ extern "C" __global__ void {name}(
 
         self.scheme = Some((
             Scheme::Folding {
-                dt,
+                dt_w,
+                dt_a,
                 d,
                 block_size: num_threads_block,
                 name: CString::new(name).unwrap(),
@@ -244,6 +261,7 @@ extern "C" __global__ void {name}(
 #[test]
 fn test() {
     use common::{dyn_, Operator as _, TensorLayout};
+    use digit_layout::types::F16;
     use std::ptr::{null, null_mut};
 
     if let Err(cuda::NoDevice) = cuda::init() {
@@ -268,20 +286,15 @@ fn test() {
         .unwrap();
         let (scheme, module) = op.scheme.as_ref().unwrap();
         match scheme {
-            Scheme::Common { dt: _ } => todo!(),
-            Scheme::Padding { dt: _, d: _, name } => handle.apply(|ctx| {
+            Scheme::Common { .. } => todo!(),
+            Scheme::Padding { name, .. } => handle.apply(|ctx| {
                 println!(
                     "{}\n{}",
                     name.to_str().unwrap(),
                     module.load(name, ctx).info()
                 );
             }),
-            Scheme::Folding {
-                dt: _,
-                d: _,
-                block_size: _,
-                name,
-            } => handle.apply(|ctx| {
+            Scheme::Folding { name, .. } => handle.apply(|ctx| {
                 println!(
                     "{}\n{}",
                     name.to_str().unwrap(),

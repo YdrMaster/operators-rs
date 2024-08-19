@@ -13,15 +13,17 @@ pub struct Args<H: Handle> {
 }
 
 pub(super) struct Meta {
-    pub dt: DigitLayout,
+    pub dt_w: DigitLayout,
+    pub dt_a: DigitLayout,
     pub n: Argument<usize>,
     pub d: Argument<usize>,
 }
 
 impl<H: Handle> Args<H> {
     pub(super) fn meta(&self) -> Result<Meta, ErrorPosition> {
-        let dt = self.y_layout.dt();
-        if self.x_layout.dt() != dt || self.w_layout.dt() != dt {
+        let dt_w = self.w_layout.dt();
+        let dt_a = self.y_layout.dt();
+        if self.x_layout.dt() != dt_a {
             return Err(locate_error!());
         }
         if self.y_layout.ndim() != 2 || self.x_layout.ndim() != 2 || self.w_layout.ndim() != 1 {
@@ -44,6 +46,6 @@ impl<H: Handle> Args<H> {
             return Err(locate_error!());
         };
 
-        Ok(Meta { dt, n, d })
+        Ok(Meta { dt_w, dt_a, n, d })
     }
 }
