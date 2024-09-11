@@ -3,7 +3,7 @@ members = ["common", "operators"]
 resolver = "2"
 
 [workspace.dependencies]
-digit-layout = { git = "https://github.com/InfiniTensor/digit-layout", rev = "1cd9eea" }
+digit-layout = "0.1"
 build-script-cfg = "0.0"
 
 cuda = { git = "https://github.com/YdrMaster/cuda-driver", rev = "d089ada" }
