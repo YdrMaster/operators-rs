@@ -4,7 +4,6 @@ use crate::{
     utils::{gcd, get_or_err},
 };
 use common::{algebraic, locate_error, ErrorPosition, QueueOf};
-use cuda::Version;
 use digit_layout::types::F16;
 use std::{ffi::CString, sync::Arc};
 
@@ -13,6 +12,9 @@ pub struct Operator {
     max_threads_block: usize,
     scheme: Option<Arc<ModuleBox>>,
 }
+
+const NAME: &str = "swiglu_f16";
+const CODE: &str = include_str!("swiglu.cuh");
 
 impl Swiglu<Gpu> for Operator {}
 
@@ -35,7 +37,22 @@ impl common::Operator for Operator {
         if dt != F16 {
             todo!()
         }
-        self.scheme(self.handle.device().compute_capability())
+        let cc = self.handle.device().compute_capability();
+        self.scheme = Some(self.handle.compile_kernel(NAME, cc, || {
+            format!(
+                r#"{CODE}
+
+extern "C" __global__ void {NAME}(
+    half *__restrict__ gate,
+    int const stride_gate,
+    half const *__restrict__ up,
+    int const stride_up
+){{
+    swiglu(gate, stride_gate, up, stride_up);
+}}"#
+            )
+        }));
+        Ok(())
     }
 
     fn launch(
@@ -94,57 +111,132 @@ impl common::Operator for Operator {
     }
 }
 
-const NAME: &str = "swiglu_f16";
-const CODE: &str = include_str!("swiglu.cuh");
-impl Operator {
-    fn scheme(&mut self, cc: Version) -> Result<(), ErrorPosition> {
-        self.scheme = Some(self.handle.compile_kernel(NAME, cc, || {
-            format!(
-                r#"{CODE}
-
-extern "C" __global__ void {NAME}(
-    half *__restrict__ gate,
-    int const stride_gate,
-    half const *__restrict__ up,
-    int const stride_up
-){{
-    swiglu(gate, stride_gate, up, stride_up);
-}}"#
-            )
-        }));
-        Ok(())
-    }
-}
-
 #[test]
-fn test() {
-    use common::{dyn_, Operator as _, TensorLayout};
-    use std::ptr::{null, null_mut};
+fn test() {}
 
-    if let Err(cuda::NoDevice) = cuda::init() {
-        return;
-    }
-    let dev = cuda::Device::new(0);
-    println!("{}", dev.info());
+#[cfg(test)]
+mod test {
+    use super::{Args, Gpu, Operator};
+    use common::{dyn_, Handle, Operator as _, TensorLayout};
+    use digit_layout::{
+        types::{F16, F64},
+        DigitLayout,
+    };
 
-    let handle = Gpu::new(dev.context());
-    let mut op = Operator::new(&handle);
-
-    <Operator as common::Operator>::scheme(
-        &mut op,
-        &Args {
-            gate_layout: TensorLayout::new(F16, &[dyn_(); 2], &[dyn_(); 2]),
+    fn dyn_args<H: Handle>(dt: DigitLayout) -> Args<H> {
+        use std::ptr::{null, null_mut};
+        let layout = TensorLayout::new(dt, &[dyn_(); 2], &[dyn_(); 2]);
+        Args {
+            gate_layout: layout.clone(),
             gate_base: null_mut(),
-            up_layout: TensorLayout::new(F16, &[dyn_(); 2], &[dyn_(); 2]),
+            up_layout: layout,
             up_base: null(),
-        },
-    )
-    .unwrap();
-    let module = op.scheme.as_ref().unwrap();
-    handle.apply(|ctx| {
-        println!(
-            "{NAME}\n{}",
-            module.load(CString::new(NAME).unwrap(), ctx).info()
-        );
-    })
+        }
+    }
+
+    fn args<H: Handle>(
+        dt: DigitLayout,
+        n: usize,
+        d: usize,
+        gate_base: *mut H::Byte,
+        up_base: *const H::Byte,
+    ) -> Args<H> {
+        let layout = TensorLayout::new_contiguous(dt, [n, d]);
+        Args {
+            gate_layout: layout.clone(),
+            gate_base,
+            up_layout: layout,
+            up_base,
+        }
+    }
+
+    #[test]
+    fn test_compile() {
+        use super::NAME;
+        use std::ffi::CString;
+
+        let Some(gpu) = Gpu::init() else {
+            return;
+        };
+        println!("{}", gpu.0.device().info());
+
+        let mut op = Operator::new(&gpu);
+        op.scheme(&dyn_args(F16)).unwrap();
+
+        let module = op.scheme.as_ref().unwrap();
+        gpu.apply(|ctx| {
+            println!(
+                "{NAME}\n{}",
+                module.load(CString::new(NAME).unwrap(), ctx).info()
+            );
+        })
+    }
+
+    #[test]
+    fn test_compute() {
+        use super::super::common_cpu::Operator as RefOp;
+        use crate::{
+            common_cpu::{Handle as Cpu, ThisThread},
+            nvidia_gpu::cast_load,
+            utils::{Diff, ErrorCollector},
+        };
+        use cuda::memcpy_d2h;
+        use half::f16;
+        use rand::Rng;
+        use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
+
+        let Some(gpu) = Gpu::init() else {
+            return;
+        };
+
+        let mut cpu_op = RefOp::new(&Cpu);
+        let mut gpu_op = Operator::new(&gpu);
+        cpu_op.scheme(&dyn_args(F64)).unwrap();
+        gpu_op.scheme(&dyn_args(F16)).unwrap();
+
+        let n = 5632;
+        let d = 2048;
+
+        let mut gate = vec![0.0f64; n * d];
+        let mut up = vec![0.0f64; n * d];
+        rand::thread_rng().fill(&mut gate[..]);
+        rand::thread_rng().fill(&mut up[..]);
+        let up = up;
+
+        let gate_ans = gpu.apply(|ctx| {
+            let stream = ctx.stream();
+            let mut gate = cast_load(&gate, |&x| f16::from_f64(x), &stream);
+            let up = cast_load(&up, |&x| f16::from_f64(x), &stream);
+            gpu_op
+                .launch(
+                    &args(F16, n, d, gate.as_mut_ptr().cast(), up.as_ptr().cast()),
+                    &stream,
+                )
+                .unwrap();
+            let mut host = vec![f16::ZERO; n * d];
+            memcpy_d2h(&mut host, &gate);
+            host
+        });
+
+        let mut gate_ref = gate;
+        cpu_op
+            .launch(
+                &args(F64, n, d, gate_ref.as_mut_ptr().cast(), up.as_ptr().cast()),
+                &ThisThread,
+            )
+            .unwrap();
+
+        let diff = gate_ref
+            .into_par_iter()
+            .zip(gate_ans)
+            .map(|(a, b)| Diff::new(a, b.to_f64()))
+            .collect::<Vec<_>>();
+
+        let mut ec = ErrorCollector::new(f16::EPSILON.to_f64(), 1e-5);
+        diff.into_iter().for_each(|diff| ec.push(diff));
+        println!("{ec}");
+
+        let (out, count) = ec.summary();
+        assert!(out * 1000 <= count);
+    }
 }
