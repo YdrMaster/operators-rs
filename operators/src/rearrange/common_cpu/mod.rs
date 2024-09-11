@@ -1,11 +1,11 @@
-﻿use super::{args::Scheme, Args, Reform};
+﻿use super::{args::Scheme, Args, Rearrange};
 use crate::common_cpu::Handle as Cpu;
 use common::{ErrorPosition, QueueOf};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 pub struct Operator;
 
-impl Reform<Cpu> for Operator {}
+impl Rearrange<Cpu> for Operator {}
 
 impl common::Operator for Operator {
     type Handle = Cpu;

@@ -4,7 +4,7 @@ mod handle;
 pub mod fuesd_softmax;
 pub mod mat_mul;
 pub mod random_sample;
-pub mod reform;
+pub mod rearrange;
 pub mod rms_norm;
 pub mod rope;
 pub mod swiglu;

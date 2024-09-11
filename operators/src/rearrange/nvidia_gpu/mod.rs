@@ -1,4 +1,4 @@
-﻿use super::{args::Scheme, Args, Reform};
+﻿use super::{args::Scheme, Args, Rearrange};
 use crate::nvidia_gpu::{Handle as Gpu, Internal as Handle, ModuleBox};
 use common::{locate_error, ErrorPosition, QueueOf};
 use cuda::Version;
@@ -15,7 +15,7 @@ pub struct Operator {
     scheme: Option<Arc<ModuleBox>>,
 }
 
-impl Reform<Gpu> for Operator {}
+impl Rearrange<Gpu> for Operator {}
 
 impl common::Operator for Operator {
     type Handle = Gpu;
@@ -145,8 +145,8 @@ impl common::Operator for Operator {
     }
 }
 
-const NAME: &str = "reform";
-const CODE: &str = include_str!("reform.cuh");
+const NAME: &str = "rearrange";
+const CODE: &str = include_str!("rearrange.cuh");
 impl Operator {
     fn scheme(&mut self, cc: Version) -> Result<(), ErrorPosition> {
         self.scheme = Some(self.handle.compile_kernel(NAME, cc, || {
@@ -164,12 +164,12 @@ extern "C" __global__ void {NAME}(
     unsigned int const bytes_per_thread
 ){{
     switch (bytes_per_thread) {{
-        case  1: reform<uchar1 >(dst, rsa, csa, src, rsb, csb, ncols); break;
-        case  2: reform<uchar2 >(dst, rsa, csa, src, rsb, csb, ncols); break;
-        case  4: reform<float1 >(dst, rsa, csa, src, rsb, csb, ncols); break;
-        case  8: reform<float2 >(dst, rsa, csa, src, rsb, csb, ncols); break;
-        case 16: reform<float4 >(dst, rsa, csa, src, rsb, csb, ncols); break;
-        case 32: reform<double4>(dst, rsa, csa, src, rsb, csb, ncols); break;
+        case  1: rearrange<uchar1 >(dst, rsa, csa, src, rsb, csb, ncols); break;
+        case  2: rearrange<uchar2 >(dst, rsa, csa, src, rsb, csb, ncols); break;
+        case  4: rearrange<float1 >(dst, rsa, csa, src, rsb, csb, ncols); break;
+        case  8: rearrange<float2 >(dst, rsa, csa, src, rsb, csb, ncols); break;
+        case 16: rearrange<float4 >(dst, rsa, csa, src, rsb, csb, ncols); break;
+        case 32: rearrange<double4>(dst, rsa, csa, src, rsb, csb, ncols); break;
     }}
 }}
 "#

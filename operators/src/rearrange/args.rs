@@ -53,7 +53,7 @@ impl Scheme {
                 // 剔除初始的 1 长维度
                 if dim.len != 1 {
                     if dim.dst == 0 {
-                        return Err(locate_error!("Reducing is not allowed for reform."));
+                        return Err(locate_error!("Reducing is not allowed for rearrangement."));
                     }
                     dims.push(dim);
                 }

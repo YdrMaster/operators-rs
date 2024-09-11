@@ -1,5 +1,5 @@
 template<class Tmem>
-static __device__ void reform(
+static __device__ void rearrange(
     void *__restrict__ dst,
     int const rsa,
     int const csa,
