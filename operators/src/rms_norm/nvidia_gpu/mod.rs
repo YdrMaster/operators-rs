@@ -21,6 +21,7 @@ impl common::Operator for Operator {
     type SchemeError = ErrorPosition;
     type LaunchError = ErrorPosition;
 
+    #[inline]
     fn new(handle: &Self::Handle) -> Self {
         Self {
             handle: handle.0.clone(),
@@ -258,49 +259,178 @@ extern "C" __global__ void {name}(
     }
 }
 
-#[test]
-fn test() {
-    use common::{dyn_, Operator as _, TensorLayout};
-    use digit_layout::types::F16;
-    use std::ptr::{null, null_mut};
+#[cfg(test)]
+mod test {
+    use super::{Args, Gpu, Operator, Scheme};
+    use crate::utils::{Diff, ErrorCollector};
+    use common::{dyn_, Handle, Operator as _, TensorLayout};
+    use cuda::memcpy_d2h;
+    use digit_layout::{
+        types::{F16, F32, F64},
+        DigitLayout,
+    };
+    use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 
-    if let Err(cuda::NoDevice) = cuda::init() {
-        return;
+    fn gpu() -> Option<Gpu> {
+        if let Err(cuda::NoDevice) = cuda::init() {
+            return None;
+        }
+        Some(Gpu::new(cuda::Device::new(0).context()))
     }
-    let dev = cuda::Device::new(0);
-    println!("{}", dev.info());
 
-    let handle = Gpu::new(dev.context());
-    let mut op = Operator::new(&handle);
-    for k in 8..=13 {
-        let d = 1 << k;
-        op.scheme(&Args {
-            y_layout: TensorLayout::new(F16, &[dyn_(), d.into()], &[dyn_(); 2]),
+    fn dyn_args<H: Handle>(dt_w: DigitLayout, dt_a: DigitLayout, d: usize) -> Args<H> {
+        use std::ptr::{null, null_mut};
+        Args {
+            y_layout: TensorLayout::new(dt_a, &[dyn_(), d.into()], &[dyn_(); 2]),
             y_base: null_mut(),
-            x_layout: TensorLayout::new(F16, &[dyn_(), d.into()], &[dyn_(); 2]),
+            x_layout: TensorLayout::new(dt_a, &[dyn_(), d.into()], &[dyn_(); 2]),
             x_base: null(),
-            w_layout: TensorLayout::new(F16, &[d.into()], &[dyn_()]),
+            w_layout: TensorLayout::new(dt_w, &[d.into()], &[dyn_()]),
             w_base: null(),
             epsilon: 1e-5,
-        })
-        .unwrap();
-        let (scheme, module) = op.scheme.as_ref().unwrap();
-        match scheme {
-            Scheme::Common { .. } => todo!(),
-            Scheme::Padding { name, .. } => handle.apply(|ctx| {
-                println!(
-                    "{}\n{}",
-                    name.to_str().unwrap(),
-                    module.load(name, ctx).info()
-                );
-            }),
-            Scheme::Folding { name, .. } => handle.apply(|ctx| {
-                println!(
-                    "{}\n{}",
-                    name.to_str().unwrap(),
-                    module.load(name, ctx).info()
-                );
-            }),
+        }
+    }
+
+    fn args<H: Handle>(
+        dt_w: DigitLayout,
+        dt_a: DigitLayout,
+        n: usize,
+        d: usize,
+        y_base: *mut H::Byte,
+        x_base: *const H::Byte,
+        w_base: *const H::Byte,
+    ) -> Args<H> {
+        let unit_w = dt_w.nbytes().unwrap() as isize;
+        let unit_a = dt_a.nbytes().unwrap() as isize;
+        let layout = TensorLayout::new(
+            dt_a,
+            &[n.into(), d.into()],
+            &[(unit_a * d as isize).into(), unit_a.into()],
+        );
+        Args {
+            y_layout: layout.clone(),
+            y_base,
+            x_layout: layout,
+            x_base,
+            w_layout: TensorLayout::new(dt_w, &[d.into()], &[unit_w.into()]),
+            w_base,
+            epsilon: 1e-5,
+        }
+    }
+
+    #[test]
+    fn test_compile() {
+        let Some(gpu) = gpu() else {
+            return;
+        };
+        println!("{}", gpu.0.device().info());
+
+        let mut op = Operator::new(&gpu);
+        for k in 8..=13 {
+            let d = 1 << k;
+            op.scheme(&dyn_args(F32, F16, d)).unwrap();
+            let (scheme, module) = op.scheme.as_ref().unwrap();
+            match scheme {
+                Scheme::Common { .. } => todo!(),
+                Scheme::Padding { name, .. } => gpu.apply(|ctx| {
+                    println!(
+                        "{}\n{}",
+                        name.to_str().unwrap(),
+                        module.load(name, ctx).info()
+                    );
+                }),
+                Scheme::Folding { name, .. } => gpu.apply(|ctx| {
+                    println!(
+                        "{}\n{}",
+                        name.to_str().unwrap(),
+                        module.load(name, ctx).info()
+                    );
+                }),
+            }
+        }
+    }
+
+    #[test]
+    fn test_compute() {
+        use super::super::common_cpu::Operator as RefOp;
+        use crate::common_cpu::{Handle as Cpu, ThisThread};
+        use half::f16;
+
+        let Some(gpu) = gpu() else {
+            return;
+        };
+
+        let mut cpu_op = RefOp::new(&Cpu);
+        let mut gpu_op = Operator::new(&gpu);
+        for k in 8..=13 {
+            let n = 4;
+            let d = 1 << k;
+            cpu_op.scheme(&dyn_args(F64, F64, d)).unwrap();
+            gpu_op.scheme(&dyn_args(F32, F16, d)).unwrap();
+
+            let w = (0..d).map(|_| rand::random::<f64>()).collect::<Vec<_>>();
+            let x = (0..n * d)
+                .map(|_| rand::random::<f64>())
+                .collect::<Vec<_>>();
+            let mut y_ref = vec![0.0; n * d];
+
+            cpu_op
+                .launch(
+                    &args(
+                        F64,
+                        F64,
+                        n,
+                        d,
+                        y_ref.as_mut_ptr().cast(),
+                        x.as_ptr().cast(),
+                        w.as_ptr().cast(),
+                    ),
+                    &ThisThread,
+                )
+                .unwrap();
+
+            let y = gpu.apply(|ctx| {
+                let stream = ctx.stream();
+                let x = x.into_par_iter().map(f16::from_f64).collect::<Vec<_>>();
+                let w = w.into_par_iter().map(|w| w as f32).collect::<Vec<_>>();
+                let x = stream.from_host(&x);
+                let w = stream.from_host(&w);
+                let mut y = stream.malloc::<f16>(n * d);
+                gpu_op
+                    .launch(
+                        &args(
+                            F32,
+                            F16,
+                            n,
+                            d,
+                            y.as_mut_ptr().cast(),
+                            x.as_ptr().cast(),
+                            w.as_ptr().cast(),
+                        ),
+                        &stream,
+                    )
+                    .unwrap();
+                let mut y_host = vec![f16::ZERO; n * d];
+                memcpy_d2h(&mut y_host, &y);
+                y_host
+            });
+
+            let v = y_ref
+                .into_par_iter()
+                .zip(y)
+                .map(|(a, b)| Diff::new(a, b.to_f64()))
+                .collect::<Vec<_>>();
+            let mut ec = ErrorCollector::new(1e-3);
+            v.into_iter().for_each(|diff| ec.push(diff));
+            let (max_diff, outliers) = ec.summary();
+            println!(
+                "abs: {:.3e}, rel: {:.3e}, outliers: {}/{}",
+                max_diff.abs,
+                max_diff.rel,
+                outliers.len(),
+                n * d
+            );
+            assert!(outliers.len() * 1000 <= n * d);
         }
     }
 }

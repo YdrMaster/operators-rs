@@ -36,3 +36,6 @@ build-script-cfg.workspace = true
 search-cuda-tools.workspace = true
 search-neuware-tools.workspace = true
 search-ascend-tools.workspace = true
+
+[dev-dependencies]
+rand = "0.8"

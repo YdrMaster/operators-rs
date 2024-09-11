@@ -43,7 +43,7 @@ jobs:
           xmake-version: latest
 
       - name: Run test
-        run: cargo test
+        run: cargo test --release
 
       - name: Install required cargo
         run: cargo install clippy-sarif sarif-fmt
