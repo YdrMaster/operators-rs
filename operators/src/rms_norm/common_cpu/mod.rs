@@ -2,6 +2,7 @@
 use crate::{common_cpu::Handle as Cpu, utils::get_or_err};
 use common::{locate_error, ErrorPosition, QueueOf};
 use half::f16;
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 pub struct Operator;
 
@@ -57,21 +58,17 @@ impl common::Operator for Operator {
         get_or_err!(dsx);
         get_or_err!(dsw);
 
-        let attrs = Attributes {
-            n,
-            d,
-            nsy,
-            dsy,
-            nsx,
-            dsx,
-            dsw,
-            epsilon: *epsilon,
-        };
-
         macro_rules! calculate {
             ($w:ty, $a:ty) => {
                 Scheme::<$w, $a> {
-                    attrs,
+                    n,
+                    d,
+                    nsy,
+                    dsy,
+                    nsx,
+                    dsx,
+                    dsw,
+                    epsilon: *epsilon,
                     y: y_base.cast(),
                     x: x_base.cast(),
                     w: w_base.cast(),
@@ -93,7 +90,7 @@ impl common::Operator for Operator {
     }
 }
 
-struct Attributes {
+struct Scheme<W, A> {
     n: usize,
     d: usize,
     nsy: isize,
@@ -102,126 +99,113 @@ struct Attributes {
     dsx: isize,
     dsw: isize,
     epsilon: f32,
-}
-
-impl Attributes {
-    #[inline]
-    fn n(&self) -> isize {
-        self.n as _
-    }
-    #[inline]
-    fn d(&self) -> isize {
-        self.d as _
-    }
-    #[inline]
-    fn k(&self, sum: f32) -> f32 {
-        (sum / (self.d as f32) + self.epsilon).sqrt().recip()
-    }
-    #[inline]
-    fn k_64(&self, sum: f64) -> f64 {
-        (sum / (self.d as f64) + self.epsilon as f64).sqrt().recip()
-    }
-    #[inline]
-    unsafe fn y<T>(&self, p: *mut T, i: isize, j: isize) -> *mut T {
-        p.byte_offset(i * self.nsy + j * self.dsy)
-    }
-    #[inline]
-    unsafe fn x<T>(&self, p: *const T, i: isize, j: isize) -> *const T {
-        p.byte_offset(i * self.nsx + j * self.dsx)
-    }
-    #[inline]
-    unsafe fn w<T>(&self, p: *const T, j: isize) -> *const T {
-        p.byte_offset(j * self.dsw)
-    }
-}
-
-struct Scheme<W, A> {
-    attrs: Attributes,
     y: *mut A,
     x: *const A,
     w: *const W,
 }
 
-impl Scheme<f16, f16> {
-    fn calculate(self) {
-        let Self { attrs, y, x, w } = self;
+unsafe impl<W, A> Send for Scheme<W, A> {}
+unsafe impl<W, A> Sync for Scheme<W, A> {}
 
-        for i in 0..attrs.n() {
-            let sum = (0..attrs.d())
-                .map(|j| unsafe { *attrs.x(x, i, j) }.to_f32().powi(2))
-                .sum::<f32>();
-            let k = attrs.k(sum);
-            for j in 0..attrs.d() {
-                unsafe {
-                    let y = attrs.y(y, i, j);
-                    let x = attrs.x(x, i, j).read().to_f32();
-                    let w = attrs.w(w, j).read().to_f32();
-                    *y = f16::from_f32(k * w * x);
-                }
-            }
-        }
+impl<W, A> Scheme<W, A> {
+    #[inline]
+    unsafe fn y_ptr(&self, i: isize, j: isize) -> *mut A {
+        self.y.byte_offset(i * self.nsy + j * self.dsy)
+    }
+    #[inline]
+    unsafe fn x_ptr(&self, i: isize, j: isize) -> *const A {
+        self.x.byte_offset(i * self.nsx + j * self.dsx)
+    }
+    #[inline]
+    unsafe fn w_ptr(&self, j: isize) -> *const W {
+        self.w.byte_offset(j * self.dsw)
     }
 }
 
-impl Scheme<f32, f16> {
-    fn calculate(self) {
-        let Self { attrs, y, x, w } = self;
-
-        for i in 0..attrs.n() {
-            let sum = (0..attrs.d())
-                .map(|j| unsafe { *attrs.x(x, i, j) }.to_f32().powi(2))
-                .sum::<f32>();
-            let k = attrs.k(sum);
-            for j in 0..attrs.d() {
-                unsafe {
-                    let y = attrs.y(y, i, j);
-                    let x = attrs.x(x, i, j).read().to_f32();
-                    let w = attrs.w(w, j).read();
-                    *y = f16::from_f32(k * w * x);
-                }
-            }
+macro_rules! impl_k {
+    ($ty:ty) => {
+        fn k(&self, i: isize) -> $ty {
+            let sum = (0..self.d as isize)
+                .into_par_iter()
+                .map(|j| unsafe { self.x(i, j) }.powi(2))
+                .sum::<$ty>();
+            (sum / (self.d as $ty) + self.epsilon as $ty).sqrt().recip()
         }
+    };
+}
+
+impl<W> Scheme<W, f16> {
+    impl_k!(f32);
+
+    #[inline]
+    unsafe fn y(&self, i: isize, j: isize, val: f32) {
+        self.y_ptr(i, j).write(f16::from_f32(val))
+    }
+    #[inline]
+    unsafe fn x(&self, i: isize, j: isize) -> f32 {
+        self.x_ptr(i, j).read().to_f32()
+    }
+}
+impl<W> Scheme<W, f32> {
+    impl_k!(f32);
+
+    #[inline]
+    unsafe fn y(&self, i: isize, j: isize, val: f32) {
+        self.y_ptr(i, j).write(val)
+    }
+    #[inline]
+    unsafe fn x(&self, i: isize, j: isize) -> f32 {
+        self.x_ptr(i, j).read()
+    }
+}
+impl<W> Scheme<W, f64> {
+    impl_k!(f64);
+
+    #[inline]
+    unsafe fn y(&self, i: isize, j: isize, val: f64) {
+        self.y_ptr(i, j).write(val)
+    }
+    #[inline]
+    unsafe fn x(&self, i: isize, j: isize) -> f64 {
+        self.x_ptr(i, j).read()
     }
 }
 
-impl Scheme<f32, f32> {
-    fn calculate(self) {
-        let Self { attrs, y, x, w } = self;
-
-        for i in 0..attrs.n() {
-            let sum = (0..attrs.d())
-                .map(|j| unsafe { *attrs.x(x, i, j) }.powi(2))
-                .sum::<f32>();
-            let k = attrs.k(sum);
-            for j in 0..attrs.d() {
-                unsafe {
-                    let y = attrs.y(y, i, j);
-                    let x = attrs.x(x, i, j).read();
-                    let w = attrs.w(w, j).read();
-                    *y = k * w * x;
-                }
-            }
-        }
+impl<A> Scheme<f16, A> {
+    #[inline]
+    unsafe fn w(&self, j: isize) -> f32 {
+        self.w_ptr(j).read().to_f32()
+    }
+}
+impl<A> Scheme<f32, A> {
+    #[inline]
+    unsafe fn w(&self, j: isize) -> f32 {
+        self.w_ptr(j).read()
+    }
+}
+impl<A> Scheme<f64, A> {
+    #[inline]
+    unsafe fn w(&self, j: isize) -> f64 {
+        self.w_ptr(j).read()
     }
 }
 
-impl Scheme<f64, f64> {
-    fn calculate(self) {
-        let Self { attrs, y, x, w } = self;
-
-        for i in 0..attrs.n() {
-            let sum = (0..attrs.d())
-                .map(|j| unsafe { *attrs.x(x, i, j) }.powi(2))
-                .sum::<f64>();
-            let k = attrs.k_64(sum);
-            for j in 0..attrs.d() {
-                unsafe {
-                    let y = attrs.y(y, i, j);
-                    let x = attrs.x(x, i, j).read();
-                    let w = attrs.w(w, j).read();
-                    *y = k * w * x;
+macro_rules! impl_scheme {
+    ($w:ty, $a:ty) => {
+        impl Scheme<$w, $a> {
+            fn calculate(self) {
+                for i in 0..self.n as isize {
+                    let k = self.k(i);
+                    (0..self.d as isize)
+                        .into_par_iter()
+                        .for_each(|j| unsafe { self.y(i, j, k * self.w(j) * self.x(i, j)) });
                 }
             }
         }
-    }
+    };
 }
+
+impl_scheme!(f16, f16);
+impl_scheme!(f32, f16);
+impl_scheme!(f32, f32);
+impl_scheme!(f64, f64);
