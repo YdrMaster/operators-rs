@@ -3,7 +3,7 @@ use crate::{
     nvidia_gpu::{Handle as Gpu, Internal as Handle, ModuleBox},
     utils::{gcd, get_or_err},
 };
-use common::{locate_error, ErrorPosition, QueueOf};
+use common::{algebraic, locate_error, ErrorPosition, QueueOf};
 use cuda::Version;
 use digit_layout::types::F16;
 use std::{ffi::CString, sync::Arc};
@@ -68,7 +68,7 @@ impl common::Operator for Operator {
         get_or_err!(sun);
         get_or_err!(sud);
 
-        let unit = dt.nbytes() as isize;
+        let unit = algebraic!(dt)? as isize;
         if sgd != unit || sud != unit {
             return Err(locate_error!("Unsupported layout"));
         };

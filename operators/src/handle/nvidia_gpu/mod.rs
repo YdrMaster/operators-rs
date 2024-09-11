@@ -131,10 +131,8 @@ pub(crate) fn dt_name(dt: DigitLayout) -> &'static str {
         ty::F32 => "float",
         ty::F64 => "double",
         ty::BF16 => "nv_bfloat16",
-        ty::F16x2 => "half2",
-        ty::BF16x2 => "nv_bfloat162",
 
-        ty::BOOL => "bool",
+        ty::Bool => "bool",
 
         _ => panic!("Unknown digit layout: {dt:?}"),
     }

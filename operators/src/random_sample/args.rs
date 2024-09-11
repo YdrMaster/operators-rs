@@ -1,6 +1,6 @@
 ﻿use super::KVPair;
 use crate::utils::{ConstPtr, MutPtr};
-use common::{locate_error, ErrorPosition, Handle, TensorLayout, Workspace};
+use common::{algebraic, locate_error, ErrorPosition, Handle, TensorLayout, Workspace};
 use digit_layout::{types::U32, DigitLayout};
 use std::{
     hash::{Hash, Hasher},
@@ -28,7 +28,7 @@ impl<H: Handle> Args<H> {
         Args {
             kv_pair: TensorLayout::new(KVPair::<()>::LAYOUT, [], []),
             kv_pair_base: null_mut(),
-            data: TensorLayout::new(dt, [n.into()], [(dt.nbytes() as isize).into()]),
+            data: TensorLayout::new(dt, [n.into()], [(algebraic!(dt).unwrap() as isize).into()]),
             data_base: null(),
             detail: SampleArgs {
                 temperature: 0.0,

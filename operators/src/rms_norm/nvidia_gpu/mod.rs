@@ -3,7 +3,7 @@ use crate::{
     nvidia_gpu::{Handle as Gpu, Internal as Handle, ModuleBox},
     utils::get_or_err,
 };
-use common::{locate_error, ErrorPosition, QueueOf};
+use common::{algebraic, locate_error, ErrorPosition, QueueOf};
 use cuda::Version;
 use digit_layout::DigitLayout;
 use std::{ffi::CString, sync::Arc};
@@ -85,8 +85,8 @@ impl common::Operator for Operator {
         get_or_err!(dsx);
         get_or_err!(dsw);
 
-        let unit = dt_a.nbytes() as isize;
-        if dsy != unit || dsx != unit || dsw != dt_w.nbytes() as isize {
+        let unit = algebraic!(dt_a)? as isize;
+        if dsy != unit || dsx != unit || dsw != algebraic!(dt_w)? as isize {
             return Err(locate_error!("Unsupported layout"));
         };
 
@@ -164,7 +164,9 @@ impl Operator {
         d: usize,
         cc: Version,
     ) -> Result<(), ErrorPosition> {
-        let name = format!("rms_norm_padding_w{}a{}_{d}", dt_w.nbits(), dt_a.nbits());
+        let ww = algebraic!(dt_w)? * 8;
+        let wa = algebraic!(dt_a)? * 8;
+        let name = format!("rms_norm_padding_w{ww}a{wa}_{d}");
         let tw = dt_name(dt_w);
         let ta = dt_name(dt_a);
         let module = self.handle.compile_kernel(&name, cc, || {
@@ -218,11 +220,9 @@ extern "C" __global__ void {name}(
         let num_threads_block = num_threads_warp * num_warps_block;
         let num_items_thread = (to_divid + num_warps_block - 1) / num_warps_block;
 
-        let name = format!(
-            "rms_norm_padding_w{}a{}_{num_threads_block}x{num_items_thread}",
-            dt_w.nbits(),
-            dt_a.nbits()
-        );
+        let ww = algebraic!(dt_w)? * 8;
+        let wa = algebraic!(dt_a)? * 8;
+        let name = format!("rms_norm_padding_w{ww}a{wa}_{num_threads_block}x{num_items_thread}");
         let tw = dt_name(dt_w);
         let ta = dt_name(dt_a);
 

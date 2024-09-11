@@ -3,9 +3,9 @@ use crate::{
     nvidia_gpu::{Handle as Gpu, Internal as Handle, ModuleBox},
     utils::get_or_err,
 };
-use common::{locate_error, ErrorPosition, QueueOf};
+use common::{algebraic, locate_error, ErrorPosition, QueueOf};
 use cuda::Version;
-use digit_layout::types::{F16, U32};
+use digit_layout::types::F16;
 use std::{ffi::CString, sync::Arc};
 
 pub struct Operator {
@@ -73,8 +73,8 @@ impl common::Operator for Operator {
         get_or_err!(sd);
         get_or_err!(sp);
 
-        let unit = dt.nbytes() as isize;
-        if sd != unit || sp != U32.nbytes() as isize {
+        let unit = algebraic!(dt)? as isize;
+        if sd != unit || sp != size_of::<u32>() as isize {
             return Err(locate_error!("Unsupported layout"));
         };
 
@@ -133,6 +133,7 @@ extern "C" __global__ void {NAME}(
 #[test]
 fn test() {
     use common::{dyn_, Operator as _, TensorLayout};
+    use digit_layout::types::U32;
     use std::ptr::{null, null_mut};
 
     if let Err(cuda::NoDevice) = cuda::init() {

@@ -1,6 +1,6 @@
 ﻿use super::{Args, KVPair, RandomSample};
 use crate::{between_f32::BetweenF32, common_cpu::Handle as Cpu, random_sample::args::SampleArgs};
-use common::{locate_error, ErrorPosition, QueueOf};
+use common::{algebraic, locate_error, ErrorPosition, QueueOf};
 use half::f16;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use std::{cmp::Ordering::Equal, slice::from_raw_parts};
@@ -39,7 +39,8 @@ impl common::Operator for Operator {
         let &[s] = args.data.strides() else {
             unreachable!()
         };
-        if s.get_static().copied() != Some(meta.dt.nbytes() as _) {
+        let unit = algebraic!(meta.dt)? as isize;
+        if s.get_static().copied() != Some(unit) {
             return Err(locate_error!());
         }
 
