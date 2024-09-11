@@ -1,7 +1,6 @@
 ﻿use super::{args::SchemeLayout, Args, MatMul};
 use crate::common_cpu::Handle as Cpu;
 use common::{locate_error, ErrorPosition, QueueOf};
-use digit_layout::types::{F16, F32, F64};
 
 pub struct Operator;
 
@@ -91,8 +90,9 @@ impl common::Operator for Operator {
             };
         }
 
+        use digit_layout::types as ty;
         match dt {
-            F16 => {
+            ty::F16 => {
                 use gemm::f16;
                 let c = c_base.cast::<f16>();
                 let a = a.cast::<f16>();
@@ -101,13 +101,13 @@ impl common::Operator for Operator {
                 let beta = f16::from_f32(beta);
                 gemm!(c, beta, a, b, alpha);
             }
-            F32 => {
+            ty::F32 => {
                 let c = c_base.cast::<f32>();
                 let a = a.cast::<f32>();
                 let b = b.cast::<f32>();
                 gemm!(c, beta, a, b, alpha);
             }
-            F64 => {
+            ty::F64 => {
                 let c = c_base.cast::<f64>();
                 let a = a.cast::<f64>();
                 let b = b.cast::<f64>();

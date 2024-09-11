@@ -1,6 +1,6 @@
 ﻿use super::{args::Meta, Args, RmsNorm};
 use crate::{
-    nvidia_gpu::{Handle as Gpu, Internal as Handle, ModuleBox},
+    nvidia_gpu::{dt_name, Handle as Gpu, Internal as Handle, ModuleBox},
     utils::get_or_err,
 };
 use common::{algebraic, locate_error, ErrorPosition, QueueOf};
@@ -147,15 +147,6 @@ impl Scheme {
 }
 
 const CODE: &str = include_str!("rms_norm.cuh");
-
-fn dt_name(digit_layout: DigitLayout) -> &'static str {
-    use digit_layout::types as ty;
-    match digit_layout {
-        ty::F16 => "half",
-        ty::F32 => "float",
-        _ => unimplemented!(),
-    }
-}
 
 impl Operator {
     fn padding_scheme(
