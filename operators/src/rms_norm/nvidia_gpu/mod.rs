@@ -253,13 +253,14 @@ extern "C" __global__ void {name}(
 #[cfg(test)]
 mod test {
     use super::{Args, Gpu, Operator, Scheme};
-    use common::{dyn_, Handle, Operator as _, TensorLayout};
+    use common::{Handle, Operator as _, TensorLayout};
     use digit_layout::{
         types::{F16, F32, F64},
         DigitLayout,
     };
 
     fn dyn_args<H: Handle>(dt_w: DigitLayout, dt_a: DigitLayout, d: usize) -> Args<H> {
+        use common::dyn_;
         use std::ptr::{null, null_mut};
         Args {
             y_layout: TensorLayout::new(dt_a, &[dyn_(), d.into()], &[dyn_(); 2]),

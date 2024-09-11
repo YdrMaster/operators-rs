@@ -97,7 +97,6 @@ impl Internal {
         }
     }
 
-    #[allow(unused)]
     pub fn compile(
         self: &Arc<Self>,
         name: impl AsRef<str>,

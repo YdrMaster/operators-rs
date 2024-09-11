@@ -37,7 +37,7 @@ impl common::Operator for Operator {
         if dt != F16 {
             todo!()
         }
-        self.scheme(self.handle.device().compute_capability())
+        self.scheme_(self.handle.device().compute_capability())
     }
 
     fn launch(
@@ -119,7 +119,7 @@ struct Scheme {
 const NAME: &str = "fused_softmax";
 const CODE: &str = include_str!("fused_softmax.cuh");
 impl Operator {
-    fn scheme(&mut self, cc: Version) -> Result<(), ErrorPosition> {
+    fn scheme_(&mut self, cc: Version) -> Result<(), ErrorPosition> {
         let mask = "AttentionCausualMask";
         let max_threads_block = self.handle.device().block_limit().max_threads;
         let padding = format!("fused_softmax_padding_{max_threads_block}");
@@ -165,34 +165,115 @@ extern "C" __global__ void {folding}(
     }
 }
 
-#[test]
-fn test() {
-    use common::{dyn_, Operator as _, TensorLayout};
-    use std::ptr::null_mut;
+#[cfg(test)]
+mod test {
+    use super::{Args, Gpu, Operator};
+    use common::{Handle, Operator as _, TensorLayout};
+    use digit_layout::{types as ty, DigitLayout};
 
-    if let Err(cuda::NoDevice) = cuda::init() {
-        return;
-    }
-    let dev = cuda::Device::new(0);
-    println!("{}", dev.info());
-
-    let handle = Gpu::new(dev.context());
-    let mut op = Operator::new(&handle);
-
-    <Operator as common::Operator>::scheme(
-        &mut op,
-        &Args {
-            att_layout: TensorLayout::new(F16, &[dyn_(); 3], &[dyn_(); 3]),
+    fn dyn_args<H: Handle>(dt: DigitLayout) -> Args<H> {
+        use common::dyn_;
+        use std::ptr::null_mut;
+        Args {
+            att_layout: TensorLayout::new(dt, &[dyn_(); 3], &[dyn_(); 3]),
             att_base: null_mut(),
-        },
-    )
-    .unwrap();
-    let (scheme, module) = op.scheme.as_ref().unwrap();
-    handle.apply(|ctx| {
-        println!("============================");
-        println!("{}", scheme.padding.to_str().unwrap());
-        println!("{}", module.load(&scheme.padding, ctx).info());
-        println!("{}", scheme.folding.to_str().unwrap());
-        println!("{}", module.load(&scheme.folding, ctx).info());
-    })
+        }
+    }
+
+    fn args<H: Handle>(
+        dt: DigitLayout,
+        nh: usize,
+        seq_len: usize,
+        att_len: usize,
+        att_base: *mut H::Byte,
+    ) -> Args<H> {
+        Args {
+            att_layout: TensorLayout::new_contiguous(dt, [nh, seq_len, att_len]),
+            att_base,
+        }
+    }
+
+    #[test]
+    fn test_compile() {
+        let Some(gpu) = Gpu::init() else {
+            return;
+        };
+        println!("{}", gpu.0.device().info());
+
+        let mut op = Operator::new(&gpu);
+        op.scheme(&dyn_args(ty::F16)).unwrap();
+
+        let (scheme, module) = op.scheme.as_ref().unwrap();
+        gpu.apply(|ctx| {
+            println!("============================");
+            println!("{}", scheme.padding.to_str().unwrap());
+            println!("{}", module.load(&scheme.padding, ctx).info());
+            println!("{}", scheme.folding.to_str().unwrap());
+            println!("{}", module.load(&scheme.folding, ctx).info());
+        })
+    }
+
+    #[test]
+    fn test_compute() {
+        use super::super::common_cpu::Operator as RefOp;
+        use crate::{
+            common_cpu::{Handle as Cpu, ThisThread},
+            nvidia_gpu::cast_load,
+            utils::{Diff, ErrorCollector},
+        };
+        use cuda::memcpy_d2h;
+        use half::f16;
+        use rand::Rng;
+        use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
+
+        let Some(gpu) = Gpu::init() else {
+            return;
+        };
+
+        let mut cpu_op = RefOp::new(&Cpu);
+        let mut gpu_op = Operator::new(&gpu);
+        cpu_op.scheme(&dyn_args(ty::F64)).unwrap();
+        gpu_op.scheme(&dyn_args(ty::F16)).unwrap();
+
+        let nh = 32;
+        for (seq_len, att_len) in [(1, 511), (1, 2048), (7, 511), (7, 2048)] {
+            let mut att = vec![0.0f64; nh * seq_len * att_len];
+            rand::thread_rng().fill(&mut att[..]);
+
+            let att_ans = gpu.apply(|ctx| {
+                let stream = ctx.stream();
+                let mut att = cast_load(&att, |&x| f16::from_f64(x), &stream);
+                gpu_op
+                    .launch(
+                        &args(ty::F16, nh, seq_len, att_len, att.as_mut_ptr().cast()),
+                        &stream,
+                    )
+                    .unwrap();
+                let mut host = vec![f16::ZERO; nh * seq_len * att_len];
+                memcpy_d2h(&mut host, &att);
+                host
+            });
+
+            let mut att_ref = att;
+            cpu_op
+                .launch(
+                    &args(ty::F64, nh, seq_len, att_len, att_ref.as_mut_ptr().cast()),
+                    &ThisThread,
+                )
+                .unwrap();
+
+            let diff = att_ref
+                .into_par_iter()
+                .zip(att_ans)
+                .map(|(a, b)| Diff::new(a, b.to_f64()))
+                .collect::<Vec<_>>();
+
+            let mut ec = ErrorCollector::new(f16::EPSILON.to_f64(), 0.);
+            diff.into_iter().for_each(|diff| ec.push(diff));
+            println!("{ec}");
+
+            let (out, count) = ec.summary();
+            assert!(out * 1000 <= count);
+        }
+    }
 }
