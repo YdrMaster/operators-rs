@@ -116,3 +116,129 @@ impl common::Operator for Operator {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod test {
+    use super::Args;
+    use common::{Handle, TensorLayout};
+    use digit_layout::DigitLayout;
+
+    const ALPHA: f32 = 0.5;
+    const BETA: f32 = 1.;
+
+    fn args<H: Handle>(
+        dt: DigitLayout,
+        batch: usize,
+        m: usize,
+        n: usize,
+        k: usize,
+        c_base: *mut H::Byte,
+        a_base: *const H::Byte,
+        b_base: *const H::Byte,
+    ) -> Args<H> {
+        Args {
+            c_layout: TensorLayout::new_contiguous(dt, [batch, m, n]),
+            c_base,
+            beta: BETA,
+            a_layout: TensorLayout::new_contiguous(dt, [batch, m, k]),
+            a_base,
+            b_layout: TensorLayout::new_contiguous(dt, [batch, k, n]),
+            b_base,
+            alpha: ALPHA,
+        }
+    }
+
+    #[test]
+    fn test_compute() {
+        use super::{super::common_cpu::Operator as RefOp, Gpu, Operator};
+        use crate::common_cpu::{Handle as Cpu, ThisThread};
+        use crate::{
+            nvidia_gpu::cast_load,
+            utils::{Diff, ErrorCollector},
+        };
+        use common::Operator as _;
+        use cuda::memcpy_d2h;
+        use digit_layout::types::{F16, F64};
+        use half::f16;
+        use rand::Rng;
+        use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
+
+        let Some(gpu) = Gpu::init() else {
+            return;
+        };
+
+        let cpu_op = RefOp::new(&Cpu);
+        let gpu_op = Operator::new(&gpu);
+
+        let batch = 4;
+        let k = 2048;
+        let n = 5632;
+        for m in [1, 7, 64, 255, 1024] {
+            let mut a = vec![0.0f64; batch * m * k];
+            let mut b = vec![0.0f64; batch * k * n];
+            let mut c = vec![0.0f64; batch * m * n];
+            rand::thread_rng().fill(&mut a[..]);
+            rand::thread_rng().fill(&mut b[..]);
+            rand::thread_rng().fill(&mut c[..]);
+            let a = a;
+            let b = b;
+
+            let c_ans = gpu.apply(|ctx| {
+                let stream = ctx.stream();
+                let mut c = cast_load(&c, |&x| f16::from_f64(x), &stream);
+                let a = cast_load(&a, |&x| f16::from_f64(x), &stream);
+                let b = cast_load(&b, |&x| f16::from_f64(x), &stream);
+
+                gpu_op
+                    .launch(
+                        &args(
+                            F16,
+                            batch,
+                            m,
+                            n,
+                            k,
+                            c.as_mut_ptr().cast(),
+                            a.as_ptr().cast(),
+                            b.as_ptr().cast(),
+                        ),
+                        &stream,
+                    )
+                    .unwrap();
+
+                let mut ans = vec![f16::ZERO; batch * m * n];
+                memcpy_d2h(&mut ans, &c);
+                ans
+            });
+
+            let mut c_ref = c;
+            cpu_op
+                .launch(
+                    &args(
+                        F64,
+                        batch,
+                        m,
+                        n,
+                        k,
+                        c_ref.as_mut_ptr().cast(),
+                        a.as_ptr().cast(),
+                        b.as_ptr().cast(),
+                    ),
+                    &ThisThread,
+                )
+                .unwrap();
+
+            let diff = c_ref
+                .into_par_iter()
+                .zip(c_ans)
+                .map(|(a, b)| Diff::new(a, b.to_f64()))
+                .collect::<Vec<_>>();
+
+            let mut ec = ErrorCollector::new(f16::EPSILON.to_f64() * 2., 5e-3);
+            diff.into_iter().for_each(|diff| ec.push(diff));
+            println!("{ec}");
+
+            let (out, count) = ec.summary();
+            assert!(out * 1000 <= count);
+        }
+    }
+}

@@ -36,6 +36,14 @@ impl Handle {
     pub fn apply<T>(&self, f: impl FnOnce(&CurrentCtx) -> T) -> T {
         self.0.context.apply(f)
     }
+
+    #[cfg(test)]
+    pub(crate) fn init() -> Option<Self> {
+        if let Err(cuda::NoDevice) = cuda::init() {
+            return None;
+        }
+        Some(Self::new(cuda::Device::new(0).context()))
+    }
 }
 
 pub(crate) struct Internal {
@@ -136,4 +144,19 @@ pub(crate) fn dt_name(dt: DigitLayout) -> &'static str {
 
         _ => panic!("Unknown digit layout: {dt:?}"),
     }
+}
+
+/// 并行转换类型并异步拷贝到显存。
+#[cfg(test)]
+pub(crate) fn cast_load<'ctx, T, U, F>(val: &[T], f: F, stream: &Stream<'ctx>) -> cuda::DevMem<'ctx>
+where
+    T: Sync,
+    U: Send + Copy,
+    F: Sync + Fn(&T) -> U,
+{
+    use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
+    let mut host = stream.ctx().malloc_host::<U>(val.len());
+    let host = unsafe { std::slice::from_raw_parts_mut(host.as_mut_ptr().cast(), val.len()) };
+    host.into_par_iter().zip(val).for_each(|(y, x)| *y = f(x));
+    stream.from_host(host)
 }

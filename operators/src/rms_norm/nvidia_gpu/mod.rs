@@ -262,21 +262,11 @@ extern "C" __global__ void {name}(
 #[cfg(test)]
 mod test {
     use super::{Args, Gpu, Operator, Scheme};
-    use crate::utils::{Diff, ErrorCollector};
     use common::{dyn_, Handle, Operator as _, TensorLayout};
-    use cuda::memcpy_d2h;
     use digit_layout::{
         types::{F16, F32, F64},
         DigitLayout,
     };
-    use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
-
-    fn gpu() -> Option<Gpu> {
-        if let Err(cuda::NoDevice) = cuda::init() {
-            return None;
-        }
-        Some(Gpu::new(cuda::Device::new(0).context()))
-    }
 
     fn dyn_args<H: Handle>(dt_w: DigitLayout, dt_a: DigitLayout, d: usize) -> Args<H> {
         use std::ptr::{null, null_mut};
@@ -300,19 +290,13 @@ mod test {
         x_base: *const H::Byte,
         w_base: *const H::Byte,
     ) -> Args<H> {
-        let unit_w = dt_w.nbytes().unwrap() as isize;
-        let unit_a = dt_a.nbytes().unwrap() as isize;
-        let layout = TensorLayout::new(
-            dt_a,
-            &[n.into(), d.into()],
-            &[(unit_a * d as isize).into(), unit_a.into()],
-        );
+        let layout = TensorLayout::new_contiguous(dt_a, [n, d]);
         Args {
             y_layout: layout.clone(),
             y_base,
             x_layout: layout,
             x_base,
-            w_layout: TensorLayout::new(dt_w, &[d.into()], &[unit_w.into()]),
+            w_layout: TensorLayout::new_contiguous(dt_w, [d]),
             w_base,
             epsilon: 1e-5,
         }
@@ -320,7 +304,7 @@ mod test {
 
     #[test]
     fn test_compile() {
-        let Some(gpu) = gpu() else {
+        let Some(gpu) = Gpu::init() else {
             return;
         };
         println!("{}", gpu.0.device().info());
@@ -353,10 +337,17 @@ mod test {
     #[test]
     fn test_compute() {
         use super::super::common_cpu::Operator as RefOp;
-        use crate::common_cpu::{Handle as Cpu, ThisThread};
+        use crate::{
+            common_cpu::{Handle as Cpu, ThisThread},
+            nvidia_gpu::cast_load,
+            utils::{Diff, ErrorCollector},
+        };
+        use cuda::memcpy_d2h;
         use half::f16;
+        use rand::Rng;
+        use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 
-        let Some(gpu) = gpu() else {
+        let Some(gpu) = Gpu::init() else {
             return;
         };
 
@@ -368,12 +359,38 @@ mod test {
             cpu_op.scheme(&dyn_args(F64, F64, d)).unwrap();
             gpu_op.scheme(&dyn_args(F32, F16, d)).unwrap();
 
-            let w = (0..d).map(|_| rand::random::<f64>()).collect::<Vec<_>>();
-            let x = (0..n * d)
-                .map(|_| rand::random::<f64>())
-                .collect::<Vec<_>>();
-            let mut y_ref = vec![0.0; n * d];
+            let mut x = vec![0.0f64; n * d];
+            let mut w = vec![0.0f64; d];
+            rand::thread_rng().fill(&mut x[..]);
+            rand::thread_rng().fill(&mut w[..]);
+            let x = x;
+            let w = w;
 
+            let y_ans = gpu.apply(|ctx| {
+                let stream = ctx.stream();
+                let mut y = stream.malloc::<f16>(n * d);
+                let x = cast_load(&x, |&x| f16::from_f64(x), &stream);
+                let w = cast_load(&w, |&x| x as f32, &stream);
+                gpu_op
+                    .launch(
+                        &args(
+                            F32,
+                            F16,
+                            n,
+                            d,
+                            y.as_mut_ptr().cast(),
+                            x.as_ptr().cast(),
+                            w.as_ptr().cast(),
+                        ),
+                        &stream,
+                    )
+                    .unwrap();
+                let mut host = vec![f16::ZERO; n * d];
+                memcpy_d2h(&mut host, &y);
+                host
+            });
+
+            let mut y_ref = vec![0.0; n * d];
             cpu_op
                 .launch(
                     &args(
@@ -389,48 +406,18 @@ mod test {
                 )
                 .unwrap();
 
-            let y = gpu.apply(|ctx| {
-                let stream = ctx.stream();
-                let x = x.into_par_iter().map(f16::from_f64).collect::<Vec<_>>();
-                let w = w.into_par_iter().map(|w| w as f32).collect::<Vec<_>>();
-                let x = stream.from_host(&x);
-                let w = stream.from_host(&w);
-                let mut y = stream.malloc::<f16>(n * d);
-                gpu_op
-                    .launch(
-                        &args(
-                            F32,
-                            F16,
-                            n,
-                            d,
-                            y.as_mut_ptr().cast(),
-                            x.as_ptr().cast(),
-                            w.as_ptr().cast(),
-                        ),
-                        &stream,
-                    )
-                    .unwrap();
-                let mut y_host = vec![f16::ZERO; n * d];
-                memcpy_d2h(&mut y_host, &y);
-                y_host
-            });
-
-            let v = y_ref
+            let diff = y_ref
                 .into_par_iter()
-                .zip(y)
+                .zip(y_ans)
                 .map(|(a, b)| Diff::new(a, b.to_f64()))
                 .collect::<Vec<_>>();
-            let mut ec = ErrorCollector::new(1e-3);
-            v.into_iter().for_each(|diff| ec.push(diff));
-            let (max_diff, outliers) = ec.summary();
-            println!(
-                "abs: {:.3e}, rel: {:.3e}, outliers: {}/{}",
-                max_diff.abs,
-                max_diff.rel,
-                outliers.len(),
-                n * d
-            );
-            assert!(outliers.len() * 1000 <= n * d);
+
+            let mut ec = ErrorCollector::new(f16::EPSILON.to_f64() * 2., 1e-3);
+            diff.into_iter().for_each(|diff| ec.push(diff));
+            println!("{ec}");
+
+            let (out, count) = ec.summary();
+            assert!(out * 1000 <= count);
         }
     }
 }

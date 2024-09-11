@@ -41,6 +41,26 @@ impl TensorLayout {
         }
     }
 
+    pub fn new_contiguous(dt: DigitLayout, shape: impl AsRef<[usize]>) -> Self {
+        let shape = shape.as_ref();
+        let mut strides = shape
+            .iter()
+            .rev()
+            .scan(dt.nbytes().unwrap() as isize, |mul, &d| {
+                let stride = Argument::from(*mul);
+                *mul *= d as isize;
+                Some(stride)
+            })
+            .collect::<Vec<_>>();
+        strides.reverse();
+        let shape = shape
+            .iter()
+            .copied()
+            .map(Argument::from)
+            .collect::<Vec<_>>();
+        Self::new(dt, shape, strides)
+    }
+
     #[inline]
     pub fn dt(&self) -> DigitLayout {
         let ptr = self.0.cast();
