@@ -1,8 +1,8 @@
 ﻿use super::{args::Meta, Args, Swiglu};
 use crate::{common_cpu::Handle as Cpu, utils::get_or_err};
 use common::{locate_error, ErrorPosition, QueueOf};
-use digit_layout::types::F16;
 use half::f16;
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 pub struct Operator;
 
@@ -44,10 +44,6 @@ impl common::Operator for Operator {
             unreachable!()
         };
 
-        if dt != F16 {
-            return Err(locate_error!());
-        }
-
         get_or_err!(n);
         get_or_err!(d);
         get_or_err!(sgn);
@@ -55,22 +51,90 @@ impl common::Operator for Operator {
         get_or_err!(sun);
         get_or_err!(sud);
 
-        for i in 0..n as isize {
-            for j in 0..d as isize {
-                let gate = unsafe { &mut *gate_base.offset(i * sgn + j * sgd).cast::<f16>() };
-                let up = unsafe { *up_base.offset(i * sun + j * sud).cast::<f16>() };
-
-                let a = gate.to_f32();
-                let b = up.to_f32();
-
-                #[inline(always)]
-                fn sigmoid(x: f32) -> f32 {
-                    1. / (1. + (-x).exp())
+        macro_rules! calculate {
+            ($ty:ty) => {
+                Scheme::<$ty> {
+                    n,
+                    d,
+                    sgn,
+                    sgd,
+                    sun,
+                    sud,
+                    gate_base: gate_base.cast(),
+                    up_base: up_base.cast(),
                 }
+                .calculate()
+            };
+        }
 
-                *gate = f16::from_f32(a * sigmoid(a) * b);
-            }
+        use digit_layout::types as ty;
+        match dt {
+            ty::F16 => calculate!(f16),
+            ty::F32 => calculate!(f32),
+            ty::F64 => calculate!(f64),
+            _ => todo!(),
         }
         Ok(())
     }
+}
+
+struct Scheme<T> {
+    n: usize,
+    d: usize,
+    sgn: isize,
+    sgd: isize,
+    sun: isize,
+    sud: isize,
+    gate_base: *mut T,
+    up_base: *const T,
+}
+
+unsafe impl<T> Send for Scheme<T> {}
+unsafe impl<T> Sync for Scheme<T> {}
+
+impl<T: Copy> Scheme<T> {
+    fn loop_(&self, f: impl Sync + Fn(T, T) -> T) {
+        for i in 0..self.n as isize {
+            (0..self.d as isize).into_par_iter().for_each(|j| {
+                let gate = unsafe { &mut *self.gate_base.byte_offset(i * self.sgn + j * self.sgd) };
+                let up = unsafe { *self.up_base.byte_offset(i * self.sun + j * self.sud) };
+                *gate = f(*gate, up);
+            })
+        }
+    }
+}
+
+impl Scheme<f16> {
+    #[inline]
+    fn calculate(&self) {
+        self.loop_(|gate, up| {
+            let a = gate.to_f32();
+            let b = up.to_f32();
+            f16::from_f32(a * sigmoid_f32(a) * b)
+        })
+    }
+}
+
+impl Scheme<f32> {
+    #[inline]
+    fn calculate(&self) {
+        self.loop_(|gate, up| gate * sigmoid_f32(gate) * up)
+    }
+}
+
+impl Scheme<f64> {
+    #[inline]
+    fn calculate(&self) {
+        self.loop_(|gate, up| gate * sigmoid_f64(gate) * up)
+    }
+}
+
+#[inline(always)]
+fn sigmoid_f32(x: f32) -> f32 {
+    1. / (1. + (-x).exp())
+}
+
+#[inline(always)]
+fn sigmoid_f64(x: f64) -> f64 {
+    1. / (1. + (-x).exp())
 }
