@@ -60,7 +60,7 @@ impl fmt::Display for ErrorPosition {
 #[macro_export]
 macro_rules! locate_error {
     () => {
-        locate_error!("Error occurred")
+        $crate::locate_error!("Error occurred")
     };
     ($($arg:tt)*) => {
         $crate::ErrorPosition::new(file!(), line!(), std::format_args!($($arg)*))
@@ -72,6 +72,24 @@ macro_rules! algebraic {
     ($ty:expr) => {
         $ty.nbytes()
             .ok_or_else(|| locate_error!("Should be an algebraic type"))
+    };
+}
+
+#[macro_export]
+macro_rules! pass_if {
+    ($condition:expr) => {
+        if !$condition {
+            return Err($crate::locate_error!("Check failed"));
+        };
+    };
+}
+
+#[macro_export]
+macro_rules! pass_match {
+    ($pattern:pat = $expr:expr) => {
+        let $pattern = $expr else {
+            return Err($crate::locate_error!("Pattern mismatch"));
+        };
     };
 }
 

@@ -9,6 +9,7 @@ pub mod rms_norm;
 pub mod rope;
 pub mod swiglu;
 
+pub mod attention;
 pub mod mlp;
 
 pub use common::*;
