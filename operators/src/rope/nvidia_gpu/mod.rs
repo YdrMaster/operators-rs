@@ -5,7 +5,7 @@ use crate::{
 };
 use common::{algebraic, locate_error, ErrorPosition, QueueOf};
 use cuda::Version;
-use digit_layout::types::F16;
+use digit_layout::types::{F16, U32};
 use std::{ffi::CString, sync::Arc};
 
 pub struct Operator {
@@ -31,8 +31,8 @@ impl common::Operator for Operator {
     }
 
     fn scheme(&mut self, args: &Self::Args) -> Result<(), Self::SchemeError> {
-        let Meta { dt, n: _ } = args.meta()?;
-        if dt != F16 {
+        let Meta { dt_t, dt_p, n: _ } = args.meta()?;
+        if dt_t != F16 || dt_p != U32 {
             todo!()
         }
         self.scheme(self.handle.device().compute_capability())
@@ -43,7 +43,7 @@ impl common::Operator for Operator {
         args: &Self::Args,
         queue: &QueueOf<Self::Handle>,
     ) -> Result<(), Self::LaunchError> {
-        let Meta { dt, n } = args.meta()?;
+        let Meta { dt_t, dt_p, n } = args.meta()?;
         let Args {
             t_layout,
             t_base,
@@ -61,8 +61,8 @@ impl common::Operator for Operator {
             unreachable!()
         };
 
-        if dt != F16 {
-            return Err(locate_error!());
+        if dt_t != F16 || dt_p != U32 {
+            todo!()
         }
 
         get_or_err!(n);
@@ -73,7 +73,7 @@ impl common::Operator for Operator {
         get_or_err!(sd);
         get_or_err!(sp);
 
-        let unit = algebraic!(dt)? as isize;
+        let unit = algebraic!(dt_t)? as isize;
         if sd != unit || sp != size_of::<u32>() as isize {
             return Err(locate_error!("Unsupported layout"));
         };
