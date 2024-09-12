@@ -12,7 +12,7 @@ cambricon-mlu = ["cndrv", "cnnl"]
 ascend-card = ["ascendcl"]
 
 [dependencies]
-common = { path = "../common" }
+common.path = "../common"
 digit-layout.workspace = true
 half = "2.4"
 rand = "0.8"
@@ -36,6 +36,3 @@ build-script-cfg.workspace = true
 search-cuda-tools.workspace = true
 search-neuware-tools.workspace = true
 search-ascend-tools.workspace = true
-
-[dev-dependencies]
-rand = "0.8"
