@@ -7,13 +7,20 @@ pub struct Args<H: Handle> {
     pub t_base: MutPtr<H>,
     pub p_layout: TensorLayout,
     pub p_base: ConstPtr<H>,
+    pub sin_layout: TensorLayout,
+    pub sin_base: ConstPtr<H>,
+    pub cos_layout: TensorLayout,
+    pub cos_base: ConstPtr<H>,
     pub theta: f32,
 }
 
 pub(super) struct Meta {
     pub dt_t: DigitLayout,
     pub dt_p: DigitLayout,
-    pub n: Argument<usize>,
+    pub nt: Argument<usize>,
+    pub dh: Argument<usize>,
+    #[allow(dead_code)]
+    pub seq_sin_cos: Argument<usize>,
 }
 
 impl<H: Handle> Args<H> {
@@ -29,15 +36,33 @@ impl<H: Handle> Args<H> {
         if !matches!(dt_p.decode(), Unsigned { .. }) {
             return Err(locate_error!());
         }
-        let &[nt, _, _] = self.t_layout.shape() else {
+        let &[nt, _, dh] = self.t_layout.shape() else {
             return Err(locate_error!());
         };
         let &[np] = self.p_layout.shape() else {
             return Err(locate_error!());
         };
-        let Ok(&n) = Argument::merge(&[nt, np]) else {
+        let &[seq_sin, dh_sin] = self.sin_layout.shape() else {
             return Err(locate_error!());
         };
-        Ok(Meta { dt_t, dt_p, n })
+        let &[seq_cos, dh_cos] = self.cos_layout.shape() else {
+            return Err(locate_error!());
+        };
+        let Ok(&nt) = Argument::merge(&[nt, np]) else {
+            return Err(locate_error!());
+        };
+        let Ok(&dh) = Argument::merge(&[dh, dh_sin, dh_cos]) else {
+            return Err(locate_error!());
+        };
+        let Ok(&seq_sin_cos) = Argument::merge(&[seq_sin, seq_cos]) else {
+            return Err(locate_error!());
+        };
+        Ok(Meta {
+            dt_t,
+            dt_p,
+            nt,
+            dh,
+            seq_sin_cos,
+        })
     }
 }

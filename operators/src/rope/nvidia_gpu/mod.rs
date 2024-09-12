@@ -4,7 +4,6 @@ use crate::{
     utils::get_or_err,
 };
 use common::{algebraic, locate_error, ErrorPosition, QueueOf};
-use cuda::Version;
 use digit_layout::types::{F16, U32};
 use std::{ffi::CString, sync::Arc};
 
@@ -13,6 +12,8 @@ pub struct Operator {
     max_threads_block: usize,
     scheme: Option<Arc<ModuleBox>>,
 }
+const NAME: &str = "rope_f16";
+const CODE: &str = include_str!("rope.cuh");
 
 impl Rope<Gpu> for Operator {}
 
@@ -31,11 +32,29 @@ impl common::Operator for Operator {
     }
 
     fn scheme(&mut self, args: &Self::Args) -> Result<(), Self::SchemeError> {
-        let Meta { dt_t, dt_p, n: _ } = args.meta()?;
+        let Meta { dt_t, dt_p, .. } = args.meta()?;
+
         if dt_t != F16 || dt_p != U32 {
             todo!()
         }
-        self.scheme(self.handle.device().compute_capability())
+
+        let cc = self.handle.device().compute_capability();
+        self.scheme = Some(self.handle.compile_kernel(NAME, cc, || {
+            format!(
+                r#"{CODE}
+
+extern "C" __global__ void {NAME}(
+    half2 *__restrict__ t,
+    int const stride_token,
+    int const stride_head,
+    unsigned int const *__restrict__ pos,
+    float theta
+){{
+    padding(t, stride_token, stride_head, pos, theta);
+}}"#
+            )
+        }));
+        Ok(())
     }
 
     fn launch(
@@ -43,15 +62,23 @@ impl common::Operator for Operator {
         args: &Self::Args,
         queue: &QueueOf<Self::Handle>,
     ) -> Result<(), Self::LaunchError> {
-        let Meta { dt_t, dt_p, n } = args.meta()?;
+        let Meta {
+            dt_t, dt_p, nt, dh, ..
+        } = args.meta()?;
+
+        if dt_t != F16 || dt_p != U32 {
+            todo!()
+        }
+
         let Args {
             t_layout,
             t_base,
             p_layout,
             p_base,
             theta,
+            ..
         } = args;
-        let &[_, nh, dh] = t_layout.shape() else {
+        let &[_, nh, _] = t_layout.shape() else {
             unreachable!()
         };
         let &[st, sh, sd] = t_layout.strides() else {
@@ -61,11 +88,7 @@ impl common::Operator for Operator {
             unreachable!()
         };
 
-        if dt_t != F16 || dt_p != U32 {
-            todo!()
-        }
-
-        get_or_err!(n);
+        get_or_err!(nt);
         get_or_err!(nh);
         get_or_err!(dh);
         get_or_err!(st);
@@ -97,7 +120,7 @@ impl common::Operator for Operator {
 
         m.launch(
             CString::new(NAME).unwrap(),
-            (n as _, nh_h as _),
+            (nt as _, nh_h as _),
             (nh_l as _, dh as _),
             params.as_ptr(),
             0,
@@ -107,33 +130,10 @@ impl common::Operator for Operator {
     }
 }
 
-const NAME: &str = "rope_f16";
-const CODE: &str = include_str!("rope.cuh");
-impl Operator {
-    fn scheme(&mut self, cc: Version) -> Result<(), ErrorPosition> {
-        self.scheme = Some(self.handle.compile_kernel(NAME, cc, || {
-            format!(
-                r#"{CODE}
-
-extern "C" __global__ void {NAME}(
-    half2 *__restrict__ t,
-    int const stride_token,
-    int const stride_head,
-    unsigned int const *__restrict__ pos,
-    float theta
-){{
-    padding(t, stride_token, stride_head, pos, theta);
-}}"#
-            )
-        }));
-        Ok(())
-    }
-}
-
 #[test]
 fn test() {
     use common::{dyn_, Operator as _, TensorLayout};
-    use digit_layout::types::U32;
+    use digit_layout::types::{F32, U32};
     use std::ptr::{null, null_mut};
 
     if let Err(cuda::NoDevice) = cuda::init() {
@@ -145,16 +145,17 @@ fn test() {
     let handle = Gpu::new(dev.context());
     let mut op = Operator::new(&handle);
 
-    <Operator as common::Operator>::scheme(
-        &mut op,
-        &Args {
-            t_layout: TensorLayout::new(F16, &[dyn_(); 3], &[dyn_(); 3]),
-            t_base: null_mut(),
-            p_layout: TensorLayout::new(U32, &[dyn_()], &[dyn_()]),
-            p_base: null(),
-            theta: 1e4,
-        },
-    )
+    op.scheme(&Args {
+        t_layout: TensorLayout::new(F16, &[dyn_(); 3], &[dyn_(); 3]),
+        t_base: null_mut(),
+        p_layout: TensorLayout::new(U32, &[dyn_()], &[dyn_()]),
+        p_base: null(),
+        sin_layout: TensorLayout::new(F32, &[dyn_(); 2], &[dyn_(); 2]),
+        sin_base: null(),
+        cos_layout: TensorLayout::new(F32, &[dyn_(); 2], &[dyn_(); 2]),
+        cos_base: null(),
+        theta: 1e4,
+    })
     .unwrap();
     let module = op.scheme.as_ref().unwrap();
     handle.apply(|ctx| {

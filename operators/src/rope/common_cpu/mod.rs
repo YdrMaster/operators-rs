@@ -29,28 +29,29 @@ impl common::Operator for Operator {
         args: &Self::Args,
         _queue: &QueueOf<Self::Handle>,
     ) -> Result<(), Self::LaunchError> {
-        let Meta { dt_t, dt_p, n } = args.meta()?;
+        let Meta { dt_t, dt_p, nt, .. } = args.meta()?;
         let Args {
             t_layout,
             t_base,
             p_layout,
             p_base,
             theta,
+            ..
         } = args;
         let &[_, nh, dh] = t_layout.shape() else {
             unreachable!()
         };
-        let &[s, sh, sd] = t_layout.strides() else {
+        let &[st, sh, sd] = t_layout.strides() else {
             unreachable!()
         };
         let &[sp] = p_layout.strides() else {
             unreachable!()
         };
 
-        get_or_err!(n);
+        get_or_err!(nt);
         get_or_err!(nh);
         get_or_err!(dh);
-        get_or_err!(s);
+        get_or_err!(st);
         get_or_err!(sh);
         get_or_err!(sd);
         get_or_err!(sp);
@@ -58,10 +59,10 @@ impl common::Operator for Operator {
         macro_rules! calculate {
             ($t:ty, $p:ty) => {
                 Scheme::<$t, $p> {
-                    n,
+                    nt,
                     nh,
                     dh,
-                    s,
+                    st,
                     sh,
                     sd,
                     sp,
@@ -90,10 +91,10 @@ impl common::Operator for Operator {
 /// Calculate scheme.
 /// A for activation, P for position.
 struct Scheme<A, P> {
-    n: usize,
+    nt: usize,
     nh: usize,
     dh: usize,
-    s: isize,
+    st: isize,
     sh: isize,
     sd: isize,
     sp: isize,
@@ -172,18 +173,18 @@ where
     fn calculate(&self) {
         use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
-        let n = self.n as isize;
+        let nt = self.nt as isize;
         let nh = self.nh as isize;
         let dh = self.dh as isize / 2;
 
-        for i in 0..n {
+        for i in 0..nt {
             let p = unsafe { *self.p_base.byte_offset(i * self.sp) };
             (0..dh).into_par_iter().for_each(|k| {
                 for j in 0..nh {
                     let pair = unsafe {
                         &mut *self
                             .t_base
-                            .byte_offset(i * self.s + j * self.sh + k * self.sd * 2)
+                            .byte_offset(i * self.st + j * self.sh + k * self.sd * 2)
                             .cast::<[A; 2]>()
                     };
                     let (sin, cos) = p.freq_sin_cos(k, dh, self.theta);
