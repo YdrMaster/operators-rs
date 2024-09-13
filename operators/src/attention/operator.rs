@@ -1,12 +1,19 @@
 ﻿use super::{args::Meta, Args, Attention};
 use crate::{fuesd_softmax, mat_mul, rearrange, utils::get_or_err};
 use common::{
-    algebraic, dyn_, locate_error, pass_match, ErrorPosition, Handle, QueueOf, TensorLayout,
+    algebraic, dyn_, locate_error, pass_match, Argument, ErrorPosition, Handle, QueueOf,
+    TensorLayout,
 };
+use digit_layout::DigitLayout;
 use ndarray_layout::ArrayLayout;
 use std::marker::PhantomData;
 
 pub struct Operator<Handle, MatMul, Softmax, Rearrange> {
+    dt: Option<DigitLayout>,
+    nh: Argument<usize>,
+    seq: Argument<usize>,
+    att: Argument<usize>,
+
     mat_mul: MatMul,
     softmax: Softmax,
     rearrange: Rearrange,
@@ -20,6 +27,13 @@ where
     S: fuesd_softmax::FusedSoftmax<H>,
     R: rearrange::Rearrange<H>,
 {
+    fn workspace_size(&self) -> Option<usize> {
+        let ele = self.dt?.nbytes()?;
+        let nh = *self.nh.get_static()?;
+        let seq = *self.seq.get_static()?;
+        let att = *self.att.get_static()?;
+        Some(nh * seq * att * ele)
+    }
 }
 
 impl<H, M, S, R> common::Operator for Operator<H, M, S, R>
@@ -37,6 +51,11 @@ where
     #[inline]
     fn new(handle: &Self::Handle) -> Self {
         Self {
+            dt: None,
+            nh: dyn_(),
+            seq: dyn_(),
+            att: dyn_(),
+
             mat_mul: M::new(handle),
             softmax: S::new(handle),
             rearrange: R::new(handle),
@@ -56,6 +75,11 @@ where
             dh,
             ..
         } = args.meta()?;
+
+        self.dt = Some(dt);
+        self.nh = nh;
+        self.seq = seq;
+        self.att = att;
 
         self.softmax.scheme(&fuesd_softmax::Args {
             att_layout: TensorLayout::new_dyn(dt, &[nh, seq, att], &[dyn_(); 3]),

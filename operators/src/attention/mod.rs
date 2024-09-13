@@ -3,7 +3,9 @@ mod operator;
 
 pub use args::Args;
 
-crate::utils::op_trait!(Attention);
+crate::utils::op_trait! { Attention
+    fn workspace_size(&self) -> Option<usize>;
+}
 
 macro_rules! impl_op {
     ($dev:ident) => {
