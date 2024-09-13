@@ -16,13 +16,17 @@ use std::{
 pub struct TensorLayout(NonNull<usize>);
 
 impl TensorLayout {
-    pub fn new(
+    pub fn new_dyn(
         dt: DigitLayout,
-        shape: impl AsRef<[Argument<usize>]>,
-        strides: impl AsRef<[Argument<isize>]>,
+        shape: &[Argument<usize>],
+        strides: &[Argument<isize>],
     ) -> Self {
-        let shape = shape.as_ref();
-        let strides = strides.as_ref();
+        let shape: &[usize] = unsafe { std::mem::transmute(shape) };
+        let strides: &[isize] = unsafe { std::mem::transmute(strides) };
+        Self::new(dt, shape, strides)
+    }
+
+    pub fn new(dt: DigitLayout, shape: &[usize], strides: &[isize]) -> Self {
         assert_eq!(shape.len(), strides.len());
 
         unsafe {
@@ -32,33 +36,27 @@ impl TensorLayout {
             cursor.write(dt);
             let cursor: *mut u32 = cursor.add(1).cast();
             cursor.write(shape.len() as _);
-            let cursor: *mut Argument<usize> = cursor.add(1).cast();
+            let cursor: *mut usize = cursor.add(1).cast();
             copy_nonoverlapping(shape.as_ptr(), cursor, shape.len());
-            let cursor: *mut Argument<isize> = cursor.add(shape.len()).cast();
+            let cursor: *mut isize = cursor.add(shape.len()).cast();
             copy_nonoverlapping(strides.as_ptr(), cursor, strides.len());
 
             Self(NonNull::new_unchecked(ptr as _))
         }
     }
 
-    pub fn new_contiguous(dt: DigitLayout, shape: impl AsRef<[usize]>) -> Self {
-        let shape = shape.as_ref();
+    pub fn new_contiguous(dt: DigitLayout, shape: &[usize]) -> Self {
         let mut strides = shape
             .iter()
             .rev()
             .scan(dt.nbytes().unwrap() as isize, |mul, &d| {
-                let stride = Argument::from(*mul);
+                let stride = *mul;
                 *mul *= d as isize;
                 Some(stride)
             })
             .collect::<Vec<_>>();
         strides.reverse();
-        let shape = shape
-            .iter()
-            .copied()
-            .map(Argument::from)
-            .collect::<Vec<_>>();
-        Self::new(dt, shape, strides)
+        Self::new(dt, shape, &strides)
     }
 
     #[inline]

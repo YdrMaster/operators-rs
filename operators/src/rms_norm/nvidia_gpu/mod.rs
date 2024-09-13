@@ -263,11 +263,11 @@ mod test {
         use common::dyn_;
         use std::ptr::{null, null_mut};
         Args {
-            y_layout: TensorLayout::new(dt_a, &[dyn_(), d.into()], &[dyn_(); 2]),
+            y_layout: TensorLayout::new_dyn(dt_a, &[dyn_(), d.into()], &[dyn_(); 2]),
             y_base: null_mut(),
-            x_layout: TensorLayout::new(dt_a, &[dyn_(), d.into()], &[dyn_(); 2]),
+            x_layout: TensorLayout::new_dyn(dt_a, &[dyn_(), d.into()], &[dyn_(); 2]),
             x_base: null(),
-            w_layout: TensorLayout::new(dt_w, &[d.into()], &[dyn_()]),
+            w_layout: TensorLayout::new_dyn(dt_w, &[d.into()], &[dyn_()]),
             w_base: null(),
             epsilon: 1e-5,
         }
@@ -282,13 +282,13 @@ mod test {
         x_base: *const H::Byte,
         w_base: *const H::Byte,
     ) -> Args<H> {
-        let layout = TensorLayout::new_contiguous(dt_a, [n, d]);
+        let layout = TensorLayout::new_contiguous(dt_a, &[n, d]);
         Args {
             y_layout: layout.clone(),
             y_base,
             x_layout: layout,
             x_base,
-            w_layout: TensorLayout::new_contiguous(dt_w, [d]),
+            w_layout: TensorLayout::new_contiguous(dt_w, &[d]),
             w_base,
             epsilon: 1e-5,
         }

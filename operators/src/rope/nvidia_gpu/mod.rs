@@ -143,13 +143,13 @@ mod test {
         use common::dyn_;
         use std::ptr::{null, null_mut};
         Args {
-            t_layout: TensorLayout::new(dt_t, &[dyn_(); 3], &[dyn_(); 3]),
+            t_layout: TensorLayout::new_dyn(dt_t, &[dyn_(); 3], &[dyn_(); 3]),
             t_base: null_mut(),
-            p_layout: TensorLayout::new(dt_p, &[dyn_()], &[dyn_()]),
+            p_layout: TensorLayout::new_dyn(dt_p, &[dyn_()], &[dyn_()]),
             p_base: null(),
-            sin_layout: TensorLayout::new(dt_t, &[dyn_(); 2], &[dyn_(); 2]),
+            sin_layout: TensorLayout::new_dyn(dt_t, &[dyn_(); 2], &[dyn_(); 2]),
             sin_base: null(),
-            cos_layout: TensorLayout::new(dt_t, &[dyn_(); 2], &[dyn_(); 2]),
+            cos_layout: TensorLayout::new_dyn(dt_t, &[dyn_(); 2], &[dyn_(); 2]),
             cos_base: null(),
             theta: 0.,
         }
@@ -167,13 +167,13 @@ mod test {
     ) -> Args<H> {
         use std::ptr::null;
         Args {
-            t_layout: TensorLayout::new_contiguous(dt_t, [nt, nh, dh]),
+            t_layout: TensorLayout::new_contiguous(dt_t, &[nt, nh, dh]),
             t_base,
-            p_layout: TensorLayout::new_contiguous(dt_p, [nt]),
+            p_layout: TensorLayout::new_contiguous(dt_p, &[nt]),
             p_base,
-            sin_layout: TensorLayout::new_contiguous(dt_t, [0, dh]),
+            sin_layout: TensorLayout::new_contiguous(dt_t, &[0, dh]),
             sin_base: null(),
-            cos_layout: TensorLayout::new_contiguous(dt_t, [0, dh]),
+            cos_layout: TensorLayout::new_contiguous(dt_t, &[0, dh]),
             cos_base: null(),
             theta,
         }

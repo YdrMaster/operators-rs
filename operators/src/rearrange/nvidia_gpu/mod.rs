@@ -197,9 +197,9 @@ fn test() {
     <Operator as common::Operator>::scheme(
         &mut op,
         &Args {
-            dst_layout: TensorLayout::new(F16, &[dyn_(); 2], &[dyn_(); 2]),
+            dst_layout: TensorLayout::new_dyn(F16, &[dyn_(); 2], &[dyn_(); 2]),
             dst_base: null_mut(),
-            src_layout: TensorLayout::new(F16, &[dyn_(); 2], &[dyn_(); 2]),
+            src_layout: TensorLayout::new_dyn(F16, &[dyn_(); 2], &[dyn_(); 2]),
             src_base: null(),
         },
     )

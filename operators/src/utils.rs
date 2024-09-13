@@ -16,10 +16,12 @@ pub(crate) const fn gcd(mut a: usize, mut b: usize) -> usize {
 }
 
 macro_rules! get_or_err {
-    ($name:ident) => {
-        let Some(&$name) = $name.get_static() else {
-            return Err(locate_error!());
-        };
+    ($($name:ident)*) => {
+        $(
+            let Some(&$name) = $name.get_static() else {
+                return Err(common::locate_error!());
+            };
+        )*
     };
 }
 

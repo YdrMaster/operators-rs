@@ -26,9 +26,9 @@ pub struct SampleArgs {
 impl<H: Handle> Args<H> {
     pub fn new(dt: DigitLayout, n: usize) -> Self {
         Args {
-            kv_pair: TensorLayout::new(KVPair::<()>::LAYOUT, [], []),
+            kv_pair: TensorLayout::new(KVPair::<()>::LAYOUT, &[], &[]),
             kv_pair_base: null_mut(),
-            data: TensorLayout::new(dt, [n.into()], [(algebraic!(dt).unwrap() as isize).into()]),
+            data: TensorLayout::new(dt, &[n], &[algebraic!(dt).unwrap() as _]),
             data_base: null(),
             detail: SampleArgs {
                 temperature: 0.0,

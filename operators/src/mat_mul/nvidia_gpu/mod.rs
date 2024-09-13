@@ -137,12 +137,12 @@ mod test {
         b_base: *const H::Byte,
     ) -> Args<H> {
         Args {
-            c_layout: TensorLayout::new_contiguous(dt, [batch, m, n]),
+            c_layout: TensorLayout::new_contiguous(dt, &[batch, m, n]),
             c_base,
             beta: BETA,
-            a_layout: TensorLayout::new_contiguous(dt, [batch, m, k]),
+            a_layout: TensorLayout::new_contiguous(dt, &[batch, m, k]),
             a_base,
-            b_layout: TensorLayout::new_contiguous(dt, [batch, k, n]),
+            b_layout: TensorLayout::new_contiguous(dt, &[batch, k, n]),
             b_base,
             alpha: ALPHA,
         }

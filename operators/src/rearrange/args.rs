@@ -227,7 +227,7 @@ fn test_scheme() {
             4.into(),
         ];
         let args = Args::<Cpu> {
-            dst_layout: TensorLayout::new(
+            dst_layout: TensorLayout::new_dyn(
                 F16,
                 &shape,
                 &[
@@ -241,7 +241,7 @@ fn test_scheme() {
                 ],
             ),
             dst_base: null_mut(),
-            src_layout: TensorLayout::new(
+            src_layout: TensorLayout::new_dyn(
                 F16,
                 &shape,
                 &[
@@ -274,7 +274,7 @@ fn test_scheme() {
             128.into(),
         ];
         let args = Args::<Cpu> {
-            dst_layout: TensorLayout::new(
+            dst_layout: TensorLayout::new_dyn(
                 F16,
                 &shape,
                 &[
@@ -286,7 +286,7 @@ fn test_scheme() {
                 ],
             ),
             dst_base: null_mut(),
-            src_layout: TensorLayout::new(
+            src_layout: TensorLayout::new_dyn(
                 F16,
                 &shape,
                 &[

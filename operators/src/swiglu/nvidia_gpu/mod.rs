@@ -125,7 +125,7 @@ mod test {
 
     fn dyn_args<H: Handle>(dt: DigitLayout) -> Args<H> {
         use std::ptr::{null, null_mut};
-        let layout = TensorLayout::new(dt, &[dyn_(); 2], &[dyn_(); 2]);
+        let layout = TensorLayout::new_dyn(dt, &[dyn_(); 2], &[dyn_(); 2]);
         Args {
             gate_layout: layout.clone(),
             gate_base: null_mut(),
@@ -141,7 +141,7 @@ mod test {
         gate_base: *mut H::Byte,
         up_base: *const H::Byte,
     ) -> Args<H> {
-        let layout = TensorLayout::new_contiguous(dt, [n, d]);
+        let layout = TensorLayout::new_contiguous(dt, &[n, d]);
         Args {
             gate_layout: layout.clone(),
             gate_base,

@@ -72,9 +72,9 @@ impl<H: Handle> Args<H> {
         let &[n, d] = self.gate_up_layout.shape() else {
             unreachable!()
         };
-        TensorLayout::new(
+        TensorLayout::new_dyn(
             self.gate_up_layout.dt(),
-            [
+            &[
                 n,
                 if let Some(d) = d.get_static() {
                     (d / 2).into()

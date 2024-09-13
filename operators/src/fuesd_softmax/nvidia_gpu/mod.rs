@@ -175,7 +175,7 @@ mod test {
         use common::dyn_;
         use std::ptr::null_mut;
         Args {
-            att_layout: TensorLayout::new(dt, &[dyn_(); 3], &[dyn_(); 3]),
+            att_layout: TensorLayout::new_dyn(dt, &[dyn_(); 3], &[dyn_(); 3]),
             att_base: null_mut(),
         }
     }
@@ -188,7 +188,7 @@ mod test {
         att_base: *mut H::Byte,
     ) -> Args<H> {
         Args {
-            att_layout: TensorLayout::new_contiguous(dt, [nh, seq_len, att_len]),
+            att_layout: TensorLayout::new_contiguous(dt, &[nh, seq_len, att_len]),
             att_base,
         }
     }

@@ -71,7 +71,7 @@ macro_rules! locate_error {
 macro_rules! algebraic {
     ($ty:expr) => {
         $ty.nbytes()
-            .ok_or_else(|| locate_error!("Should be an algebraic type"))
+            .ok_or_else(|| $crate::locate_error!("Should be an algebraic type"))
     };
 }
 

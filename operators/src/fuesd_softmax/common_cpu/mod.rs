@@ -1,6 +1,6 @@
 ﻿use super::{args::Meta, Args, FusedSoftmax};
 use crate::{common_cpu::Handle as Cpu, utils::get_or_err};
-use common::{locate_error, ErrorPosition, QueueOf};
+use common::{ErrorPosition, QueueOf};
 use half::f16;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
