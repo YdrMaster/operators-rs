@@ -1,9 +1,17 @@
-﻿use super::{Args, Mlp};
-use crate::{mat_mul, swiglu};
-use common::{ErrorPosition, Handle, QueueOf};
+﻿use super::{args::Meta, Args, Mlp};
+use crate::{mat_mul, swiglu, utils::get_or_err};
+use common::{
+    algebraic, dyn_, locate_error, Argument, ErrorPosition, Handle, QueueOf, TensorLayout,
+};
+use digit_layout::DigitLayout;
+use ndarray_layout::{ArrayLayout, Endian::BigEndian};
 use std::marker::PhantomData;
 
 pub struct Operator<Handle, MatMul, Swiglu> {
+    dt: Option<DigitLayout>,
+    nt: Argument<usize>,
+    di: Argument<usize>,
+
     mat_mul: MatMul,
     swiglu: Swiglu,
     _phantom: PhantomData<Handle>,
@@ -15,6 +23,12 @@ where
     M: mat_mul::MatMul<H>,
     A: swiglu::Swiglu<H>,
 {
+    fn workspace_size(&self) -> Option<usize> {
+        let ele = self.dt?.nbytes()?;
+        let nt = *self.nt.get_static()?;
+        let di = *self.di.get_static()?;
+        Some(nt * di * 2 * ele)
+    }
 }
 
 impl<H, M, A> common::Operator for Operator<H, M, A>
@@ -31,6 +45,10 @@ where
     #[inline]
     fn new(handle: &Self::Handle) -> Self {
         Self {
+            dt: None,
+            nt: dyn_(),
+            di: dyn_(),
+
             mat_mul: M::new(handle),
             swiglu: A::new(handle),
             _phantom: PhantomData,
@@ -39,7 +57,21 @@ where
 
     #[inline]
     fn scheme(&mut self, args: &Self::Args) -> Result<(), Self::SchemeError> {
-        self.swiglu.scheme(&args.swiglu_args())
+        use std::ptr::{null, null_mut};
+
+        let Meta { dt, nt, di } = args.meta()?;
+
+        self.dt = Some(dt);
+        self.nt = nt;
+        self.di = di;
+
+        let layout = TensorLayout::new_dyn(dt, &[nt, di], &[dyn_(); 2]);
+        self.swiglu.scheme(&swiglu::Args {
+            gate_layout: layout.clone(),
+            gate_base: null_mut(),
+            up_layout: layout,
+            up_base: null(),
+        })
     }
 
     fn launch(
@@ -47,8 +79,66 @@ where
         args: &Self::Args,
         queue: &QueueOf<Self::Handle>,
     ) -> Result<(), Self::LaunchError> {
-        self.mat_mul.launch(&args.gate_up_args(), queue)?;
-        self.swiglu.launch(&args.swiglu_args(), queue)?;
-        self.mat_mul.launch(&args.down_args(), queue)
+        let Meta { dt, nt, di } = args.meta()?;
+        let Args {
+            y_layout,
+            y_base,
+            x_layout,
+            x_base,
+            w_gate_up_layout,
+            w_gate_up_base,
+            w_down_layout,
+            w_down_base,
+            down_alpha,
+            down_bias,
+            workspace,
+        } = args;
+
+        get_or_err!(nt di);
+        let ele = algebraic!(dt)?;
+        if workspace.len < nt * di * 2 * ele {
+            return Err(locate_error!("Out of workspace"));
+        }
+
+        let gate_up_layout = ArrayLayout::<3>::new_contiguous(&[nt, di * 2], BigEndian, ele);
+        self.mat_mul.launch(
+            &mat_mul::Args {
+                c_layout: TensorLayout::new(dt, gate_up_layout.shape(), gate_up_layout.strides()),
+                c_base: workspace.ptr,
+                beta: 0.,
+                a_layout: x_layout.clone(),
+                a_base: *x_base,
+                b_layout: w_gate_up_layout.clone(),
+                b_base: *w_gate_up_base,
+                alpha: 1.,
+            },
+            queue,
+        )?;
+
+        let up_layout = gate_up_layout.tile_be(1, &[2, di]).index(1, 1);
+        let swiglu_layout = TensorLayout::new(dt, up_layout.shape(), up_layout.strides());
+        self.swiglu.launch(
+            &swiglu::Args {
+                gate_layout: swiglu_layout.clone(),
+                gate_base: workspace.ptr,
+                up_layout: swiglu_layout.clone(),
+                up_base: unsafe { workspace.ptr.byte_add(up_layout.offset()) },
+            },
+            queue,
+        )?;
+
+        self.mat_mul.launch(
+            &mat_mul::Args {
+                c_layout: y_layout.clone(),
+                c_base: *y_base,
+                beta: if *down_bias { 1. } else { 0. },
+                a_layout: swiglu_layout,
+                a_base: workspace.ptr,
+                b_layout: w_down_layout.clone(),
+                b_base: *w_down_base,
+                alpha: *down_alpha,
+            },
+            queue,
+        )
     }
 }

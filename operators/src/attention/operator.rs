@@ -120,8 +120,10 @@ where
             workspace,
         } = args;
 
-        pass_match!(&[nh_sq, seq_sq, dh_sq] = q_layout.strides());
-        pass_match!(&[nkvh_sk, seq_sk, att_sk] = k_layout.strides());
+        pass_match! {
+            &[nh_sq  , seq_sq, dh_sq ] = q_layout.strides();
+            &[nkvh_sk, seq_sk, att_sk] = k_layout.strides();
+        }
         get_or_err! {
             nh      seq    dh
             nh_sq   seq_sq dh_sq

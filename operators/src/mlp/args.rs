@@ -1,9 +1,6 @@
-﻿use crate::{
-    mat_mul, swiglu,
-    utils::{ConstPtr, MutPtr},
-};
-use common::{Handle, TensorLayout};
-use std::ptr::null;
+﻿use crate::utils::{ConstPtr, MutPtr};
+use common::{dyn_, pass_if, pass_match, Argument, ErrorPosition, Handle, TensorLayout, Workspace};
+use digit_layout::DigitLayout;
 
 pub struct Args<H: Handle> {
     pub y_layout: TensorLayout,
@@ -12,9 +9,6 @@ pub struct Args<H: Handle> {
     pub x_layout: TensorLayout,
     pub x_base: ConstPtr<H>,
 
-    pub gate_up_layout: TensorLayout,
-    pub gate_up_base: MutPtr<H>,
-
     pub w_gate_up_layout: TensorLayout,
     pub w_gate_up_base: ConstPtr<H>,
 
@@ -22,67 +16,38 @@ pub struct Args<H: Handle> {
     pub w_down_base: ConstPtr<H>,
     pub down_alpha: f32,
     pub down_bias: bool,
+
+    pub workspace: Workspace<H>,
+}
+
+pub(super) struct Meta {
+    pub dt: DigitLayout,
+    pub nt: Argument<usize>,
+    pub di: Argument<usize>,
 }
 
 impl<H: Handle> Args<H> {
-    pub(super) fn gate_up_args(&self) -> mat_mul::Args<H> {
-        mat_mul::Args {
-            c_layout: self.gate_up_layout.clone(),
-            c_base: self.gate_up_base,
-            beta: 0.,
-            a_layout: self.x_layout.clone(),
-            a_base: self.x_base,
-            b_layout: self.w_gate_up_layout.clone(),
-            b_base: self.w_gate_up_base,
-            alpha: 1.,
+    pub(super) fn meta(&self) -> Result<Meta, ErrorPosition> {
+        let dt = self.y_layout.dt();
+        pass_if! {
+            self.        x_layout.dt() == dt;
+            self.w_gate_up_layout.dt() == dt;
+            self.   w_down_layout.dt() == dt;
         }
-    }
-
-    pub(super) fn swiglu_args(&self) -> swiglu::Args<H> {
-        let layout = self.gate_up_layout();
-        let up_base = if self.gate_up_base.is_null() {
-            null()
+        pass_match! {
+            &[nt_y, d_y  ] = self.y_layout.shape();
+            &[nt_x, d_x  ] = self.x_layout.shape();
+            &[d_gu, di_gu] = self.w_gate_up_layout.shape();
+            &[di_d, d_d  ] = self.w_down_layout.shape();
+            Ok(&nt) = Argument::merge(&[nt_y, nt_x]);
+            Ok(&_ ) = Argument::merge(&[d_y, d_x, d_gu, d_d]);
+        }
+        let di = if let Some(&di2) = di_gu.get_static() {
+            pass_match!(Ok(&di) = Argument::merge(&[di_d, (di2 / 2).into()]));
+            di
         } else {
-            let d = *layout.shape()[1].get_static().unwrap() as isize;
-            let s = *layout.strides()[1].get_static().unwrap();
-            unsafe { self.gate_up_base.offset(d * s) }
+            dyn_()
         };
-        swiglu::Args {
-            gate_layout: layout.clone(),
-            gate_base: self.gate_up_base,
-            up_layout: layout,
-            up_base,
-        }
-    }
-
-    pub(super) fn down_args(&self) -> mat_mul::Args<H> {
-        mat_mul::Args {
-            c_layout: self.y_layout.clone(),
-            c_base: self.y_base,
-            beta: if self.down_bias { 1. } else { 0. },
-            a_layout: self.gate_up_layout(),
-            a_base: self.gate_up_base,
-            b_layout: self.w_down_layout.clone(),
-            b_base: self.w_down_base,
-            alpha: self.down_alpha,
-        }
-    }
-
-    fn gate_up_layout(&self) -> TensorLayout {
-        let &[n, d] = self.gate_up_layout.shape() else {
-            unreachable!()
-        };
-        TensorLayout::new_dyn(
-            self.gate_up_layout.dt(),
-            &[
-                n,
-                if let Some(d) = d.get_static() {
-                    (d / 2).into()
-                } else {
-                    d
-                },
-            ],
-            self.gate_up_layout.strides(),
-        )
+        Ok(Meta { dt, nt, di })
     }
 }

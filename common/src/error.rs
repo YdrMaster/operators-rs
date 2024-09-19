@@ -77,8 +77,8 @@ macro_rules! algebraic {
 
 #[macro_export]
 macro_rules! pass_if {
-    ($condition:expr) => {
-        if !$condition {
+    ($($condition:expr);* $(;)?) => {
+        if $(!$condition)||* {
             return Err($crate::locate_error!("Check failed"));
         };
     };
@@ -86,10 +86,12 @@ macro_rules! pass_if {
 
 #[macro_export]
 macro_rules! pass_match {
-    ($pattern:pat = $expr:expr) => {
-        let $pattern = $expr else {
-            return Err($crate::locate_error!("Pattern mismatch"));
-        };
+    ($($pattern:pat = $expr:expr);* $(;)?) => {
+        $(
+            let $pattern = $expr else {
+                return Err($crate::locate_error!("Pattern mismatch"));
+            };
+        )*
     };
 }
 
