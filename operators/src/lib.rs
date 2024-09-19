@@ -10,6 +10,7 @@ pub mod rope;
 pub mod swiglu;
 
 pub mod attention;
+pub mod attention_kv_cached;
 pub mod mlp;
 
 pub use common::*;

@@ -2,9 +2,8 @@
 mod operator;
 
 pub use args::Args;
-pub(crate) use args::Meta;
 
-crate::utils::op_trait! { Attention
+crate::utils::op_trait! { AttnKVCached
     fn workspace_size(&self) -> Option<usize>;
 }
 
@@ -13,9 +12,8 @@ macro_rules! impl_op {
         pub mod $dev {
             pub type Operator = super::operator::Operator<
                 crate::$dev::Handle,
-                crate::mat_mul::$dev::Operator,
-                crate::fuesd_softmax::$dev::Operator,
                 crate::rearrange::$dev::Operator,
+                crate::attention::$dev::Operator,
             >;
         }
     };
