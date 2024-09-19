@@ -68,19 +68,9 @@ impl<H: Handle> Args<H> {
         } else {
             return Err(locate_error!("Matrix is not contiguous"));
         };
-        macro_rules! trans {
-            ($m:expr) => {
-                if $m.rs == 1 {
-                    ($m.cs, false)
-                } else if a.cs == 1 {
-                    ($m.rs, true)
-                } else {
-                    return Err(locate_error!("Matrix is not contiguous"));
-                }
-            };
-        }
-        let (a_ld, a_trans) = trans!(a);
-        let (b_ld, b_trans) = trans!(b);
+
+        let (a_ld, a_trans) = a.ld_trans()?;
+        let (b_ld, b_trans) = b.ld_trans()?;
         Ok(SchemeLayout {
             dt,
             ab_swap,
@@ -158,6 +148,14 @@ impl Matrix {
     #[inline(always)]
     fn match_batch(&self, batch: usize) -> bool {
         self.batch == 1 || self.batch == batch
+    }
+    #[inline(always)]
+    fn ld_trans(&mut self) -> Result<(isize, bool), ErrorPosition> {
+        match (self.rs, self.cs) {
+            (1, cs) => Ok((cs, false)),
+            (rs, 1) => Ok((rs, true)),
+            (_, _) => Err(locate_error!("Matrix is not contiguous")),
+        }
     }
     #[inline(always)]
     fn transpose(&mut self) {
