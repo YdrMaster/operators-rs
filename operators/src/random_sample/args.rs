@@ -1,6 +1,6 @@
 ﻿use super::KVPair;
 use crate::utils::{ConstPtr, MutPtr};
-use common::{locate_error, ErrorPosition, Handle, TensorLayout, Workspace};
+use common::{locate_error, ErrorPosition, Handle, TensorLayout};
 use digit_layout::{types::U32, DigitLayout};
 use std::{
     hash::{Hash, Hasher},
@@ -13,7 +13,9 @@ pub struct Args<H: Handle> {
     pub data: TensorLayout,
     pub data_base: ConstPtr<H>,
     pub detail: SampleArgs,
-    pub workspace: Workspace<H>,
+
+    pub workspace_size: usize,
+    pub workspace: MutPtr<H>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -35,10 +37,8 @@ impl<H: Handle> Args<H> {
                 top_p: 0.0,
                 top_k: usize::MAX,
             },
-            workspace: Workspace {
-                ptr: null_mut(),
-                len: 0,
-            },
+            workspace_size: usize::MAX,
+            workspace: null_mut(),
         }
     }
 }

@@ -1,11 +1,9 @@
 ﻿use super::{args::Meta, Args, AttnKVCached};
 use crate::{
     attention, rearrange,
-    utils::{sizeof, get_or_err, pass_match},
+    utils::{get_or_err, pass_match, sizeof},
 };
-use common::{
-    dyn_, locate_error, Argument, ErrorPosition, Handle, QueueOf, TensorLayout, Workspace,
-};
+use common::{dyn_, locate_error, Argument, ErrorPosition, Handle, QueueOf, TensorLayout};
 use digit_layout::DigitLayout;
 use ndarray_layout::ArrayLayout;
 use std::marker::PhantomData;
@@ -126,6 +124,7 @@ where
             v_cache_layout,
             v_cache_base,
             pos,
+            workspace_size,
             workspace,
         } = args;
 
@@ -155,12 +154,12 @@ where
         // 如果 q 的前两维不连续则需要重整
         let rearrange_q = seq_sq * seq as isize != nh_sq;
         let ele = sizeof!(dt)?;
-        if workspace.len < attn_space + if rearrange_q { nh * seq * dh * ele } else { 0 } {
+        if *workspace_size < attn_space + if rearrange_q { nh * seq * dh * ele } else { 0 } {
             return Err(locate_error!("Out of workspace"));
         }
         let (q_layout, q_base) = if rearrange_q {
             let new = TensorLayout::new_contiguous(dt, &[nh, seq, dh]);
-            let ptr = unsafe { workspace.ptr.byte_add(attn_space) };
+            let ptr = unsafe { workspace.byte_add(attn_space) };
             self.rearrange.launch(
                 &rearrange::Args {
                     dst_layout: new.clone(),
@@ -219,10 +218,8 @@ where
                 v_base: *v_cache_base,
                 o_layout: o_layout.clone(),
                 o_base: *o_base,
-                workspace: Workspace {
-                    ptr: workspace.ptr,
-                    len: attn_space,
-                },
+                workspace_size: attn_space,
+                workspace: *workspace,
             },
             queue,
         )

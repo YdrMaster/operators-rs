@@ -1,7 +1,7 @@
 ﻿use super::{args::Meta, Args, Mlp};
 use crate::{
     mat_mul, swiglu,
-    utils::{sizeof, get_or_err},
+    utils::{get_or_err, sizeof},
 };
 use common::{dyn_, locate_error, Argument, ErrorPosition, Handle, QueueOf, TensorLayout};
 use digit_layout::DigitLayout;
@@ -92,12 +92,13 @@ where
             w_down_base,
             down_alpha,
             down_bias,
+            workspace_size,
             workspace,
         } = args;
 
         get_or_err!(nt di);
         let ele = sizeof!(dt)?;
-        if workspace.len < nt * di * 2 * ele {
+        if *workspace_size < nt * di * 2 * ele {
             return Err(locate_error!("Out of workspace"));
         }
 
@@ -105,7 +106,7 @@ where
         self.mat_mul.launch(
             &mat_mul::Args {
                 c_layout: TensorLayout::new(dt, gate_up_layout.shape(), gate_up_layout.strides()),
-                c_base: workspace.ptr,
+                c_base: *workspace,
                 beta: 0.,
                 a_layout: x_layout.clone(),
                 a_base: *x_base,
@@ -121,9 +122,9 @@ where
         self.swiglu.launch(
             &swiglu::Args {
                 gate_layout: swiglu_layout.clone(),
-                gate_base: workspace.ptr,
+                gate_base: *workspace,
                 up_layout: swiglu_layout.clone(),
-                up_base: unsafe { workspace.ptr.byte_add(up_layout.offset()) },
+                up_base: unsafe { workspace.byte_add(up_layout.offset()) },
             },
             queue,
         )?;
@@ -134,7 +135,7 @@ where
                 c_base: *y_base,
                 beta: if *down_bias { 1. } else { 0. },
                 a_layout: swiglu_layout,
-                a_base: workspace.ptr,
+                a_base: *workspace,
                 b_layout: w_down_layout.clone(),
                 b_base: *w_down_base,
                 alpha: *down_alpha,

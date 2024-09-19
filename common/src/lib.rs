@@ -14,19 +14,12 @@ pub use tensor::TensorLayout;
 pub trait Handle {
     /// 硬件直接访问的存储空间，通过字节占位符描述。
     type Byte;
-
     /// 硬件驱动提供的任务队列，带有生命周期约束。
     type Queue<'ctx>;
 }
 
 pub type ByteOf<D> = <D as Handle>::Byte;
 pub type QueueOf<'ctx, D> = <D as Handle>::Queue<'ctx>;
-
-#[derive(Clone, Copy, Debug)]
-pub struct Workspace<H: Handle> {
-    pub ptr: *mut ByteOf<H>,
-    pub len: usize,
-}
 
 pub trait Operator {
     type Handle: Handle;

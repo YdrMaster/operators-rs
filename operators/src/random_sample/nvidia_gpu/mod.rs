@@ -66,21 +66,21 @@ impl common::Operator for Operator {
         if scheme.meta != meta {
             return Err(locate_error!("Scheme meta mismatch"));
         }
-        if args.workspace.len < scheme.workspace {
+        if args.workspace_size < scheme.workspace {
             return Err(locate_error!("Workspace out of range"));
         }
         if args.detail.is_argmax() {
             scheme.argmax(
-                args.workspace.ptr,
-                args.workspace.len,
+                args.workspace,
+                args.workspace_size,
                 args.kv_pair_base,
                 args.data_base,
                 queue,
             )
         } else {
             scheme.sample(
-                args.workspace.ptr,
-                args.workspace.len,
+                args.workspace,
+                args.workspace_size,
                 args.kv_pair_base,
                 args.data_base,
                 args.detail,

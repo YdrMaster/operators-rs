@@ -117,6 +117,7 @@ where
             v_base,
             o_layout,
             o_base,
+            workspace_size,
             workspace,
         } = args;
 
@@ -130,7 +131,7 @@ where
             nkvh           att
             nkvh_sk seq_sk att_sk
         };
-        if workspace.len < nh * seq * att * sizeof!(dt)? {
+        if *workspace_size < nh * seq * att * sizeof!(dt)? {
             return Err(locate_error!("Out of workspace"));
         }
 
@@ -156,7 +157,7 @@ where
         self.mat_mul.launch(
             &mat_mul::Args {
                 c_layout: att_mat_mul.clone(),
-                c_base: workspace.ptr,
+                c_base: *workspace,
                 beta: 0.,
                 a_layout: q_layout.clone(),
                 a_base: *q_base,
@@ -170,7 +171,7 @@ where
         self.softmax.launch(
             &fuesd_softmax::Args {
                 att_layout: att_softmax,
-                att_base: workspace.ptr,
+                att_base: *workspace,
             },
             queue,
         )?;
@@ -181,7 +182,7 @@ where
                 c_base: *q_base,
                 beta: 0.,
                 a_layout: att_mat_mul,
-                a_base: workspace.ptr,
+                a_base: *workspace,
                 b_layout: v_layout.clone(),
                 b_base: *v_base,
                 alpha: 1.,

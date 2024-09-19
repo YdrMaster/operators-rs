@@ -1,5 +1,5 @@
 ﻿use crate::utils::{pass_if, pass_match, ConstPtr, MutPtr};
-use common::{Argument, ErrorPosition, Handle, TensorLayout, Workspace};
+use common::{Argument, ErrorPosition, Handle, TensorLayout};
 use digit_layout::DigitLayout;
 
 pub struct Args<H: Handle> {
@@ -15,7 +15,8 @@ pub struct Args<H: Handle> {
     pub o_layout: TensorLayout,
     pub o_base: MutPtr<H>,
 
-    pub workspace: Workspace<H>,
+    pub workspace_size: usize,
+    pub workspace: MutPtr<H>,
 }
 
 pub(crate) struct Meta {
@@ -52,10 +53,8 @@ impl<H: Handle> From<Meta> for Args<H> {
             v_base: null(),
             o_layout: qo_layout,
             o_base: null_mut(),
-            workspace: Workspace {
-                ptr: null_mut(),
-                len: 0,
-            },
+            workspace_size: usize::MAX,
+            workspace: null_mut(),
         }
     }
 }
