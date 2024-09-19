@@ -1,5 +1,5 @@
-﻿use crate::utils::{ConstPtr, MutPtr};
-use common::{algebraic, locate_error, Argument, ErrorPosition, Handle, TensorLayout};
+﻿use crate::utils::{sizeof, ConstPtr, MutPtr};
+use common::{locate_error, Argument, ErrorPosition, Handle, TensorLayout};
 use digit_layout::DigitLayout;
 use std::mem::swap;
 
@@ -121,7 +121,7 @@ impl TryFrom<&TensorLayout> for Matrix {
         let [stride @ .., rs, cs] = strides else {
             unreachable!();
         };
-        let unit = algebraic!(tensor.dt())? as isize;
+        let unit = sizeof!(tensor.dt())? as isize;
         let (batch, stride) = match batch {
             [] | [1] => {
                 assert!(matches!(stride, [] | [_]));

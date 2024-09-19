@@ -1,9 +1,9 @@
 ﻿use super::{args::Meta, Args, RmsNorm};
 use crate::{
     nvidia_gpu::{dt_name, Handle as Gpu, Internal as Handle, ModuleBox},
-    utils::get_or_err,
+    utils::{sizeof, get_or_err},
 };
-use common::{algebraic, locate_error, ErrorPosition, QueueOf};
+use common::{locate_error, ErrorPosition, QueueOf};
 use cuda::Version;
 use digit_layout::DigitLayout;
 use std::{ffi::CString, sync::Arc};
@@ -86,8 +86,8 @@ impl common::Operator for Operator {
         get_or_err!(dsx);
         get_or_err!(dsw);
 
-        let unit = algebraic!(dt_a)? as isize;
-        if dsy != unit || dsx != unit || dsw != algebraic!(dt_w)? as isize {
+        let unit = sizeof!(dt_a)? as isize;
+        if dsy != unit || dsx != unit || dsw != sizeof!(dt_w)? as isize {
             return Err(locate_error!("Unsupported layout"));
         };
 
@@ -156,8 +156,8 @@ impl Operator {
         d: usize,
         cc: Version,
     ) -> Result<(), ErrorPosition> {
-        let ww = algebraic!(dt_w)? * 8;
-        let wa = algebraic!(dt_a)? * 8;
+        let ww = sizeof!(dt_w)? * 8;
+        let wa = sizeof!(dt_a)? * 8;
         let name = format!("rms_norm_padding_w{ww}a{wa}_{d}");
         let tw = dt_name(dt_w);
         let ta = dt_name(dt_a);
@@ -212,8 +212,8 @@ extern "C" __global__ void {name}(
         let num_threads_block = num_threads_warp * num_warps_block;
         let num_items_thread = (to_divid + num_warps_block - 1) / num_warps_block;
 
-        let ww = algebraic!(dt_w)? * 8;
-        let wa = algebraic!(dt_a)? * 8;
+        let ww = sizeof!(dt_w)? * 8;
+        let wa = sizeof!(dt_a)? * 8;
         let name = format!("rms_norm_padding_w{ww}a{wa}_{num_threads_block}x{num_items_thread}");
         let tw = dt_name(dt_w);
         let ta = dt_name(dt_a);

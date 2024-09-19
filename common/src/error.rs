@@ -67,34 +67,6 @@ macro_rules! locate_error {
     };
 }
 
-#[macro_export]
-macro_rules! algebraic {
-    ($ty:expr) => {
-        $ty.nbytes()
-            .ok_or_else(|| $crate::locate_error!("Should be an algebraic type"))
-    };
-}
-
-#[macro_export]
-macro_rules! pass_if {
-    ($($condition:expr);* $(;)?) => {
-        if $(!$condition)||* {
-            return Err($crate::locate_error!("Check failed"));
-        };
-    };
-}
-
-#[macro_export]
-macro_rules! pass_match {
-    ($($pattern:pat = $expr:expr);* $(;)?) => {
-        $(
-            let $pattern = $expr else {
-                return Err($crate::locate_error!("Pattern mismatch"));
-            };
-        )*
-    };
-}
-
 #[test]
 fn test_locate_error() {
     fn error() -> ErrorPosition {

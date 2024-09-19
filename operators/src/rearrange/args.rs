@@ -1,5 +1,5 @@
-﻿use crate::utils::{ConstPtr, MutPtr};
-use common::{algebraic, locate_error, Argument, ErrorPosition, Handle, TensorLayout};
+﻿use crate::utils::{sizeof, ConstPtr, MutPtr};
+use common::{locate_error, Argument, ErrorPosition, Handle, TensorLayout};
 use std::{cmp::Ordering, iter::zip};
 
 pub struct Args<H: Handle> {
@@ -80,7 +80,7 @@ impl Scheme {
         }
         dims.sort_unstable();
         // # 合并连续维度
-        let mut unit = algebraic!(dst_.dt())? as isize;
+        let mut unit = sizeof!(dst_.dt())? as isize;
         let mut ndim = dims.len();
         // ## 合并末尾连续维度到 unit
         for dim in dims.iter_mut().rev() {

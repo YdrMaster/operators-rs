@@ -15,6 +15,31 @@ pub(crate) const fn gcd(mut a: usize, mut b: usize) -> usize {
     a
 }
 
+macro_rules! sizeof {
+    ($ty:expr) => {
+        $ty.nbytes()
+            .ok_or_else(|| $crate::locate_error!("Should be an algebraic type"))
+    };
+}
+
+macro_rules! pass_if {
+    ($($condition:expr);* $(;)?) => {
+        if $(!$condition)||* {
+            return Err($crate::locate_error!("Check failed"));
+        };
+    };
+}
+
+macro_rules! pass_match {
+    ($($pattern:pat = $expr:expr);* $(;)?) => {
+        $(
+            let $pattern = $expr else {
+                return Err($crate::locate_error!("Pattern mismatch"));
+            };
+        )*
+    };
+}
+
 macro_rules! get_or_err {
     ($($name:ident)*) => {
         $(
@@ -37,7 +62,7 @@ macro_rules! op_trait {
     };
 }
 
-pub(crate) use {get_or_err, op_trait};
+pub(crate) use {get_or_err, op_trait, pass_if, pass_match, sizeof};
 
 #[cfg(test)]
 pub(crate) use test_utils::*;

@@ -1,5 +1,5 @@
-﻿use crate::utils::{ConstPtr, MutPtr};
-use common::{dyn_, pass_if, pass_match, Argument, ErrorPosition, Handle, TensorLayout, Workspace};
+﻿use crate::utils::{pass_if, pass_match, ConstPtr, MutPtr};
+use common::{dyn_, Argument, ErrorPosition, Handle, TensorLayout, Workspace};
 use digit_layout::DigitLayout;
 
 pub struct Args<H: Handle> {

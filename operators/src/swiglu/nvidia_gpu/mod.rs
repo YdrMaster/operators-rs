@@ -1,9 +1,9 @@
 ﻿use super::{args::Meta, Args, Swiglu};
 use crate::{
     nvidia_gpu::{Handle as Gpu, Internal as Handle, ModuleBox},
-    utils::{gcd, get_or_err},
+    utils::{sizeof, gcd, get_or_err},
 };
-use common::{algebraic, locate_error, ErrorPosition, QueueOf};
+use common::{locate_error, ErrorPosition, QueueOf};
 use digit_layout::types::F16;
 use std::{ffi::CString, sync::Arc};
 
@@ -85,7 +85,7 @@ extern "C" __global__ void {NAME}(
         get_or_err!(sun);
         get_or_err!(sud);
 
-        let unit = algebraic!(dt)? as isize;
+        let unit = sizeof!(dt)? as isize;
         if sgd != unit || sud != unit {
             return Err(locate_error!("Unsupported layout"));
         };

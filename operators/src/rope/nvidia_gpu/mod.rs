@@ -1,9 +1,9 @@
 ﻿use super::{args::Meta, Args, Rope};
 use crate::{
     nvidia_gpu::{Handle as Gpu, Internal as Handle, ModuleBox},
-    utils::get_or_err,
+    utils::{get_or_err, sizeof},
 };
-use common::{algebraic, locate_error, ErrorPosition, QueueOf};
+use common::{locate_error, ErrorPosition, QueueOf};
 use digit_layout::types::{F16, U32};
 use std::{ffi::CString, sync::Arc};
 
@@ -96,7 +96,7 @@ extern "C" __global__ void {NAME}(
         get_or_err!(sd);
         get_or_err!(sp);
 
-        let unit = algebraic!(dt_t)? as isize;
+        let unit = sizeof!(dt_t)? as isize;
         if sd != unit || sp != size_of::<u32>() as isize {
             return Err(locate_error!("Unsupported layout"));
         };

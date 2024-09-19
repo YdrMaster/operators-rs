@@ -1,8 +1,10 @@
 ﻿use super::{args::Meta, Args, AttnKVCached};
-use crate::{attention, rearrange, utils::get_or_err};
+use crate::{
+    attention, rearrange,
+    utils::{sizeof, get_or_err, pass_match},
+};
 use common::{
-    algebraic, dyn_, locate_error, pass_match, Argument, ErrorPosition, Handle, QueueOf,
-    TensorLayout, Workspace,
+    dyn_, locate_error, Argument, ErrorPosition, Handle, QueueOf, TensorLayout, Workspace,
 };
 use digit_layout::DigitLayout;
 use ndarray_layout::ArrayLayout;
@@ -152,7 +154,7 @@ where
         }
         // 如果 q 的前两维不连续则需要重整
         let rearrange_q = seq_sq * seq as isize != nh_sq;
-        let ele = algebraic!(dt)?;
+        let ele = sizeof!(dt)?;
         if workspace.len < attn_space + if rearrange_q { nh * seq * dh * ele } else { 0 } {
             return Err(locate_error!("Out of workspace"));
         }

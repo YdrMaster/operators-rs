@@ -1,8 +1,9 @@
 ﻿use super::{args::Meta, Args, Mlp};
-use crate::{mat_mul, swiglu, utils::get_or_err};
-use common::{
-    algebraic, dyn_, locate_error, Argument, ErrorPosition, Handle, QueueOf, TensorLayout,
+use crate::{
+    mat_mul, swiglu,
+    utils::{sizeof, get_or_err},
 };
+use common::{dyn_, locate_error, Argument, ErrorPosition, Handle, QueueOf, TensorLayout};
 use digit_layout::DigitLayout;
 use ndarray_layout::{ArrayLayout, Endian::BigEndian};
 use std::marker::PhantomData;
@@ -95,7 +96,7 @@ where
         } = args;
 
         get_or_err!(nt di);
-        let ele = algebraic!(dt)?;
+        let ele = sizeof!(dt)?;
         if workspace.len < nt * di * 2 * ele {
             return Err(locate_error!("Out of workspace"));
         }

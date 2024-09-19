@@ -1,9 +1,9 @@
 ﻿use super::{args::Meta, Args, Attention};
-use crate::{fuesd_softmax, mat_mul, rearrange, utils::get_or_err};
-use common::{
-    algebraic, dyn_, locate_error, pass_match, Argument, ErrorPosition, Handle, QueueOf,
-    TensorLayout,
+use crate::{
+    fuesd_softmax, mat_mul, rearrange,
+    utils::{get_or_err, pass_match, sizeof},
 };
+use common::{dyn_, locate_error, Argument, ErrorPosition, Handle, QueueOf, TensorLayout};
 use digit_layout::DigitLayout;
 use ndarray_layout::ArrayLayout;
 use std::marker::PhantomData;
@@ -130,7 +130,7 @@ where
             nkvh           att
             nkvh_sk seq_sk att_sk
         };
-        if workspace.len < nh * seq * att * algebraic!(dt)? {
+        if workspace.len < nh * seq * att * sizeof!(dt)? {
             return Err(locate_error!("Out of workspace"));
         }
 
