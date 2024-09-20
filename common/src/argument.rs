@@ -32,7 +32,7 @@ impl ArgVal for usize {
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[repr(transparent)]
-pub struct Argument<T>(T);
+pub struct Argument<T>(pub T);
 
 impl<T> From<T> for Argument<T> {
     #[inline]

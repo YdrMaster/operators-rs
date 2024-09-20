@@ -6,7 +6,10 @@ mod pool;
 mod tensor;
 
 pub use argument::{dyn_, ArgVal, Argument};
-pub use error::ErrorPosition;
+pub use error::{
+    functions::*, LaunchError, LaunchErrorKind, ParamError, ParamErrorKind, SchemeError,
+    SchemeErrorKind,
+};
 pub use pool::Pool;
 pub use tensor::TensorLayout;
 
@@ -24,14 +27,8 @@ pub type QueueOf<'ctx, D> = <D as Handle>::Queue<'ctx>;
 pub trait Operator {
     type Handle: Handle;
     type Args;
-    type SchemeError;
-    type LaunchError;
 
     fn new(handle: &Self::Handle) -> Self;
-    fn scheme(&mut self, args: &Self::Args) -> Result<(), Self::SchemeError>;
-    fn launch(
-        &self,
-        args: &Self::Args,
-        queue: &QueueOf<Self::Handle>,
-    ) -> Result<(), Self::LaunchError>;
+    fn scheme(&mut self, args: &Self::Args) -> Result<(), SchemeError>;
+    fn launch(&self, args: &Self::Args, queue: &QueueOf<Self::Handle>) -> Result<(), LaunchError>;
 }

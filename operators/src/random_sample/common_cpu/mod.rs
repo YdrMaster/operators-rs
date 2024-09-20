@@ -3,7 +3,7 @@ use crate::{
     between_f32::BetweenF32, common_cpu::Handle as Cpu, random_sample::args::SampleArgs,
     utils::sizeof,
 };
-use common::{locate_error, ErrorPosition, QueueOf};
+use common::{strides_not_support, type_not_support, LaunchError, QueueOf, SchemeError};
 use half::f16;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use std::{cmp::Ordering::Equal, slice::from_raw_parts};
@@ -20,8 +20,6 @@ impl RandomSample<Cpu> for Operator {
 impl common::Operator for Operator {
     type Handle = Cpu;
     type Args = Args<Cpu>;
-    type SchemeError = ErrorPosition;
-    type LaunchError = ErrorPosition;
 
     #[inline]
     fn new(_handle: &Self::Handle) -> Self {
@@ -29,22 +27,18 @@ impl common::Operator for Operator {
     }
 
     #[inline]
-    fn scheme(&mut self, _args: &Self::Args) -> Result<(), Self::SchemeError> {
+    fn scheme(&mut self, _args: &Self::Args) -> Result<(), SchemeError> {
         Ok(())
     }
 
-    fn launch(
-        &self,
-        args: &Self::Args,
-        _queue: &QueueOf<Self::Handle>,
-    ) -> Result<(), Self::LaunchError> {
+    fn launch(&self, args: &Self::Args, _queue: &QueueOf<Self::Handle>) -> Result<(), LaunchError> {
         let meta = args.meta()?;
         let &[s] = args.data.strides() else {
             unreachable!()
         };
-        let unit = sizeof!(meta.dt)? as isize;
+        let unit = sizeof(meta.dt)? as isize;
         if s.get_static().copied() != Some(unit) {
-            return Err(locate_error!());
+            return Err(strides_not_support("").into());
         }
 
         use digit_layout::types as ty;
@@ -57,7 +51,7 @@ impl common::Operator for Operator {
             let kv = match meta.dt {
                 ty::F16 => argmax!(f16),
                 ty::F32 => argmax!(f32),
-                e => return Err(locate_error!("Unsupported data layout: {e:?}")),
+                e => return Err(type_not_support(format!("{e} not support")).into()),
             };
             unsafe { args.kv_pair_base.cast::<KVPair<()>>().write(kv) };
         } else {
@@ -74,7 +68,7 @@ impl common::Operator for Operator {
             let kv = match meta.dt {
                 ty::F16 => random!(f16),
                 ty::F32 => random!(f32),
-                e => return Err(locate_error!("Unsupported data layout: {e:?}")),
+                e => return Err(type_not_support(format!("{e} not support")).into()),
             };
             unsafe { args.kv_pair_base.cast::<KVPair<()>>().write(kv) };
         }

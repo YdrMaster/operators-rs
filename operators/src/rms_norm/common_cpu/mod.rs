@@ -1,6 +1,6 @@
 ﻿use super::{args::Meta, Args, RmsNorm};
-use crate::{common_cpu::Handle as Cpu, utils::get_or_err};
-use common::{ErrorPosition, QueueOf};
+use crate::{common_cpu::Handle as Cpu, utils::get_static};
+use common::{LaunchError, QueueOf, SchemeError};
 use half::f16;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
@@ -11,8 +11,6 @@ impl RmsNorm<Cpu> for Operator {}
 impl common::Operator for Operator {
     type Handle = Cpu;
     type Args = Args<Cpu>;
-    type SchemeError = ErrorPosition;
-    type LaunchError = ErrorPosition;
 
     #[inline]
     fn new(_handle: &Self::Handle) -> Self {
@@ -20,16 +18,12 @@ impl common::Operator for Operator {
     }
 
     #[inline]
-    fn scheme(&mut self, args: &Self::Args) -> Result<(), Self::SchemeError> {
+    fn scheme(&mut self, args: &Self::Args) -> Result<(), SchemeError> {
         let _meta = args.meta()?;
         Ok(())
     }
 
-    fn launch(
-        &self,
-        args: &Self::Args,
-        _queue: &QueueOf<Self::Handle>,
-    ) -> Result<(), Self::LaunchError> {
+    fn launch(&self, args: &Self::Args, _queue: &QueueOf<Self::Handle>) -> Result<(), LaunchError> {
         let Meta { dt_w, dt_a, n, d } = args.meta()?;
         let Args {
             y_layout,
@@ -50,13 +44,12 @@ impl common::Operator for Operator {
             unreachable!()
         };
 
-        get_or_err!(n);
-        get_or_err!(d);
-        get_or_err!(nsy);
-        get_or_err!(dsy);
-        get_or_err!(nsx);
-        get_or_err!(dsx);
-        get_or_err!(dsw);
+        get_static! {
+            n   d
+            nsy dsy
+            nsx dsx
+            dsw
+        }
 
         macro_rules! calculate {
             ($w:ty, $a:ty) => {

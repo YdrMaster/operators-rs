@@ -1,5 +1,8 @@
-﻿use crate::utils::{sizeof, ConstPtr, MutPtr};
-use common::{locate_error, Argument, ErrorPosition, Handle, TensorLayout};
+﻿use crate::utils::{sizeof, type_distinct, ConstPtr, MutPtr};
+use common::{
+    dyn_not_support, rank_not_support, shape_mismatch, shape_not_support, strides_not_support,
+    Argument, Handle, ParamError, TensorLayout,
+};
 use digit_layout::DigitLayout;
 use std::mem::swap;
 
@@ -37,22 +40,25 @@ pub(super) struct SchemeLayout {
 }
 
 impl<H: Handle> Args<H> {
-    pub(super) fn layout(&self) -> Result<SchemeLayout, ErrorPosition> {
-        let dt = self.c_layout.dt();
-        if self.a_layout.dt() != dt || self.b_layout.dt() != dt {
-            return Err(locate_error!());
-        }
+    pub(super) fn layout(&self) -> Result<SchemeLayout, ParamError> {
+        let Self {
+            c_layout,
+            a_layout,
+            b_layout,
+            ..
+        } = self;
+
         // 确认矩阵结构匹配
         let mut c = Matrix::try_from(&self.c_layout)?;
         let mut a = Matrix::try_from(&self.a_layout)?;
         let mut b = Matrix::try_from(&self.b_layout)?;
         if c.r != a.r || c.c != b.c || a.c != b.r {
-            return Err(locate_error!("Inconsistent matrix shapes"));
+            return Err(shape_mismatch("Inconsistent matrix shapes"));
         }
         // 确认批处理结构匹配
         let batch = c.batch;
         if !a.match_batch(batch) || !b.match_batch(batch) {
-            return Err(locate_error!("Inconsistent batch sizes"));
+            return Err(shape_mismatch("Inconsistent batch sizes"));
         }
         // 确认 c 列优先
         let ab_swap = if c.rs == 1 {
@@ -66,13 +72,13 @@ impl<H: Handle> Args<H> {
             swap(&mut a, &mut b);
             true
         } else {
-            return Err(locate_error!("Matrix is not contiguous"));
+            return Err(strides_not_support("Matrix is not contiguous"));
         };
 
         let (a_ld, a_trans) = a.ld_trans()?;
         let (b_ld, b_trans) = b.ld_trans()?;
         Ok(SchemeLayout {
-            dt,
+            dt: type_distinct(&[c_layout.dt(), a_layout.dt(), b_layout.dt()])?,
             ab_swap,
             a_trans,
             b_trans,
@@ -105,23 +111,23 @@ struct Matrix {
 }
 
 impl TryFrom<&TensorLayout> for Matrix {
-    type Error = ErrorPosition;
+    type Error = ParamError;
 
     fn try_from(tensor: &TensorLayout) -> Result<Self, Self::Error> {
         let Some(shape) = Argument::lock(tensor.shape()) else {
-            return Err(locate_error!("Dynamic shape is not supported"));
+            return Err(dyn_not_support(""));
         };
         let Some(strides) = Argument::lock(tensor.strides()) else {
-            return Err(locate_error!("Dynamic strides is not supported"));
+            return Err(dyn_not_support(""));
         };
 
         let [batch @ .., r, c] = shape else {
-            return Err(locate_error!("Invalid matrix shape"));
+            return Err(rank_not_support("Matrix must have rank 2 or more"));
         };
         let [stride @ .., rs, cs] = strides else {
             unreachable!();
         };
-        let unit = sizeof!(tensor.dt())? as isize;
+        let unit = sizeof(tensor.dt())? as isize;
         let (batch, stride) = match batch {
             [] | [1] => {
                 assert!(matches!(stride, [] | [_]));
@@ -131,7 +137,7 @@ impl TryFrom<&TensorLayout> for Matrix {
                 let &[stride] = stride else { unreachable!() };
                 (batch, stride / unit)
             }
-            _ => return Err(locate_error!("Invalid matrix shape")),
+            _ => return Err(shape_not_support("Higher-rank tensors not supported")),
         };
         Ok(Self {
             batch,
@@ -150,11 +156,11 @@ impl Matrix {
         self.batch == 1 || self.batch == batch
     }
     #[inline(always)]
-    fn ld_trans(&mut self) -> Result<(isize, bool), ErrorPosition> {
+    fn ld_trans(&mut self) -> Result<(isize, bool), ParamError> {
         match (self.rs, self.cs) {
             (1, cs) => Ok((cs, false)),
             (rs, 1) => Ok((rs, true)),
-            (_, _) => Err(locate_error!("Matrix is not contiguous")),
+            (_, _) => Err(strides_not_support("Matrix is not contiguous")),
         }
     }
     #[inline(always)]

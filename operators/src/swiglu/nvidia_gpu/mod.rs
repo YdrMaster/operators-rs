@@ -1,9 +1,11 @@
 ﻿use super::{args::Meta, Args, Swiglu};
 use crate::{
     nvidia_gpu::{Handle as Gpu, Internal as Handle, ModuleBox},
-    utils::{sizeof, gcd, get_or_err},
+    utils::{gcd, get_static, sizeof},
 };
-use common::{locate_error, ErrorPosition, QueueOf};
+use common::{
+    scheme_not_set, strides_not_support, type_not_support, LaunchError, QueueOf, SchemeError,
+};
 use digit_layout::types::F16;
 use std::{ffi::CString, sync::Arc};
 
@@ -21,8 +23,6 @@ impl Swiglu<Gpu> for Operator {}
 impl common::Operator for Operator {
     type Handle = Gpu;
     type Args = Args<Gpu>;
-    type SchemeError = ErrorPosition;
-    type LaunchError = ErrorPosition;
 
     fn new(handle: &Self::Handle) -> Self {
         Self {
@@ -32,7 +32,7 @@ impl common::Operator for Operator {
         }
     }
 
-    fn scheme(&mut self, args: &Self::Args) -> Result<(), Self::SchemeError> {
+    fn scheme(&mut self, args: &Self::Args) -> Result<(), SchemeError> {
         let Meta { dt, n: _, d: _ } = args.meta()?;
         if dt != F16 {
             todo!()
@@ -55,11 +55,7 @@ extern "C" __global__ void {NAME}(
         Ok(())
     }
 
-    fn launch(
-        &self,
-        args: &Self::Args,
-        queue: &QueueOf<Self::Handle>,
-    ) -> Result<(), Self::LaunchError> {
+    fn launch(&self, args: &Self::Args, queue: &QueueOf<Self::Handle>) -> Result<(), LaunchError> {
         let Meta { dt, n, d } = args.meta()?;
         let Args {
             gate_layout,
@@ -75,23 +71,22 @@ extern "C" __global__ void {NAME}(
         };
 
         if dt != F16 {
-            return Err(locate_error!());
+            return Err(type_not_support("").into());
         }
 
-        get_or_err!(n);
-        get_or_err!(d);
-        get_or_err!(sgn);
-        get_or_err!(sgd);
-        get_or_err!(sun);
-        get_or_err!(sud);
-
-        let unit = sizeof!(dt)? as isize;
-        if sgd != unit || sud != unit {
-            return Err(locate_error!("Unsupported layout"));
+        let Some(m) = self.scheme.as_ref() else {
+            return Err(scheme_not_set(""));
         };
 
-        let Some(m) = self.scheme.as_ref() else {
-            return Err(locate_error!("Scheme not set"));
+        get_static! {
+              n   d
+            sgn sgd
+            sun sud
+        }
+
+        let unit = sizeof(dt)? as isize;
+        if sgd != unit || sud != unit {
+            return Err(strides_not_support("").into());
         };
 
         let sg = (sgn / unit) as i32;

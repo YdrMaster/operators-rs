@@ -1,5 +1,5 @@
-﻿use crate::utils::{ConstPtr, MutPtr};
-use common::{locate_error, Argument, ErrorPosition, Handle, TensorLayout};
+﻿use crate::utils::{dim_distinct, rank_not_support, type_distinct, ConstPtr, MutPtr};
+use common::{Argument, Handle, ParamError, TensorLayout};
 use digit_layout::DigitLayout;
 
 pub struct Args<H: Handle> {
@@ -16,25 +16,24 @@ pub(super) struct Meta {
 }
 
 impl<H: Handle> Args<H> {
-    pub(super) fn meta(&self) -> Result<Meta, ErrorPosition> {
-        let dt = self.gate_layout.dt();
-        if self.up_layout.dt() != dt {
-            return Err(locate_error!());
-        }
+    pub(super) fn meta(&self) -> Result<Meta, ParamError> {
+        let Self {
+            gate_layout,
+            up_layout,
+            ..
+        } = self;
 
-        let &[gn, gd] = self.gate_layout.shape() else {
-            return Err(locate_error!());
+        let &[gn, gd] = gate_layout.shape() else {
+            return Err(rank_not_support("gate", 2, gate_layout.ndim()));
         };
-        let &[un, ud] = self.up_layout.shape() else {
-            return Err(locate_error!());
-        };
-        let Ok(&n) = Argument::merge(&[gn, un]) else {
-            return Err(locate_error!());
-        };
-        let Ok(&d) = Argument::merge(&[gd, ud]) else {
-            return Err(locate_error!());
+        let &[un, ud] = up_layout.shape() else {
+            return Err(rank_not_support("up", 2, up_layout.ndim()));
         };
 
-        Ok(Meta { dt, n, d })
+        Ok(Meta {
+            dt: type_distinct(&[gate_layout.dt(), up_layout.dt()])?,
+            n: dim_distinct(&[gn, un])?,
+            d: dim_distinct(&[gd, ud])?,
+        })
     }
 }

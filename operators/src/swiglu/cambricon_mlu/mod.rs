@@ -1,11 +1,11 @@
-﻿use super::{args::Meta, Args, Swiglu};
+use super::{args::Meta, Args, Swiglu};
 use crate::{
     cambricon_mlu::{Handle as Mlu, Internal as Handle},
     utils::get_or_err,
 };
 use cndrv::AsRaw;
 use cnnl::{cnnl, DataType, Tensor};
-use common::{locate_error, ErrorPosition, QueueOf};
+use common::{locate_error, QueueOf};
 use digit_layout::types::F16;
 use std::{
     ptr::{addr_eq, null_mut},
@@ -23,8 +23,6 @@ impl Swiglu<Mlu> for Operator {}
 impl common::Operator for Operator {
     type Handle = Mlu;
     type Args = Args<Mlu>;
-    type SchemeError = ErrorPosition;
-    type LaunchError = ErrorPosition;
 
     fn new(handle: &Self::Handle) -> Self {
         let mut act = null_mut();
@@ -59,15 +57,11 @@ impl common::Operator for Operator {
     }
 
     #[inline]
-    fn scheme(&mut self, args: &Self::Args) -> Result<(), Self::SchemeError> {
+    fn scheme(&mut self, args: &Self::Args) -> Result<(), SchemeError> {
         args.meta().map(|_| ())
     }
 
-    fn launch(
-        &self,
-        args: &Self::Args,
-        queue: &QueueOf<Self::Handle>,
-    ) -> Result<(), Self::LaunchError> {
+    fn launch(&self, args: &Self::Args, queue: &QueueOf<Self::Handle>) -> Result<(), LaunchError> {
         let Meta { dt, n, d } = args.meta()?;
         let Args {
             gate_layout,

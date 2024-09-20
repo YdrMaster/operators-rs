@@ -1,9 +1,12 @@
 ﻿use super::{args::Meta, Args, Rope};
 use crate::{
     nvidia_gpu::{Handle as Gpu, Internal as Handle, ModuleBox},
-    utils::{get_or_err, sizeof},
+    utils::{get_static, sizeof},
 };
-use common::{locate_error, ErrorPosition, QueueOf};
+use common::{
+    scheme_not_set, shape_not_support, strides_not_support, type_not_support, LaunchError, QueueOf,
+    SchemeError,
+};
 use digit_layout::types::{F16, U32};
 use std::{ffi::CString, sync::Arc};
 
@@ -20,8 +23,6 @@ impl Rope<Gpu> for Operator {}
 impl common::Operator for Operator {
     type Handle = Gpu;
     type Args = Args<Gpu>;
-    type SchemeError = ErrorPosition;
-    type LaunchError = ErrorPosition;
 
     fn new(handle: &Self::Handle) -> Self {
         Self {
@@ -31,7 +32,7 @@ impl common::Operator for Operator {
         }
     }
 
-    fn scheme(&mut self, args: &Self::Args) -> Result<(), Self::SchemeError> {
+    fn scheme(&mut self, args: &Self::Args) -> Result<(), SchemeError> {
         let Meta { dt_t, dt_p, .. } = args.meta()?;
 
         if dt_t != F16 || dt_p != U32 {
@@ -57,18 +58,18 @@ extern "C" __global__ void {NAME}(
         Ok(())
     }
 
-    fn launch(
-        &self,
-        args: &Self::Args,
-        queue: &QueueOf<Self::Handle>,
-    ) -> Result<(), Self::LaunchError> {
+    fn launch(&self, args: &Self::Args, queue: &QueueOf<Self::Handle>) -> Result<(), LaunchError> {
         let Meta {
             dt_t, dt_p, nt, dh, ..
         } = args.meta()?;
 
         if dt_t != F16 || dt_p != U32 {
-            todo!()
+            return Err(type_not_support("").into());
         }
+
+        let Some(m) = self.scheme.as_ref() else {
+            return Err(scheme_not_set(""));
+        };
 
         let Args {
             t_layout,
@@ -88,21 +89,15 @@ extern "C" __global__ void {NAME}(
             unreachable!()
         };
 
-        get_or_err!(nt);
-        get_or_err!(nh);
-        get_or_err!(dh);
-        get_or_err!(st);
-        get_or_err!(sh);
-        get_or_err!(sd);
-        get_or_err!(sp);
+        get_static! {
+            nt nh dh
+            st sh sd
+            sp
+        }
 
-        let unit = sizeof!(dt_t)? as isize;
+        let unit = sizeof(dt_t)? as isize;
         if sd != unit || sp != size_of::<u32>() as isize {
-            return Err(locate_error!("Unsupported layout"));
-        };
-
-        let Some(m) = self.scheme.as_ref() else {
-            return Err(locate_error!("Scheme not set"));
+            return Err(strides_not_support("").into());
         };
 
         let dh = dh / 2;
@@ -111,7 +106,7 @@ extern "C" __global__ void {NAME}(
         let params = cuda::params![t_base, st, sh, p_base, theta];
 
         if self.max_threads_block % dh != 0 {
-            return Err(locate_error!());
+            return Err(shape_not_support("").into());
         }
 
         let max_nh_l = (self.max_threads_block / dh).min(nh);

@@ -1,9 +1,11 @@
 ﻿use super::{args::Meta, Args, Mlp};
 use crate::{
     mat_mul, swiglu,
-    utils::{get_or_err, sizeof},
+    utils::{get_static, sizeof},
 };
-use common::{dyn_, locate_error, Argument, ErrorPosition, Handle, QueueOf, TensorLayout};
+use common::{
+    dyn_, out_of_workspace, Argument, Handle, LaunchError, QueueOf, SchemeError, TensorLayout,
+};
 use digit_layout::DigitLayout;
 use ndarray_layout::{ArrayLayout, Endian::BigEndian};
 use std::marker::PhantomData;
@@ -40,8 +42,6 @@ where
 {
     type Handle = H;
     type Args = Args<H>;
-    type SchemeError = ErrorPosition;
-    type LaunchError = ErrorPosition;
 
     #[inline]
     fn new(handle: &Self::Handle) -> Self {
@@ -57,7 +57,7 @@ where
     }
 
     #[inline]
-    fn scheme(&mut self, args: &Self::Args) -> Result<(), Self::SchemeError> {
+    fn scheme(&mut self, args: &Self::Args) -> Result<(), SchemeError> {
         use std::ptr::{null, null_mut};
 
         let Meta { dt, nt, di } = args.meta()?;
@@ -75,11 +75,7 @@ where
         })
     }
 
-    fn launch(
-        &self,
-        args: &Self::Args,
-        queue: &QueueOf<Self::Handle>,
-    ) -> Result<(), Self::LaunchError> {
+    fn launch(&self, args: &Self::Args, queue: &QueueOf<Self::Handle>) -> Result<(), LaunchError> {
         let Meta { dt, nt, di } = args.meta()?;
         let Args {
             y_layout,
@@ -96,10 +92,10 @@ where
             workspace,
         } = args;
 
-        get_or_err!(nt di);
-        let ele = sizeof!(dt)?;
+        get_static!(nt di);
+        let ele = sizeof(dt)?;
         if *workspace_size < nt * di * 2 * ele {
-            return Err(locate_error!("Out of workspace"));
+            return Err(out_of_workspace(""));
         }
 
         let gate_up_layout = ArrayLayout::<3>::new_contiguous(&[nt, di * 2], BigEndian, ele);

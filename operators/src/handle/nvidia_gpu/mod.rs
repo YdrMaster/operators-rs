@@ -103,7 +103,7 @@ impl Internal {
         cc: Version,
         code: impl FnOnce() -> String,
     ) -> Arc<Library> {
-        library::cache_lib(&(name.as_ref().to_string(), cc), code).unwrap()
+        library::cache_lib(&(name.as_ref().to_string(), cc), code)
     }
 }
 

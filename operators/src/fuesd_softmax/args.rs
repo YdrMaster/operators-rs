@@ -1,5 +1,5 @@
 ﻿use crate::utils::MutPtr;
-use common::{locate_error, ErrorPosition, Handle, TensorLayout};
+use common::{rank_not_support, Handle, ParamError, TensorLayout};
 use digit_layout::DigitLayout;
 
 pub struct Args<H: Handle> {
@@ -12,10 +12,10 @@ pub(super) struct Meta {
 }
 
 impl<H: Handle> Args<H> {
-    pub(super) fn meta(&self) -> Result<Meta, ErrorPosition> {
+    pub(super) fn meta(&self) -> Result<Meta, ParamError> {
         let dt = self.att_layout.dt();
         if self.att_layout.ndim() != 3 {
-            return Err(locate_error!());
+            return Err(rank_not_support(""));
         }
         Ok(Meta { dt })
     }

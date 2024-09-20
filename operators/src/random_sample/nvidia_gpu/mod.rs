@@ -3,7 +3,10 @@
     Args, RandomSample,
 };
 use crate::nvidia_gpu::{dt_name, Handle as Gpu, Internal as Handle, EXPORT, EXPORT_H};
-use common::{locate_error, ErrorPosition, QueueOf};
+use common::{
+    execution_failed, out_of_workspace, scheme_not_compatible, scheme_not_set, LaunchError,
+    QueueOf, SchemeError,
+};
 use cuda::{
     bindings::{CUresult, CUstream},
     AsRaw, DevByte, DevMem, Stream,
@@ -39,8 +42,6 @@ impl RandomSample<Gpu> for Operator {
 impl common::Operator for Operator {
     type Handle = Gpu;
     type Args = Args<Gpu>;
-    type SchemeError = ErrorPosition;
-    type LaunchError = ErrorPosition;
 
     fn new(handle: &Self::Handle) -> Self {
         Self {
@@ -49,25 +50,21 @@ impl common::Operator for Operator {
         }
     }
 
-    fn scheme(&mut self, args: &Self::Args) -> Result<(), Self::SchemeError> {
+    fn scheme(&mut self, args: &Self::Args) -> Result<(), SchemeError> {
         self.scheme = Some(Scheme::new(args.meta()?, &self.handle));
         Ok(())
     }
 
-    fn launch(
-        &self,
-        args: &Self::Args,
-        queue: &QueueOf<Self::Handle>,
-    ) -> Result<(), Self::LaunchError> {
+    fn launch(&self, args: &Self::Args, queue: &QueueOf<Self::Handle>) -> Result<(), LaunchError> {
         let meta = args.meta()?;
         let Some(scheme) = self.scheme.as_ref() else {
-            return Err(locate_error!("Scheme not set"));
+            return Err(scheme_not_set(""));
         };
         if scheme.meta != meta {
-            return Err(locate_error!("Scheme meta mismatch"));
+            return Err(scheme_not_compatible(""));
         }
         if args.workspace_size < scheme.workspace {
-            return Err(locate_error!("Workspace out of range"));
+            return Err(out_of_workspace(""));
         }
         if args.detail.is_argmax() {
             scheme.argmax(
@@ -218,10 +215,7 @@ impl Scheme {
         kv_pair: *mut DevByte,
         data: *const DevByte,
         stream: &Stream,
-    ) -> Result<(), ErrorPosition> {
-        if workspace_len < self.workspace {
-            return Err(locate_error!("Workspace out of range"));
-        }
+    ) -> Result<(), LaunchError> {
         let func: Symbol<ArgMaxFunc> = unsafe { self.lib.get(self.argmax.as_bytes()) }.unwrap();
         let result = unsafe {
             func(
@@ -236,7 +230,9 @@ impl Scheme {
         if result == SUCCESS {
             Ok(())
         } else {
-            Err(locate_error!("ArgMax failed with cuda error code {result}"))
+            Err(execution_failed(format!(
+                "ArgMax failed with cuda error code {result}",
+            )))
         }
     }
 
@@ -248,10 +244,7 @@ impl Scheme {
         data: *const DevByte,
         detail: SampleArgs,
         stream: &Stream,
-    ) -> Result<(), ErrorPosition> {
-        if workspace_len < self.workspace {
-            return Err(locate_error!("Workspace out of range"));
-        }
+    ) -> Result<(), LaunchError> {
         let func: Symbol<SampleFunc> = unsafe { self.lib.get(self.sample.as_bytes()) }.unwrap();
         let result = unsafe {
             func(
@@ -270,7 +263,9 @@ impl Scheme {
         if result == SUCCESS {
             Ok(())
         } else {
-            Err(locate_error!("ArgMax failed with cuda error code {result}"))
+            Err(execution_failed(
+                "ArgMax failed with cuda error code {result}",
+            ))
         }
     }
 }

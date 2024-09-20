@@ -1,6 +1,8 @@
 ﻿use super::{args::Scheme, Args, Rearrange};
 use crate::nvidia_gpu::{Handle as Gpu, Internal as Handle, ModuleBox};
-use common::{locate_error, ErrorPosition, QueueOf};
+use common::{
+    rank_not_support, scheme_not_set, shape_not_support, LaunchError, QueueOf, SchemeError,
+};
 use cuda::Version;
 use std::{
     ffi::CString,
@@ -20,8 +22,6 @@ impl Rearrange<Gpu> for Operator {}
 impl common::Operator for Operator {
     type Handle = Gpu;
     type Args = Args<Gpu>;
-    type SchemeError = ErrorPosition;
-    type LaunchError = ErrorPosition;
 
     fn new(handle: &Self::Handle) -> Self {
         let max_threads_block = handle.0.device().block_limit().max_threads;
@@ -35,15 +35,11 @@ impl common::Operator for Operator {
         }
     }
 
-    fn scheme(&mut self, _args: &Self::Args) -> Result<(), Self::SchemeError> {
+    fn scheme(&mut self, _args: &Self::Args) -> Result<(), SchemeError> {
         self.scheme(self.handle.device().compute_capability())
     }
 
-    fn launch(
-        &self,
-        args: &Self::Args,
-        queue: &QueueOf<Self::Handle>,
-    ) -> Result<(), Self::LaunchError> {
+    fn launch(&self, args: &Self::Args, queue: &QueueOf<Self::Handle>) -> Result<(), LaunchError> {
         let scheme = Scheme::new(args)?.distribute_unit((0..=5).rev().map(|n| 32 * (1 << n)));
         let unit = scheme.unit();
 
@@ -105,19 +101,23 @@ impl common::Operator for Operator {
                     src_cs: src_cs as _,
                 }
             }
-            _ => return Err(locate_error!("Not supported yet")),
+            _ => Err(rank_not_support("rearrange not support ndim > 2 on NV GPU"))?,
         };
 
         let name = CString::new(NAME).unwrap();
         let Some(m) = self.scheme.as_ref() else {
-            return Err(locate_error!("scheme is not set"));
+            return Err(scheme_not_set(""));
         };
         if unit % self.warp_size != 0 {
-            return Err(locate_error!());
+            Err(shape_not_support(format!(
+                "memory region {unit} is not align to warp size, which is not supported yet on NV GPU",
+            )))?;
         }
         let bytes_thread = (unit / self.warp_size) as u32;
         if bytes_thread > 32 || !bytes_thread.is_power_of_two() {
-            return Err(locate_error!("bytes_thread = {bytes_thread}"));
+            Err(shape_not_support(format!(
+                "bytes per thread {bytes_thread} is not supported yet on NV GPU"
+            )))?;
         }
 
         let warps = self.max_warps_block as u32;
@@ -148,7 +148,7 @@ impl common::Operator for Operator {
 const NAME: &str = "rearrange";
 const CODE: &str = include_str!("rearrange.cuh");
 impl Operator {
-    fn scheme(&mut self, cc: Version) -> Result<(), ErrorPosition> {
+    fn scheme(&mut self, cc: Version) -> Result<(), SchemeError> {
         self.scheme = Some(self.handle.compile_kernel(NAME, cc, || {
             format!(
                 r#"{CODE}

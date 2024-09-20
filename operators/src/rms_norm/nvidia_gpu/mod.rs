@@ -1,9 +1,12 @@
 ﻿use super::{args::Meta, Args, RmsNorm};
 use crate::{
     nvidia_gpu::{dt_name, Handle as Gpu, Internal as Handle, ModuleBox},
-    utils::{sizeof, get_or_err},
+    utils::{get_static, sizeof},
 };
-use common::{locate_error, ErrorPosition, QueueOf};
+use common::{
+    scheme_not_compatible, scheme_not_set, shape_not_support, strides_not_support, LaunchError,
+    QueueOf, SchemeError,
+};
 use cuda::Version;
 use digit_layout::DigitLayout;
 use std::{ffi::CString, sync::Arc};
@@ -18,8 +21,6 @@ impl RmsNorm<Gpu> for Operator {}
 impl common::Operator for Operator {
     type Handle = Gpu;
     type Args = Args<Gpu>;
-    type SchemeError = ErrorPosition;
-    type LaunchError = ErrorPosition;
 
     #[inline]
     fn new(handle: &Self::Handle) -> Self {
@@ -29,7 +30,7 @@ impl common::Operator for Operator {
         }
     }
 
-    fn scheme(&mut self, args: &Self::Args) -> Result<(), Self::SchemeError> {
+    fn scheme(&mut self, args: &Self::Args) -> Result<(), SchemeError> {
         let Meta {
             dt_w,
             dt_a,
@@ -53,11 +54,7 @@ impl common::Operator for Operator {
         }
     }
 
-    fn launch(
-        &self,
-        args: &Self::Args,
-        queue: &QueueOf<Self::Handle>,
-    ) -> Result<(), Self::LaunchError> {
+    fn launch(&self, args: &Self::Args, queue: &QueueOf<Self::Handle>) -> Result<(), LaunchError> {
         let Meta { dt_w, dt_a, n, d } = args.meta()?;
         let Args {
             y_layout,
@@ -78,23 +75,22 @@ impl common::Operator for Operator {
             unreachable!()
         };
 
-        get_or_err!(n);
-        get_or_err!(d);
-        get_or_err!(nsy);
-        get_or_err!(dsy);
-        get_or_err!(nsx);
-        get_or_err!(dsx);
-        get_or_err!(dsw);
+        get_static! {
+            n   d
+            nsy dsy
+            nsx dsx
+            dsw
+        }
 
-        let unit = sizeof!(dt_a)? as isize;
-        if dsy != unit || dsx != unit || dsw != sizeof!(dt_w)? as isize {
-            return Err(locate_error!("Unsupported layout"));
+        let unit = sizeof(dt_a)? as isize;
+        if dsy != unit || dsx != unit || dsw != sizeof(dt_w)? as isize {
+            return Err(strides_not_support("").into());
         };
 
         let (name, m, block_dims) = match self.scheme.as_ref() {
             Some((s, m)) => {
                 if !s.is_match(dt_w, dt_a, d) {
-                    return Err(locate_error!());
+                    return Err(scheme_not_compatible(""));
                 }
                 match s {
                     Scheme::Common { .. } => todo!(),
@@ -104,7 +100,7 @@ impl common::Operator for Operator {
                     } => (name, m, *block_size),
                 }
             }
-            None => return Err(locate_error!("Scheme not set")),
+            None => return Err(scheme_not_set("")),
         };
 
         let nsy = (nsy / unit) as i32;
@@ -155,9 +151,9 @@ impl Operator {
         dt_a: DigitLayout,
         d: usize,
         cc: Version,
-    ) -> Result<(), ErrorPosition> {
-        let ww = sizeof!(dt_w)? * 8;
-        let wa = sizeof!(dt_a)? * 8;
+    ) -> Result<(), SchemeError> {
+        let ww = sizeof(dt_w)? * 8;
+        let wa = sizeof(dt_a)? * 8;
         let name = format!("rms_norm_padding_w{ww}a{wa}_{d}");
         let tw = dt_name(dt_w);
         let ta = dt_name(dt_a);
@@ -198,9 +194,11 @@ extern "C" __global__ void {name}(
         cc: Version,
         max_num_threads_block: usize,
         num_threads_warp: usize,
-    ) -> Result<(), ErrorPosition> {
+    ) -> Result<(), SchemeError> {
         if d % num_threads_warp != 0 {
-            return Err(locate_error!());
+            Err(shape_not_support(format!(
+                "normalization shape {d} must be multiple of warp size {num_threads_warp}"
+            )))?
         }
         let max_num_warp_block = max_num_threads_block / num_threads_warp;
         // num_warp_block in [1, max_num_warp_block]
@@ -212,8 +210,8 @@ extern "C" __global__ void {name}(
         let num_threads_block = num_threads_warp * num_warps_block;
         let num_items_thread = (to_divid + num_warps_block - 1) / num_warps_block;
 
-        let ww = sizeof!(dt_w)? * 8;
-        let wa = sizeof!(dt_a)? * 8;
+        let ww = sizeof(dt_w)? * 8;
+        let wa = sizeof(dt_a)? * 8;
         let name = format!("rms_norm_padding_w{ww}a{wa}_{num_threads_block}x{num_items_thread}");
         let tw = dt_name(dt_w);
         let ta = dt_name(dt_a);

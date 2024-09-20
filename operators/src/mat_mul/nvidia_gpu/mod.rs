@@ -1,6 +1,6 @@
 ﻿use super::{args::SchemeLayout, Args, MatMul};
 use crate::nvidia_gpu::{Handle as Gpu, Internal as Handle};
-use common::{locate_error, ErrorPosition, QueueOf};
+use common::{type_not_support, LaunchError, QueueOf, SchemeError};
 use cublas::cublas;
 use cuda::AsRaw;
 use digit_layout::types::F16;
@@ -16,8 +16,6 @@ impl MatMul<Gpu> for Operator {}
 impl common::Operator for Operator {
     type Handle = Gpu;
     type Args = Args<Gpu>;
-    type SchemeError = ErrorPosition;
-    type LaunchError = ErrorPosition;
 
     #[inline]
     fn new(handle: &Self::Handle) -> Self {
@@ -27,15 +25,11 @@ impl common::Operator for Operator {
     }
 
     #[inline]
-    fn scheme(&mut self, _args: &Self::Args) -> Result<(), Self::SchemeError> {
+    fn scheme(&mut self, _args: &Self::Args) -> Result<(), SchemeError> {
         Ok(())
     }
 
-    fn launch(
-        &self,
-        args: &Self::Args,
-        queue: &QueueOf<Self::Handle>,
-    ) -> Result<(), Self::LaunchError> {
+    fn launch(&self, args: &Self::Args, queue: &QueueOf<Self::Handle>) -> Result<(), LaunchError> {
         let SchemeLayout {
             dt,
             ab_swap,
@@ -62,7 +56,7 @@ impl common::Operator for Operator {
         } = args;
 
         if dt != F16 {
-            return Err(locate_error!());
+            return Err(type_not_support("").into());
         }
 
         let (a, b) = if ab_swap {

@@ -1,6 +1,6 @@
 ﻿use super::{args::Meta, Args, FusedSoftmax};
-use crate::{common_cpu::Handle as Cpu, utils::get_or_err};
-use common::{ErrorPosition, QueueOf};
+use crate::{common_cpu::Handle as Cpu, utils::get_static};
+use common::{LaunchError, QueueOf, SchemeError};
 use half::f16;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
@@ -11,8 +11,6 @@ impl FusedSoftmax<Cpu> for Operator {}
 impl common::Operator for Operator {
     type Handle = Cpu;
     type Args = Args<Cpu>;
-    type SchemeError = ErrorPosition;
-    type LaunchError = ErrorPosition;
 
     #[inline]
     fn new(_handle: &Self::Handle) -> Self {
@@ -20,16 +18,12 @@ impl common::Operator for Operator {
     }
 
     #[inline]
-    fn scheme(&mut self, args: &Self::Args) -> Result<(), Self::SchemeError> {
+    fn scheme(&mut self, args: &Self::Args) -> Result<(), SchemeError> {
         let _meta = args.meta()?;
         Ok(())
     }
 
-    fn launch(
-        &self,
-        args: &Self::Args,
-        _queue: &QueueOf<Self::Handle>,
-    ) -> Result<(), Self::LaunchError> {
+    fn launch(&self, args: &Self::Args, _queue: &QueueOf<Self::Handle>) -> Result<(), LaunchError> {
         let Meta { dt } = args.meta()?;
         let Args {
             att_layout,
@@ -42,12 +36,10 @@ impl common::Operator for Operator {
             unreachable!()
         };
 
-        get_or_err!(nh);
-        get_or_err!(seq_len);
-        get_or_err!(att_len);
-        get_or_err!(sh);
-        get_or_err!(ss);
-        get_or_err!(sa);
+        get_static! {
+            nh seq_len att_len
+            sh ss      sa
+        }
 
         macro_rules! calculate {
             ($ty:ty) => {

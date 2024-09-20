@@ -1,5 +1,5 @@
-﻿use crate::utils::{pass_if, pass_match, ConstPtr, MutPtr};
-use common::{dyn_, Argument, ErrorPosition, Handle, TensorLayout};
+﻿use crate::utils::{dim_distinct, rank_not_support, type_distinct, ConstPtr, MutPtr};
+use common::{dyn_, Argument, Handle, ParamError, TensorLayout};
 use digit_layout::DigitLayout;
 
 pub struct Args<H: Handle> {
@@ -28,27 +28,42 @@ pub(super) struct Meta {
 }
 
 impl<H: Handle> Args<H> {
-    pub(super) fn meta(&self) -> Result<Meta, ErrorPosition> {
-        let dt = self.y_layout.dt();
-        pass_if! {
-            self.        x_layout.dt() == dt;
-            self.w_gate_up_layout.dt() == dt;
-            self.   w_down_layout.dt() == dt;
-        }
-        pass_match! {
-            &[nt_y, d_y  ] = self.y_layout.shape();
-            &[nt_x, d_x  ] = self.x_layout.shape();
-            &[d_gu, di_gu] = self.w_gate_up_layout.shape();
-            &[di_d, d_d  ] = self.w_down_layout.shape();
-            Ok(&nt) = Argument::merge(&[nt_y, nt_x]);
-            Ok(&_ ) = Argument::merge(&[d_y, d_x, d_gu, d_d]);
-        }
-        let di = if let Some(&di2) = di_gu.get_static() {
-            pass_match!(Ok(&di) = Argument::merge(&[di_d, (di2 / 2).into()]));
-            di
-        } else {
-            dyn_()
+    pub(super) fn meta(&self) -> Result<Meta, ParamError> {
+        let Self {
+            y_layout,
+            x_layout,
+            w_gate_up_layout,
+            w_down_layout,
+            ..
+        } = self;
+
+        let &[nt_y, d_y] = y_layout.shape() else {
+            return Err(rank_not_support("y", 2, y_layout.ndim()));
         };
-        Ok(Meta { dt, nt, di })
+        let &[nt_x, d_x] = x_layout.shape() else {
+            return Err(rank_not_support("x", 2, x_layout.ndim()));
+        };
+        let &[d_gu, di_gu] = w_gate_up_layout.shape() else {
+            return Err(rank_not_support("w_gate_up", 2, w_gate_up_layout.ndim()));
+        };
+        let &[di_d, d_d] = w_down_layout.shape() else {
+            return Err(rank_not_support("w_down", 2, w_down_layout.ndim()));
+        };
+
+        let _ = dim_distinct(&[d_y, d_x, d_gu, d_d])?;
+
+        Ok(Meta {
+            dt: type_distinct(&[
+                y_layout.dt(),
+                x_layout.dt(),
+                w_gate_up_layout.dt(),
+                w_down_layout.dt(),
+            ])?,
+            nt: dim_distinct(&[nt_y, nt_x])?,
+            di: match di_gu.get_static() {
+                Some(&di2) => dim_distinct(&[di_d, (di2 / 2).into()])?,
+                None => dyn_(),
+            },
+        })
     }
 }

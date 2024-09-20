@@ -1,5 +1,5 @@
-﻿use crate::utils::{sizeof, ConstPtr, MutPtr};
-use common::{locate_error, Argument, ErrorPosition, Handle, TensorLayout};
+﻿use crate::utils::{sizeof, static_from, type_distinct, ConstPtr, MutPtr};
+use common::{rank_mismatch, shape_mismatch, shape_not_support, Handle, ParamError, TensorLayout};
 use std::{cmp::Ordering, iter::zip};
 
 pub struct Args<H: Handle> {
@@ -14,19 +14,21 @@ pub struct Args<H: Handle> {
 pub(super) struct Scheme(Vec<isize>);
 
 impl Scheme {
-    pub fn new<H: Handle>(args: &Args<H>) -> Result<Self, ErrorPosition> {
+    pub fn new<H: Handle>(args: &Args<H>) -> Result<Self, ParamError> {
         let Args {
             dst_layout: dst_,
             src_layout: src_,
             ..
         } = args;
         // # 检查基本属性
-        if dst_.dt() != src_.dt() {
-            return Err(locate_error!());
-        }
+        let _ = type_distinct(&[dst_.dt(), src_.dt()])?;
         let ndim = dst_.ndim();
         if src_.ndim() != ndim {
-            return Err(locate_error!());
+            return Err(rank_mismatch(format!(
+                "dst.ndim = {}, src.ndim = {}",
+                dst_.ndim(),
+                src_.ndim()
+            )));
         }
         // # 输入形状
         #[derive(Clone, PartialEq, Eq, Debug)]
@@ -42,18 +44,23 @@ impl Scheme {
             let sd = dst_.strides();
             let ss = src_.strides();
             for i in 0..ndim {
-                // 合并形状
-                let d = *Argument::merge(&[dd[i], ds[i]]).map_err(|_| locate_error!())?;
+                let dd = *static_from(&dd[i])?;
+                let ds = *static_from(&ds[i])?;
+                if dd != ds {
+                    Err(shape_mismatch(format!("dst[{i}] = {dd}, src[{i}] = {ds}")))?;
+                }
                 // 静态化
                 let dim = Dim {
-                    len: *d.get_static().ok_or_else(|| locate_error!())?,
-                    dst: *sd[i].get_static().ok_or_else(|| locate_error!())?,
-                    src: *ss[i].get_static().ok_or_else(|| locate_error!())?,
+                    len: dd,
+                    dst: *static_from(&sd[i])?,
+                    src: *static_from(&ss[i])?,
                 };
                 // 剔除初始的 1 长维度
                 if dim.len != 1 {
                     if dim.dst == 0 {
-                        return Err(locate_error!("Reducing is not allowed for rearrangement."));
+                        return Err(shape_not_support(
+                            "Reducing is not allowed for rearrangement.",
+                        ));
                     }
                     dims.push(dim);
                 }
@@ -80,7 +87,7 @@ impl Scheme {
         }
         dims.sort_unstable();
         // # 合并连续维度
-        let mut unit = sizeof!(dst_.dt())? as isize;
+        let mut unit = sizeof(dst_.dt())? as isize;
         let mut ndim = dims.len();
         // ## 合并末尾连续维度到 unit
         for dim in dims.iter_mut().rev() {
@@ -217,43 +224,11 @@ fn test_scheme() {
     use std::ptr::{null, null_mut};
 
     {
-        let shape = [
-            Argument::from(4),
-            3.into(),
-            2.into(),
-            1.into(),
-            2.into(),
-            3.into(),
-            4.into(),
-        ];
+        let shape = [4, 3, 2, 1, 2, 3, 4];
         let args = Args::<Cpu> {
-            dst_layout: TensorLayout::new_dyn(
-                F16,
-                &shape,
-                &[
-                    288.into(), // 4
-                    96.into(),  // 3
-                    48.into(),  // 2
-                    48.into(),  // 1
-                    24.into(),  // 2
-                    8.into(),   // 3
-                    2.into(),   // 4
-                ],
-            ),
+            dst_layout: TensorLayout::new(F16, &shape, &[288, 96, 48, 48, 24, 8, 2]),
             dst_base: null_mut(),
-            src_layout: TensorLayout::new_dyn(
-                F16,
-                &shape,
-                &[
-                    576.into(), // 4
-                    192.into(), // 3
-                    96.into(),  // 2
-                    48.into(),  // 1
-                    8.into(),   // 2
-                    16.into(),  // 3
-                    2.into(),   // 4
-                ],
-            ),
+            src_layout: TensorLayout::new(F16, &shape, &[576, 192, 96, 48, 8, 16, 2]),
             src_base: null(),
         };
         let scheme = Scheme::new(&args).unwrap();
@@ -266,36 +241,18 @@ fn test_scheme() {
         assert_eq!(scheme.shape().collect::<Vec<_>>(), [24, 2, 3]);
     }
     {
-        let shape = [
-            Argument::from(32),
-            2.into(),
-            32.into(),
-            456.into(),
-            128.into(),
-        ];
+        let shape = [32, 2, 32, 456, 128];
         let args = Args::<Cpu> {
-            dst_layout: TensorLayout::new_dyn(
+            dst_layout: TensorLayout::new(
                 F16,
                 &shape,
-                &[
-                    (33554432 * 2).into(),
-                    (16777216 * 2).into(),
-                    (524288 * 2).into(),
-                    (128 * 2).into(),
-                    (1 * 2).into(),
-                ],
+                &[33554432 * 2, 16777216 * 2, 524288 * 2, 128 * 2, 1 * 2],
             ),
             dst_base: null_mut(),
-            src_layout: TensorLayout::new_dyn(
+            src_layout: TensorLayout::new(
                 F16,
                 &shape,
-                &[
-                    (33554432 * 2).into(),
-                    (16777216 * 2).into(),
-                    (524288 * 2).into(),
-                    (128 * 2).into(),
-                    (1 * 2).into(),
-                ],
+                &[33554432 * 2, 16777216 * 2, 524288 * 2, 128 * 2, 1 * 2],
             ),
             src_base: null(),
         };

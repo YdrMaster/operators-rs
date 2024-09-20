@@ -1,5 +1,5 @@
-﻿use crate::utils::{ConstPtr, MutPtr};
-use common::{locate_error, Argument, ErrorPosition, Handle, TensorLayout};
+﻿use crate::utils::{dim_distinct, rank_not_support, ConstPtr, MutPtr};
+use common::{type_not_support, Argument, Handle, ParamError, TensorLayout};
 use digit_layout::DigitLayout;
 
 pub struct Args<H: Handle> {
@@ -19,50 +19,51 @@ pub(super) struct Meta {
     pub dt_p: DigitLayout,
     pub nt: Argument<usize>,
     pub dh: Argument<usize>,
-    #[allow(dead_code)]
-    pub seq_sin_cos: Argument<usize>,
 }
 
 impl<H: Handle> Args<H> {
-    pub(super) fn meta(&self) -> Result<Meta, ErrorPosition> {
+    pub(super) fn meta(&self) -> Result<Meta, ParamError> {
+        let Self {
+            t_layout,
+            p_layout,
+            sin_layout,
+            cos_layout,
+            ..
+        } = self;
+
+        let &[nt, _, dh] = t_layout.shape() else {
+            return Err(rank_not_support("t", 3, t_layout.ndim()));
+        };
+        let &[np] = p_layout.shape() else {
+            return Err(rank_not_support("p", 1, p_layout.ndim()));
+        };
+        let &[_, dh_sin] = sin_layout.shape() else {
+            return Err(rank_not_support("sin", 2, sin_layout.ndim()));
+        };
+        let &[_, dh_cos] = cos_layout.shape() else {
+            return Err(rank_not_support("cos", 2, cos_layout.ndim()));
+        };
+
+        let dt_t = t_layout.dt();
+        let dt_p = p_layout.dt();
         use digit_layout::LayoutContent::{Real, Unsigned};
-        let dt_t = self.t_layout.dt();
-        let dt_p = self.p_layout.dt();
         // tokens must be floating-point numbers
         if !matches!(dt_t.decode(), Real { exponent: 1.., .. },) {
-            return Err(locate_error!());
+            return Err(type_not_support(format!(
+                "data type {dt_t} is not supported, must be floating-point numbers",
+            )));
         }
         // positions must be unsigned integers
         if !matches!(dt_p.decode(), Unsigned { .. }) {
-            return Err(locate_error!());
+            return Err(type_not_support(format!(
+                "data type {dt_p} is not supported, must be unsigned integers"
+            )));
         }
-        let &[nt, _, dh] = self.t_layout.shape() else {
-            return Err(locate_error!());
-        };
-        let &[np] = self.p_layout.shape() else {
-            return Err(locate_error!());
-        };
-        let &[seq_sin, dh_sin] = self.sin_layout.shape() else {
-            return Err(locate_error!());
-        };
-        let &[seq_cos, dh_cos] = self.cos_layout.shape() else {
-            return Err(locate_error!());
-        };
-        let Ok(&nt) = Argument::merge(&[nt, np]) else {
-            return Err(locate_error!());
-        };
-        let Ok(&dh) = Argument::merge(&[dh, dh_sin, dh_cos]) else {
-            return Err(locate_error!());
-        };
-        let Ok(&seq_sin_cos) = Argument::merge(&[seq_sin, seq_cos]) else {
-            return Err(locate_error!());
-        };
         Ok(Meta {
             dt_t,
             dt_p,
-            nt,
-            dh,
-            seq_sin_cos,
+            nt: dim_distinct(&[nt, np])?,
+            dh: dim_distinct(&[dh, dh_sin, dh_cos])?,
         })
     }
 }

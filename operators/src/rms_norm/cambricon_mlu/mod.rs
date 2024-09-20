@@ -1,11 +1,11 @@
-﻿use super::{args::Meta, Args, RmsNorm};
+use super::{args::Meta, Args, RmsNorm};
 use crate::{
     cambricon_mlu::{Handle as Mlu, Internal as Handle},
     utils::get_or_err,
 };
 use cndrv::AsRaw;
 use cnnl::{cnnl, DataType, Tensor};
-use common::{locate_error, ErrorPosition, QueueOf};
+use common::{locate_error, QueueOf};
 use digit_layout::types::F16;
 use std::{ptr::null_mut, sync::Arc};
 
@@ -18,8 +18,6 @@ impl RmsNorm<Mlu> for Operator {}
 impl common::Operator for Operator {
     type Handle = Mlu;
     type Args = Args<Mlu>;
-    type SchemeError = ErrorPosition;
-    type LaunchError = ErrorPosition;
 
     #[inline]
     fn new(handle: &Self::Handle) -> Self {
@@ -29,16 +27,12 @@ impl common::Operator for Operator {
     }
 
     #[inline]
-    fn scheme(&mut self, args: &Self::Args) -> Result<(), Self::SchemeError> {
+    fn scheme(&mut self, args: &Self::Args) -> Result<(), SchemeError> {
         let _meta = args.meta()?;
         Ok(())
     }
 
-    fn launch(
-        &self,
-        args: &Self::Args,
-        queue: &QueueOf<Self::Handle>,
-    ) -> Result<(), Self::LaunchError> {
+    fn launch(&self, args: &Self::Args, queue: &QueueOf<Self::Handle>) -> Result<(), LaunchError> {
         let Meta { dt, n, d } = args.meta()?;
         let Args {
             y_layout,

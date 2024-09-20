@@ -1,6 +1,6 @@
 ﻿use super::{args::Scheme, Args, Rearrange};
 use crate::common_cpu::Handle as Cpu;
-use common::{ErrorPosition, QueueOf};
+use common::{LaunchError, QueueOf, SchemeError};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 pub struct Operator;
@@ -10,8 +10,6 @@ impl Rearrange<Cpu> for Operator {}
 impl common::Operator for Operator {
     type Handle = Cpu;
     type Args = Args<Cpu>;
-    type SchemeError = ErrorPosition;
-    type LaunchError = ErrorPosition;
 
     #[inline]
     fn new(_handle: &Self::Handle) -> Self {
@@ -19,15 +17,11 @@ impl common::Operator for Operator {
     }
 
     #[inline]
-    fn scheme(&mut self, _args: &Self::Args) -> Result<(), Self::SchemeError> {
+    fn scheme(&mut self, _args: &Self::Args) -> Result<(), SchemeError> {
         Ok(())
     }
 
-    fn launch(
-        &self,
-        args: &Self::Args,
-        _queue: &QueueOf<Self::Handle>,
-    ) -> Result<(), Self::LaunchError> {
+    fn launch(&self, args: &Self::Args, _queue: &QueueOf<Self::Handle>) -> Result<(), LaunchError> {
         let scheme = Scheme::new(args)?;
         let unit = scheme.unit();
         if scheme.count() == 1 {

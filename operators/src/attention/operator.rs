@@ -1,9 +1,11 @@
 ﻿use super::{args::Meta, Args, Attention};
 use crate::{
     fuesd_softmax, mat_mul, rearrange,
-    utils::{get_or_err, pass_match, sizeof},
+    utils::{get_static, sizeof},
 };
-use common::{dyn_, locate_error, Argument, ErrorPosition, Handle, QueueOf, TensorLayout};
+use common::{
+    dyn_, out_of_workspace, Argument, Handle, LaunchError, QueueOf, SchemeError, TensorLayout,
+};
 use digit_layout::DigitLayout;
 use ndarray_layout::ArrayLayout;
 use std::marker::PhantomData;
@@ -45,8 +47,6 @@ where
 {
     type Handle = H;
     type Args = Args<H>;
-    type SchemeError = ErrorPosition;
-    type LaunchError = ErrorPosition;
 
     #[inline]
     fn new(handle: &Self::Handle) -> Self {
@@ -64,7 +64,7 @@ where
     }
 
     #[inline]
-    fn scheme(&mut self, args: &Self::Args) -> Result<(), Self::SchemeError> {
+    fn scheme(&mut self, args: &Self::Args) -> Result<(), SchemeError> {
         use std::ptr::{null, null_mut};
 
         let Meta {
@@ -95,11 +95,7 @@ where
         })
     }
 
-    fn launch(
-        &self,
-        args: &Self::Args,
-        queue: &QueueOf<Self::Handle>,
-    ) -> Result<(), Self::LaunchError> {
+    fn launch(&self, args: &Self::Args, queue: &QueueOf<Self::Handle>) -> Result<(), LaunchError> {
         let Meta {
             dt,
             nh,
@@ -121,18 +117,21 @@ where
             workspace,
         } = args;
 
-        pass_match! {
-            &[nh_sq  , seq_sq, dh_sq ] = q_layout.strides();
-            &[nkvh_sk, seq_sk, att_sk] = k_layout.strides();
-        }
-        get_or_err! {
+        let &[nh_sq, seq_sq, dh_sq] = q_layout.strides() else {
+            unreachable!()
+        };
+        let &[nkvh_sk, seq_sk, att_sk] = k_layout.strides() else {
+            unreachable!()
+        };
+
+        get_static! {
             nh      seq    dh
             nh_sq   seq_sq dh_sq
             nkvh           att
             nkvh_sk seq_sk att_sk
         };
-        if *workspace_size < nh * seq * att * sizeof!(dt)? {
-            return Err(locate_error!("Out of workspace"));
+        if *workspace_size < nh * seq * att * sizeof(dt)? {
+            return Err(out_of_workspace(""));
         }
 
         #[inline(always)]

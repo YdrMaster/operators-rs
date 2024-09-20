@@ -1,9 +1,12 @@
 ﻿use super::{args::Meta, Args, AttnKVCached};
 use crate::{
     attention, rearrange,
-    utils::{get_or_err, pass_match, sizeof},
+    utils::{get_static, sizeof},
 };
-use common::{dyn_, locate_error, Argument, ErrorPosition, Handle, QueueOf, TensorLayout};
+use common::{
+    dyn_, dyn_not_support, out_of_workspace, shape_mismatch, Argument, Handle, LaunchError,
+    QueueOf, SchemeError, TensorLayout,
+};
 use digit_layout::DigitLayout;
 use ndarray_layout::ArrayLayout;
 use std::marker::PhantomData;
@@ -43,8 +46,6 @@ where
 {
     type Handle = H;
     type Args = Args<H>;
-    type SchemeError = ErrorPosition;
-    type LaunchError = ErrorPosition;
 
     #[inline]
     fn new(handle: &Self::Handle) -> Self {
@@ -61,7 +62,7 @@ where
     }
 
     #[inline]
-    fn scheme(&mut self, args: &Self::Args) -> Result<(), Self::SchemeError> {
+    fn scheme(&mut self, args: &Self::Args) -> Result<(), SchemeError> {
         use std::ptr::{null, null_mut};
 
         let Meta {
@@ -98,11 +99,7 @@ where
         )
     }
 
-    fn launch(
-        &self,
-        args: &Self::Args,
-        queue: &QueueOf<Self::Handle>,
-    ) -> Result<(), Self::LaunchError> {
+    fn launch(&self, args: &Self::Args, queue: &QueueOf<Self::Handle>) -> Result<(), LaunchError> {
         let Meta {
             dt,
             nh,
@@ -128,15 +125,26 @@ where
             workspace,
         } = args;
 
-        pass_match! {
-            &[_       , buf_k  , _     ] = k_cache_layout.shape();
-            &[_       , buf_v  , _     ] = v_cache_layout.shape();
-            &[nh_sq   , seq_sq , _     ] =       q_layout.strides();
-            &[nkvh_skc, buf_skc, dh_skc] = k_cache_layout.strides();
-            &[nkvh_svc, buf_svc, dh_svc] = k_cache_layout.strides();
-            Some(attn_space) = self.attention.workspace_size();
-        }
-        get_or_err! {
+        let &[_, buf_k, _] = k_cache_layout.shape() else {
+            unreachable!()
+        };
+        let &[_, buf_v, _] = v_cache_layout.shape() else {
+            unreachable!()
+        };
+        let &[nh_sq, seq_sq, _] = q_layout.strides() else {
+            unreachable!()
+        };
+        let &[nkvh_skc, buf_skc, dh_skc] = k_cache_layout.strides() else {
+            unreachable!()
+        };
+        let &[nkvh_svc, buf_svc, dh_svc] = k_cache_layout.strides() else {
+            unreachable!()
+        };
+        let Some(attn_space) = self.attention.workspace_size() else {
+            return Err(dyn_not_support("").into());
+        };
+
+        get_static! {
             nh       seq     dh
             nh_sq    seq_sq
             nkvh
@@ -149,13 +157,13 @@ where
         // 检查 cache 容量
         let att = pos + seq;
         if buf_k < att || buf_v < att {
-            return Err(locate_error!("Out of cache buffer"));
+            return Err(shape_mismatch("Out of cache buffer").into());
         }
         // 如果 q 的前两维不连续则需要重整
         let rearrange_q = seq_sq * seq as isize != nh_sq;
-        let ele = sizeof!(dt)?;
+        let ele = sizeof(dt)?;
         if *workspace_size < attn_space + if rearrange_q { nh * seq * dh * ele } else { 0 } {
-            return Err(locate_error!("Out of workspace"));
+            return Err(out_of_workspace(""));
         }
         let (q_layout, q_base) = if rearrange_q {
             let new = TensorLayout::new_contiguous(dt, &[nh, seq, dh]);

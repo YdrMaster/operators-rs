@@ -6,7 +6,7 @@ pub mod nvidia_gpu;
 mod args;
 mod kv_pair;
 
-pub use args::{Args, SampleArgs};
+pub use args::{Args, SampleArgs, SampleArgsError};
 pub use kv_pair::KVPair;
 
 crate::utils::op_trait! { RandomSample

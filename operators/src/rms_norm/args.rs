@@ -1,5 +1,5 @@
-﻿use crate::utils::{ConstPtr, MutPtr};
-use common::{locate_error, Argument, ErrorPosition, Handle, TensorLayout};
+﻿use crate::utils::{dim_distinct, rank_not_support, type_distinct, ConstPtr, MutPtr};
+use common::{Argument, Handle, ParamError, TensorLayout};
 use digit_layout::DigitLayout;
 
 pub struct Args<H: Handle> {
@@ -20,32 +20,29 @@ pub(super) struct Meta {
 }
 
 impl<H: Handle> Args<H> {
-    pub(super) fn meta(&self) -> Result<Meta, ErrorPosition> {
-        let dt_w = self.w_layout.dt();
-        let dt_a = self.y_layout.dt();
-        if self.x_layout.dt() != dt_a {
-            return Err(locate_error!());
-        }
-        if self.y_layout.ndim() != 2 || self.x_layout.ndim() != 2 || self.w_layout.ndim() != 1 {
-            return Err(locate_error!());
-        }
+    pub(super) fn meta(&self) -> Result<Meta, ParamError> {
+        let Self {
+            y_layout,
+            x_layout,
+            w_layout,
+            ..
+        } = self;
 
-        let &[ny, dy] = self.y_layout.shape() else {
-            unreachable!()
+        let &[ny, dy] = y_layout.shape() else {
+            return Err(rank_not_support("y", 2, y_layout.ndim()));
         };
-        let &[nx, dx] = self.x_layout.shape() else {
-            unreachable!()
+        let &[nx, dx] = x_layout.shape() else {
+            return Err(rank_not_support("x", 2, x_layout.ndim()));
         };
-        let &[dw] = self.w_layout.shape() else {
-            unreachable!()
-        };
-        let Ok(&n) = Argument::merge(&[ny, nx]) else {
-            return Err(locate_error!());
-        };
-        let Ok(&d) = Argument::merge(&[dy, dx, dw]) else {
-            return Err(locate_error!());
+        let &[dw] = w_layout.shape() else {
+            return Err(rank_not_support("w", 1, w_layout.ndim()));
         };
 
-        Ok(Meta { dt_w, dt_a, n, d })
+        Ok(Meta {
+            dt_w: w_layout.dt(),
+            dt_a: type_distinct(&[y_layout.dt(), x_layout.dt()])?,
+            n: dim_distinct(&[ny, nx])?,
+            d: dim_distinct(&[dy, dx, dw])?,
+        })
     }
 }

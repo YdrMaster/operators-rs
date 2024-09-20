@@ -1,9 +1,12 @@
 ﻿use super::{args::Meta, Args, FusedSoftmax};
 use crate::{
     nvidia_gpu::{Handle as Gpu, Internal as Handle, ModuleBox},
-    utils::{sizeof, get_or_err},
+    utils::{get_static, sizeof},
 };
-use common::{locate_error, ErrorPosition, QueueOf};
+use common::{
+    scheme_not_set, strides_not_support, type_not_support, LaunchError, ParamError, QueueOf,
+    SchemeError,
+};
 use cuda::Version;
 use digit_layout::types::F16;
 use std::{
@@ -22,8 +25,6 @@ impl FusedSoftmax<Gpu> for Operator {}
 impl common::Operator for Operator {
     type Handle = Gpu;
     type Args = Args<Gpu>;
-    type SchemeError = ErrorPosition;
-    type LaunchError = ErrorPosition;
 
     fn new(handle: &Self::Handle) -> Self {
         Self {
@@ -32,19 +33,16 @@ impl common::Operator for Operator {
         }
     }
 
-    fn scheme(&mut self, args: &Self::Args) -> Result<(), Self::SchemeError> {
+    fn scheme(&mut self, args: &Self::Args) -> Result<(), SchemeError> {
         let Meta { dt } = args.meta()?;
         if dt != F16 {
             todo!()
         }
-        self.scheme_(self.handle.device().compute_capability())
+        self.scheme_(self.handle.device().compute_capability())?;
+        Ok(())
     }
 
-    fn launch(
-        &self,
-        args: &Self::Args,
-        queue: &QueueOf<Self::Handle>,
-    ) -> Result<(), Self::LaunchError> {
+    fn launch(&self, args: &Self::Args, queue: &QueueOf<Self::Handle>) -> Result<(), LaunchError> {
         let Meta { dt } = args.meta()?;
         let Args {
             att_layout,
@@ -58,23 +56,21 @@ impl common::Operator for Operator {
         };
 
         if dt != F16 {
-            return Err(locate_error!());
+            return Err(type_not_support("").into());
         }
 
-        get_or_err!(nh);
-        get_or_err!(seq_len);
-        get_or_err!(att_len);
-        get_or_err!(sh);
-        get_or_err!(ss);
-        get_or_err!(sa);
-
-        let unit = sizeof!(dt)? as isize;
-        if sa != unit {
-            return Err(locate_error!("Unsupported layout"));
+        let Some((scheme, m)) = self.scheme.as_ref() else {
+            return Err(scheme_not_set(""));
         };
 
-        let Some((scheme, m)) = self.scheme.as_ref() else {
-            return Err(locate_error!("Scheme not set"));
+        get_static! {
+            nh seq_len att_len
+            sh ss      sa
+        }
+
+        let unit = sizeof(dt)? as isize;
+        if sa != unit {
+            return Err(strides_not_support("").into());
         };
 
         let grid_dims = (nh as u32, seq_len as u32);
@@ -119,7 +115,7 @@ struct Scheme {
 const NAME: &str = "fused_softmax";
 const CODE: &str = include_str!("fused_softmax.cuh");
 impl Operator {
-    fn scheme_(&mut self, cc: Version) -> Result<(), ErrorPosition> {
+    fn scheme_(&mut self, cc: Version) -> Result<(), ParamError> {
         let mask = "AttentionCausualMask";
         let max_threads_block = self.handle.device().block_limit().max_threads;
         let padding = format!("fused_softmax_padding_{max_threads_block}");

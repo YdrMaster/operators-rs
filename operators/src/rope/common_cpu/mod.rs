@@ -1,6 +1,6 @@
 ﻿use super::{args::Meta, Args, Rope};
-use crate::{common_cpu::Handle as Cpu, utils::get_or_err};
-use common::{ErrorPosition, QueueOf};
+use crate::{common_cpu::Handle as Cpu, utils::get_static};
+use common::{LaunchError, QueueOf, SchemeError};
 use half::f16;
 
 pub struct Operator;
@@ -10,8 +10,6 @@ impl Rope<Cpu> for Operator {}
 impl common::Operator for Operator {
     type Handle = Cpu;
     type Args = Args<Cpu>;
-    type SchemeError = ErrorPosition;
-    type LaunchError = ErrorPosition;
 
     #[inline]
     fn new(_handle: &Self::Handle) -> Self {
@@ -19,16 +17,12 @@ impl common::Operator for Operator {
     }
 
     #[inline]
-    fn scheme(&mut self, args: &Self::Args) -> Result<(), Self::SchemeError> {
+    fn scheme(&mut self, args: &Self::Args) -> Result<(), SchemeError> {
         let _meta = args.meta()?;
         Ok(())
     }
 
-    fn launch(
-        &self,
-        args: &Self::Args,
-        _queue: &QueueOf<Self::Handle>,
-    ) -> Result<(), Self::LaunchError> {
+    fn launch(&self, args: &Self::Args, _queue: &QueueOf<Self::Handle>) -> Result<(), LaunchError> {
         let Meta { dt_t, dt_p, nt, .. } = args.meta()?;
         let Args {
             t_layout,
@@ -48,13 +42,11 @@ impl common::Operator for Operator {
             unreachable!()
         };
 
-        get_or_err!(nt);
-        get_or_err!(nh);
-        get_or_err!(dh);
-        get_or_err!(st);
-        get_or_err!(sh);
-        get_or_err!(sd);
-        get_or_err!(sp);
+        get_static! {
+            nt nh dh
+            st sh sd
+            sp
+        }
 
         macro_rules! calculate {
             ($t:ty, $p:ty) => {

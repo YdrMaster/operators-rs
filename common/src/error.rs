@@ -1,79 +1,91 @@
-﻿use std::{error::Error, fmt};
-
-#[derive(Clone)]
-pub struct ErrorPosition {
-    file: &'static str,
-    line: u32,
-    message: String,
+﻿#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ParamErrorKind {
+    TypeNotSupport,
+    TypeMismatch,
+    RankNotSupport,
+    RankMismatch,
+    ShapeNotSupport,
+    ShapeMismatch,
+    StridesNotSupport,
+    DynamicNotSupport,
 }
 
-impl Error for ErrorPosition {}
+#[derive(Clone, Debug)]
+pub struct ParamError {
+    pub kind: ParamErrorKind,
+    pub info: String,
+}
 
-impl ErrorPosition {
-    #[inline]
-    pub fn new(file: &'static str, line: u32, message: fmt::Arguments) -> Self {
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SchemeErrorKind {
+    Param(ParamErrorKind),
+}
+
+#[derive(Clone, Debug)]
+pub struct SchemeError {
+    pub kind: SchemeErrorKind,
+    pub info: String,
+}
+
+impl From<ParamError> for SchemeError {
+    fn from(ParamError { kind, info }: ParamError) -> Self {
         Self {
-            file,
-            line,
-            message: fmt::format(message),
+            kind: SchemeErrorKind::Param(kind),
+            info,
         }
     }
 }
 
-impl fmt::Debug for ErrorPosition {
-    #[inline]
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{self}")
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum LaunchErrorKind {
+    Param(ParamErrorKind),
+    SchemeNotSet,
+    SchemeNotCompatible,
+    OutOfWorkspace,
+    ExecutionFailed,
+}
+
+#[derive(Clone, Debug)]
+pub struct LaunchError {
+    pub kind: LaunchErrorKind,
+    pub info: String,
+}
+
+impl From<ParamError> for LaunchError {
+    fn from(ParamError { kind, info }: ParamError) -> Self {
+        Self {
+            kind: LaunchErrorKind::Param(kind),
+            info,
+        }
     }
 }
 
-struct Colored<T>(T, u32);
+pub(super) mod functions {
+    use super::{LaunchError, LaunchErrorKind::*, ParamError, ParamErrorKind::*};
 
-impl<T: fmt::Display> fmt::Display for Colored<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "\x1b[{}m{}\x1b[0m", self.1, self.0)
-    }
-}
-
-#[inline]
-fn red<T>(t: T) -> Colored<T> {
-    Colored(t, 31)
-}
-
-impl fmt::Display for ErrorPosition {
-    #[inline]
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        if self.message.lines().nth(1).is_some() {
-            writeln!(f, "{}:{}:", self.file, self.line)?;
-            writeln!(f, "{}", red("+--"))?;
-            for line in self.message.lines() {
-                write!(f, "{} ", red('|'))?;
-                writeln!(f, "{line}")?;
+    macro_rules! builder {
+        ($ty:ident: $name:ident $kind:expr) => {
+            #[inline]
+            pub fn $name(info: impl Into<String>) -> $ty {
+                $ty {
+                    kind: $kind,
+                    info: info.into(),
+                }
             }
-            writeln!(f, "{}", red("+--"))
-        } else {
-            write!(f, "{}:{}: {}", self.file, self.line, self.message)
-        }
+        };
     }
-}
 
-#[macro_export]
-macro_rules! locate_error {
-    () => {
-        $crate::locate_error!("Error occurred")
-    };
-    ($($arg:tt)*) => {
-        $crate::ErrorPosition::new(file!(), line!(), std::format_args!($($arg)*))
-    };
-}
+    builder!(ParamError: type_not_support    TypeNotSupport   );
+    builder!(ParamError: type_mismatch       TypeMismatch     );
+    builder!(ParamError: rank_mismatch       RankMismatch     );
+    builder!(ParamError: rank_not_support    RankNotSupport   );
+    builder!(ParamError: shape_not_support   ShapeNotSupport  );
+    builder!(ParamError: shape_mismatch      ShapeMismatch    );
+    builder!(ParamError: strides_not_support StridesNotSupport);
+    builder!(ParamError: dyn_not_support     DynamicNotSupport);
 
-#[test]
-fn test_locate_error() {
-    fn error() -> ErrorPosition {
-        locate_error!()
-    }
-    // ...
-    let e = error();
-    // ...
-    println!("{e:?}");
+    builder!(LaunchError: scheme_not_set        SchemeNotSet       );
+    builder!(LaunchError: scheme_not_compatible SchemeNotCompatible);
+    builder!(LaunchError: out_of_workspace      OutOfWorkspace     );
+    builder!(LaunchError: execution_failed      ExecutionFailed    );
 }

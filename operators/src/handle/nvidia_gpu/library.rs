@@ -1,12 +1,10 @@
 ﻿use super::Key;
-use common::{locate_error, ErrorPosition};
 use libloading::Library;
 use log::info;
 use std::{
     collections::HashMap,
     env::temp_dir,
-    ffi::OsStr,
-    fs,
+    fmt, fs,
     io::ErrorKind::NotFound,
     path::{Path, PathBuf},
     process::{Command, Output, Stdio},
@@ -16,15 +14,12 @@ use std::{
 pub(crate) const EXPORT_H: &str = "#include \"../export.h\"";
 pub(crate) const EXPORT: &str = "__C __export ";
 
-pub(super) fn cache_lib(
-    key: &Key,
-    code: impl FnOnce() -> String,
-) -> Result<Arc<Library>, ErrorPosition> {
+pub(super) fn cache_lib(key: &Key, code: impl FnOnce() -> String) -> Arc<Library> {
     static CACHE: OnceLock<RwLock<HashMap<Key, Arc<Library>>>> = OnceLock::new();
     let cache = CACHE.get_or_init(Default::default);
 
     if let Some(lib) = cache.read().unwrap().get(key) {
-        return Ok(lib.clone());
+        return lib.clone();
     }
 
     static DIR: OnceLock<PathBuf> = OnceLock::new();
@@ -41,26 +36,17 @@ pub(super) fn cache_lib(
     fs::write(dir.join("xmake.lua"), include_str!("cxx/xmake.lua")).unwrap();
     fs::write(dir.join("src.cu"), code()).unwrap();
 
-    const CUDA: &str = std::env!("CUDA_ROOT");
     let arch = format!(
         "-gencode arch=compute_{ver},code=sm_{ver}",
         ver = key.1.to_arch_string()
     );
 
-    XMake::new("config")
-        .arg("--toolchain=cuda")
-        .arg(format!("--cuda={CUDA}"))
-        .arg(format!("--cuflags={arch}"))
-        .arg(format!("--culdflags={arch}"))
-        .run(&dir)
-        .map_err(|e| locate_error!("xmake config failed: {e}"))?;
-    XMake::new("build")
-        .run(&dir)
-        .map_err(|e| locate_error!("xmake build failed: {e}"))?;
-    XMake::new("install")
-        .arg("--installdir=.")
-        .run(&dir)
-        .map_err(|e| locate_error!("xmake install failed: {e}"))?;
+    static CHECKED: Once = Once::new();
+    CHECKED.call_once(xmake_check);
+
+    xmake_config(&dir, std::env::var("CUDA_ROOT").unwrap(), arch);
+    xmake_build(&dir);
+    xmake_install(&dir);
 
     let lib_path: PathBuf = if cfg!(windows) {
         dir.join("bin").join("lib")
@@ -69,69 +55,87 @@ pub(super) fn cache_lib(
     };
     let lib = Arc::new(unsafe { Library::new(lib_path) }.unwrap());
     cache.write().unwrap().insert(key.clone(), lib.clone());
-    Ok(lib)
+    lib
 }
 
-struct XMake(Command);
-
-impl XMake {
-    fn check() {
-        const ERR: &str = "xmake detection failed";
-        const MSG: &str = "
+fn xmake_check() {
+    const ERR: &str = "xmake detection failed";
+    const MSG: &str = "
 This project requires xmake to build cub device-wide code.
 See [this page](https://xmake.io/#/getting_started?id=installation) to install xmake.";
 
-        match Command::new("xmake").arg("--version").output() {
-            Ok(output) => {
-                if !output.status.success() {
-                    let code = output
-                        .status
-                        .code()
-                        .map_or("-".into(), |code| code.to_string());
-                    let log = read_output(&output);
-                    panic!("{ERR}.\n\nstatus code: {code}\n\n{log}\n{MSG}");
-                } else {
-                    // xmake detected, nothing to do
-                }
-            }
-            Err(e) if e.kind() == NotFound => {
-                panic!("xmake not found.\n{MSG}");
-            }
-            Err(e) => {
-                panic!("{ERR}: {e}\n{MSG}");
+    match Command::new("xmake").arg("--version").output() {
+        Ok(output) => {
+            if !output.status.success() {
+                let code = output
+                    .status
+                    .code()
+                    .map_or("-".into(), |code| code.to_string());
+                let log = read_output(&output);
+                panic!("{ERR}.\n\nstatus code: {code}\n\n{log}\n{MSG}");
+            } else {
+                // xmake detected, nothing to do
             }
         }
-    }
-
-    fn new(command: &str) -> Self {
-        static CHECKED: Once = Once::new();
-        CHECKED.call_once(Self::check);
-
-        let mut xmake = Command::new("xmake");
-        xmake.arg(command);
-        Self(xmake)
-    }
-
-    fn arg(mut self, arg: impl AsRef<OsStr>) -> Self {
-        self.0.arg(arg);
-        self
-    }
-
-    fn run(mut self, dir: impl AsRef<Path>) -> Result<(), String> {
-        let output = self
-            .0
-            .current_dir(dir)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .unwrap();
-        let log = read_output(&output);
-        if output.status.success() {
-            info!("{log}");
-            Ok(())
-        } else {
-            Err(log)
+        Err(e) if e.kind() == NotFound => {
+            panic!("xmake not found.\n{MSG}");
         }
+        Err(e) => {
+            panic!("{ERR}: {e}\n{MSG}");
+        }
+    }
+}
+
+fn xmake_config(dir: impl AsRef<Path>, cuda_root: impl fmt::Display, arch: impl fmt::Display) {
+    let output = Command::new("xmake")
+        .arg("config")
+        .arg("--toolchain=cuda")
+        .arg(format!("--cuda={cuda_root}"))
+        .arg(format!("--cuflags={arch}"))
+        .arg(format!("--culdflags={arch}"))
+        .current_dir(dir)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .unwrap();
+    let log = read_output(&output);
+    if output.status.success() {
+        info!("{log}");
+    } else {
+        panic!("xmake config failed: {log}");
+    }
+}
+
+fn xmake_build(dir: impl AsRef<Path>) {
+    let output = Command::new("xmake")
+        .arg("build")
+        .current_dir(dir)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .unwrap();
+    let log = read_output(&output);
+    if output.status.success() {
+        info!("{log}");
+    } else {
+        panic!("xmake build failed: {log}");
+    }
+}
+
+fn xmake_install(dir: impl AsRef<Path>) {
+    let output = Command::new("xmake")
+        .arg("install")
+        .arg("--installdir=.")
+        .current_dir(dir)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .unwrap();
+    let log = read_output(&output);
+    if output.status.success() {
+        info!("{log}");
+    } else {
+        panic!("xmake install failed: {log}");
     }
 }
 
@@ -172,8 +176,7 @@ fn test_compile() {
     let lib = cache_lib(
         &("test_compile".into(), Version { major: 8, minor: 0 }),
         || include_str!("cxx/test_compile_8.0/test_compile.cu").into(),
-    )
-    .unwrap();
+    );
     type Func<'lib> = Symbol<'lib, unsafe extern "C" fn() -> *const c_char>;
     let func: Func = unsafe { lib.get(b"hello_world\0") }.unwrap();
     assert_eq!(

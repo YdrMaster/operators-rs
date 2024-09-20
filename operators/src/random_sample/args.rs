@@ -1,7 +1,7 @@
 ﻿use super::KVPair;
-use crate::utils::{ConstPtr, MutPtr};
-use common::{locate_error, ErrorPosition, Handle, TensorLayout};
-use digit_layout::{types::U32, DigitLayout};
+use crate::utils::{rank_not_support, sizeof, ConstPtr, MutPtr};
+use common::{dyn_not_support, type_not_support, Handle, ParamError, TensorLayout};
+use digit_layout::DigitLayout;
 use std::{
     hash::{Hash, Hasher},
     ptr::{null, null_mut},
@@ -20,9 +20,15 @@ pub struct Args<H: Handle> {
 
 #[derive(Clone, Copy, Debug)]
 pub struct SampleArgs {
-    pub temperature: f32,
-    pub top_p: f32,
-    pub top_k: usize,
+    pub(super) temperature: f32,
+    pub(super) top_p: f32,
+    pub(super) top_k: usize,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SampleArgsError {
+    NegativeTemperature,
+    NonPositiveTop,
 }
 
 impl<H: Handle> Args<H> {
@@ -57,12 +63,12 @@ impl SampleArgs {
         top_k: usize::MAX,
     };
 
-    pub fn new(temperature: f32, top_p: f32, top_k: usize) -> Result<Self, ErrorPosition> {
+    pub fn new(temperature: f32, top_p: f32, top_k: usize) -> Result<Self, SampleArgsError> {
         if temperature < 0.0 {
-            return Err(locate_error!("Temperature must be non-negative"));
+            return Err(SampleArgsError::NegativeTemperature);
         }
         if top_k == 0 || top_p <= 0.0 {
-            return Err(locate_error!("top_k and top_p must be positive"));
+            return Err(SampleArgsError::NonPositiveTop);
         }
         Ok(Self {
             temperature,
@@ -92,22 +98,22 @@ impl Hash for Meta {
 }
 
 impl<H: Handle> Args<H> {
-    pub(super) fn meta(&self) -> Result<Meta, ErrorPosition> {
+    pub(super) fn meta(&self) -> Result<Meta, ParamError> {
         if self.kv_pair.dt() != KVPair::<()>::LAYOUT {
-            return Err(locate_error!("index must be KVpair"));
+            return Err(type_not_support("index must be KVpair"));
         }
-        if self.data.dt().nbytes() > U32.nbytes() {
-            return Err(locate_error!("data type too large"));
+
+        let dt = self.data.dt();
+        if sizeof(dt)? > size_of::<u32>() {
+            return Err(type_not_support("element too large"));
         }
         let &[n] = self.data.shape() else {
-            return Err(locate_error!());
+            return Err(rank_not_support("logits", 1, self.data.ndim()));
         };
-        let Some(&n) = n.get_static() else {
-            return Err(locate_error!("n must be static"));
-        };
+
         Ok(Meta {
-            dt: self.data.dt(),
-            n,
+            dt,
+            n: *n.get_static().ok_or_else(|| dyn_not_support(""))?,
         })
     }
 }

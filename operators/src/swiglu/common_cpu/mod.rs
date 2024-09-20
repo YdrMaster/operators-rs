@@ -1,6 +1,6 @@
 ﻿use super::{args::Meta, Args, Swiglu};
-use crate::{common_cpu::Handle as Cpu, utils::get_or_err};
-use common::{ErrorPosition, QueueOf};
+use crate::{common_cpu::Handle as Cpu, utils::get_static};
+use common::{LaunchError, QueueOf, SchemeError};
 use half::f16;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
@@ -11,8 +11,6 @@ impl Swiglu<Cpu> for Operator {}
 impl common::Operator for Operator {
     type Handle = Cpu;
     type Args = Args<Cpu>;
-    type SchemeError = ErrorPosition;
-    type LaunchError = ErrorPosition;
 
     #[inline]
     fn new(_handle: &Self::Handle) -> Self {
@@ -20,16 +18,12 @@ impl common::Operator for Operator {
     }
 
     #[inline]
-    fn scheme(&mut self, args: &Self::Args) -> Result<(), Self::SchemeError> {
+    fn scheme(&mut self, args: &Self::Args) -> Result<(), SchemeError> {
         let _meta = args.meta()?;
         Ok(())
     }
 
-    fn launch(
-        &self,
-        args: &Self::Args,
-        _queue: &QueueOf<Self::Handle>,
-    ) -> Result<(), Self::LaunchError> {
+    fn launch(&self, args: &Self::Args, _queue: &QueueOf<Self::Handle>) -> Result<(), LaunchError> {
         let Meta { dt, n, d } = args.meta()?;
         let Args {
             gate_layout,
@@ -44,12 +38,11 @@ impl common::Operator for Operator {
             unreachable!()
         };
 
-        get_or_err!(n);
-        get_or_err!(d);
-        get_or_err!(sgn);
-        get_or_err!(sgd);
-        get_or_err!(sun);
-        get_or_err!(sud);
+        get_static! {
+              n   d
+            sgn sgd
+            sun sud
+        }
 
         macro_rules! calculate {
             ($ty:ty) => {

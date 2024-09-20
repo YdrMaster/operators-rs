@@ -1,6 +1,10 @@
 ﻿#![allow(unused)]
 
-use common::Handle;
+use common::{
+    dyn_not_support, shape_mismatch, type_mismatch, type_not_support, ArgVal, Argument, Handle,
+    ParamError, SchemeErrorKind,
+};
+use digit_layout::DigitLayout;
 
 pub(crate) type MutPtr<H> = *mut <H as Handle>::Byte;
 pub(crate) type ConstPtr<H> = *const <H as Handle>::Byte;
@@ -15,39 +19,47 @@ pub(crate) const fn gcd(mut a: usize, mut b: usize) -> usize {
     a
 }
 
-macro_rules! sizeof {
-    ($ty:expr) => {
-        $ty.nbytes()
-            .ok_or_else(|| $crate::locate_error!("Should be an algebraic type"))
-    };
-}
-
-macro_rules! pass_if {
-    ($($condition:expr);* $(;)?) => {
-        if $(!$condition)||* {
-            return Err($crate::locate_error!("Check failed"));
-        };
-    };
-}
-
-macro_rules! pass_match {
-    ($($pattern:pat = $expr:expr);* $(;)?) => {
-        $(
-            let $pattern = $expr else {
-                return Err($crate::locate_error!("Pattern mismatch"));
-            };
-        )*
-    };
-}
-
-macro_rules! get_or_err {
+macro_rules! get_static {
     ($($name:ident)*) => {
         $(
-            let Some(&$name) = $name.get_static() else {
-                return Err(common::locate_error!());
-            };
+            let $name = *crate::utils::static_from(&$name)?;
         )*
     };
+}
+
+#[inline]
+pub(crate) fn static_from<T: ArgVal>(arg: &Argument<T>) -> Result<&T, ParamError> {
+    arg.get_static().ok_or_else(|| dyn_not_support(""))
+}
+
+#[inline]
+pub(crate) fn sizeof(dt: DigitLayout) -> Result<usize, ParamError> {
+    dt.nbytes()
+        .ok_or_else(|| type_not_support(format!("{dt} not supported")))
+}
+
+#[inline]
+pub(crate) fn rank_not_support(arg: &str, expected: usize, actual: usize) -> ParamError {
+    common::rank_not_support(format!("{arg}.ndim = {actual}, {expected} expected"))
+}
+
+#[inline]
+pub(crate) fn type_distinct(pairs: &[DigitLayout]) -> Result<DigitLayout, ParamError> {
+    let [dt, tail @ ..] = pairs else {
+        unreachable!("pairs empty");
+    };
+    if tail.iter().all(|it| it == dt) {
+        Ok(*dt)
+    } else {
+        Err(type_mismatch(format!("{pairs:?} are not distinct")))
+    }
+}
+
+#[inline]
+pub(crate) fn dim_distinct(args: &[Argument<usize>]) -> Result<Argument<usize>, ParamError> {
+    Argument::merge(args)
+        .copied()
+        .map_err(|_| shape_mismatch(format!("{args:?} are not distinct")))
 }
 
 macro_rules! op_trait {
@@ -56,13 +68,11 @@ macro_rules! op_trait {
             common::Operator<
             Handle = H,
             Args = Args<H>,
-            SchemeError = common::ErrorPosition,
-            LaunchError = common::ErrorPosition,
         >{$($body)*}
     };
 }
 
-pub(crate) use {get_or_err, op_trait, pass_if, pass_match, sizeof};
+pub(crate) use {get_static, op_trait};
 
 #[cfg(test)]
 pub(crate) use test_utils::*;
