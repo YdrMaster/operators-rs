@@ -3,7 +3,9 @@ mod module;
 
 use common::Pool;
 use cublas::{Cublas, CublasLtSpore, CublasSpore};
-use cuda::{Context, ContextResource, ContextSpore, CurrentCtx, Device, Stream, Version};
+use dev_mempool::cuda::{
+    self, Context, ContextResource, ContextSpore, CurrentCtx, Device, Stream, Version,
+};
 use digit_layout::DigitLayout;
 use libloading::Library;
 use std::{
@@ -18,6 +20,7 @@ pub struct Handle(pub(crate) Arc<Internal>);
 
 impl common::Handle for Handle {
     type Byte = cuda::DevByte;
+    type DevMem<'ctx> = cuda::DevMem<'ctx>;
     type Queue<'ctx> = cuda::Stream<'ctx>;
 }
 

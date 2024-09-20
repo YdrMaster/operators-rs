@@ -7,7 +7,7 @@ use common::{
     scheme_not_compatible, scheme_not_set, shape_not_support, strides_not_support, LaunchError,
     QueueOf, SchemeError,
 };
-use cuda::Version;
+use dev_mempool::cuda::Version;
 use digit_layout::DigitLayout;
 use std::{ffi::CString, sync::Arc};
 
@@ -105,7 +105,7 @@ impl common::Operator for Operator {
 
         let nsy = (nsy / unit) as i32;
         let nsx = (nsx / unit) as i32;
-        let params = cuda::params![y_base, nsy, x_base, nsx, w_base, epsilon];
+        let params = dev_mempool::cuda::params![y_base, nsy, x_base, nsx, w_base, epsilon];
 
         m.launch(name, n as u32, block_dims as u32, params.as_ptr(), 0, queue);
         Ok(())
@@ -332,7 +332,7 @@ mod test {
             nvidia_gpu::cast_load,
             utils::{Diff, ErrorCollector},
         };
-        use cuda::memcpy_d2h;
+        use dev_mempool::cuda::memcpy_d2h;
         use half::f16;
         use rand::Rng;
         use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};

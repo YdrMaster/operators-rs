@@ -6,13 +6,14 @@ authors = ["YdrMaster <ydrml@hotmail.com>"]
 
 [features]
 default = ["common-cpu", "nvidia-gpu", "cambricon-mlu", "ascend-card"]
-common-cpu = ["gemm", "rayon"]
-nvidia-gpu = ["cuda", "cublas", "nccl", "libloading"]
+common-cpu = ["dev-mempool/common-cpu", "gemm", "rayon"]
+nvidia-gpu = ["dev-mempool/nvidia-gpu", "cublas", "nccl", "libloading"]
 cambricon-mlu = ["cndrv", "cnnl"]
 ascend-card = ["ascendcl"]
 
 [dependencies]
 common.path = "../common"
+dev-mempool.workspace = true
 digit-layout.workspace = true
 ndarray-layout = { git = "https://github.com/YdrMaster/ndarray-layout", rev = "3de35cc" }
 half = "2.4"
@@ -22,7 +23,6 @@ log = "0.4"
 gemm = { version = "0.18", optional = true }
 rayon = { version = "1.10", optional = true }
 
-cuda = { workspace = true, optional = true }
 cublas = { workspace = true, optional = true }
 nccl = { workspace = true, optional = true }
 libloading = { version = "0.8", optional = true }

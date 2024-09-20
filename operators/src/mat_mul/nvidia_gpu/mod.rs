@@ -2,7 +2,7 @@
 use crate::nvidia_gpu::{Handle as Gpu, Internal as Handle};
 use common::{type_not_support, LaunchError, QueueOf, SchemeError};
 use cublas::cublas;
-use cuda::AsRaw;
+use dev_mempool::cuda::AsRaw;
 use digit_layout::types::F16;
 use half::f16;
 use std::{ffi::c_void, sync::Arc};
@@ -151,7 +151,7 @@ mod test {
             utils::{Diff, ErrorCollector},
         };
         use common::Operator as _;
-        use cuda::memcpy_d2h;
+        use dev_mempool::cuda::memcpy_d2h;
         use digit_layout::types::{F16, F64};
         use half::f16;
         use rand::Rng;

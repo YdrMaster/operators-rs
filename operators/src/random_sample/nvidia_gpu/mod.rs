@@ -7,7 +7,7 @@ use common::{
     execution_failed, out_of_workspace, scheme_not_compatible, scheme_not_set, LaunchError,
     QueueOf, SchemeError,
 };
-use cuda::{
+use dev_mempool::cuda::{
     bindings::{CUresult, CUstream},
     AsRaw, DevByte, DevMem, Stream,
 };
@@ -273,6 +273,7 @@ impl Scheme {
 #[test]
 fn test() {
     use common::Operator as _;
+    use dev_mempool::cuda;
     use digit_layout::types::F16;
 
     if let Err(cuda::NoDevice) = cuda::init() {

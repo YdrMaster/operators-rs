@@ -1,5 +1,5 @@
 ﻿use super::{Internal, Key};
-use cuda::{
+use dev_mempool::cuda::{
     bindings::nvrtcResult, ContextResource, ContextSpore, CurrentCtx, Dim3, KernelFn, ModuleSpore,
     Ptx, Stream,
 };

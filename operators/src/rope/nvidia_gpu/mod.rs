@@ -103,7 +103,7 @@ extern "C" __global__ void {NAME}(
         let dh = dh / 2;
         let st = (st / unit / 2) as i32;
         let sh = (sh / unit / 2) as i32;
-        let params = cuda::params![t_base, st, sh, p_base, theta];
+        let params = dev_mempool::cuda::params![t_base, st, sh, p_base, theta];
 
         if self.max_threads_block % dh != 0 {
             return Err(shape_not_support("").into());
@@ -204,7 +204,7 @@ mod test {
             nvidia_gpu::cast_load,
             utils::{Diff, ErrorCollector},
         };
-        use cuda::memcpy_d2h;
+        use dev_mempool::cuda::memcpy_d2h;
         use half::f16;
         use rand::Rng;
         use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};

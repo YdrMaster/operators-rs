@@ -24,7 +24,7 @@ pub use handle::nvidia_gpu;
 #[cfg(use_cuda)]
 pub extern crate cublas;
 #[cfg(use_cuda)]
-pub extern crate cuda;
+pub use dev_mempool::cuda;
 #[cfg(use_nccl)]
 pub extern crate nccl;
 

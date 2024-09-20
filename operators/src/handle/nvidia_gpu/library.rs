@@ -169,7 +169,7 @@ fn test_env() {
 
 #[test]
 fn test_compile() {
-    use cuda::Version;
+    use dev_mempool::cuda::Version;
     use libloading::Symbol;
     use std::ffi::{c_char, CStr};
 

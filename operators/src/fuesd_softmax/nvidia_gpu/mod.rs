@@ -7,7 +7,7 @@ use common::{
     scheme_not_set, strides_not_support, type_not_support, LaunchError, ParamError, QueueOf,
     SchemeError,
 };
-use cuda::Version;
+use dev_mempool::cuda::Version;
 use digit_layout::types::F16;
 use std::{
     ffi::{c_float, CString},
@@ -78,7 +78,7 @@ impl common::Operator for Operator {
         let sh = (sh / unit) as i32;
         let ss = (ss / unit) as i32;
         let att_len = att_len as u32;
-        let params = cuda::params![att_base, 0i32, sh, ss, att_len];
+        let params = dev_mempool::cuda::params![att_base, 0i32, sh, ss, att_len];
 
         if att_len <= block_size {
             m.launch(
@@ -217,7 +217,7 @@ mod test {
             nvidia_gpu::cast_load,
             utils::{Diff, ErrorCollector},
         };
-        use cuda::memcpy_d2h;
+        use dev_mempool::cuda::memcpy_d2h;
         use half::f16;
         use rand::Rng;
         use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};

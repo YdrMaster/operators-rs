@@ -91,7 +91,7 @@ extern "C" __global__ void {NAME}(
 
         let sg = (sgn / unit) as i32;
         let su = (sun / unit) as i32;
-        let params = cuda::params![gate_base, sg, up_base, su];
+        let params = dev_mempool::cuda::params![gate_base, sg, up_base, su];
         let block = gcd(self.max_threads_block, d);
 
         m.launch(
@@ -175,7 +175,7 @@ mod test {
             nvidia_gpu::cast_load,
             utils::{Diff, ErrorCollector},
         };
-        use cuda::memcpy_d2h;
+        use dev_mempool::cuda::memcpy_d2h;
         use half::f16;
         use rand::Rng;
         use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};

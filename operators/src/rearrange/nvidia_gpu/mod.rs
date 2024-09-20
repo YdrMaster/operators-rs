@@ -3,7 +3,7 @@ use crate::nvidia_gpu::{Handle as Gpu, Internal as Handle, ModuleBox};
 use common::{
     rank_not_support, scheme_not_set, shape_not_support, LaunchError, QueueOf, SchemeError,
 };
-use cuda::Version;
+use dev_mempool::cuda::Version;
 use std::{
     ffi::CString,
     slice::{from_raw_parts, from_raw_parts_mut},
@@ -130,7 +130,7 @@ impl common::Operator for Operator {
         let src_rs = src_rs / unit;
         let src_cs = src_cs / unit;
 
-        let params = cuda::params![
+        let params = dev_mempool::cuda::params![
             args.dst_base,
             dst_rs,
             dst_cs,
@@ -182,6 +182,7 @@ extern "C" __global__ void {NAME}(
 #[test]
 fn test() {
     use common::{dyn_, Operator as _, TensorLayout};
+    use dev_mempool::cuda;
     use digit_layout::types::F16;
     use std::ptr::{null, null_mut};
 
