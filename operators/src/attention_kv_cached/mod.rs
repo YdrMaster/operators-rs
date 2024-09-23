@@ -3,7 +3,7 @@ mod operator;
 
 pub use args::Args;
 
-crate::utils::op_trait! { AttnKVCached
+crate::op_trait! { AttnKVCached
     fn workspace_size(&self) -> Option<usize>;
 }
 

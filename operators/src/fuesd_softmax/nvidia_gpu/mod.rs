@@ -1,11 +1,9 @@
 ﻿use super::{args::Meta, Args, FusedSoftmax};
+use crate::nvidia_gpu::{Gpu, Handle, ModuleBox};
+use crate::utils::sizeof;
 use crate::{
-    nvidia_gpu::{Handle as Gpu, Internal as Handle, ModuleBox},
-    utils::{get_static, sizeof},
-};
-use common::{
-    scheme_not_set, strides_not_support, type_not_support, LaunchError, ParamError, QueueOf,
-    SchemeError,
+    get_static, scheme_not_set, strides_not_support, type_not_support, ByteOf, LaunchError,
+    ParamError, QueueAlloc, SchemeError,
 };
 use dev_mempool::cuda::Version;
 use digit_layout::types::F16;
@@ -22,27 +20,39 @@ pub struct Operator {
 
 impl FusedSoftmax<Gpu> for Operator {}
 
-impl common::Operator for Operator {
-    type Handle = Gpu;
+impl crate::Operator for Operator {
+    type Hardware = Gpu;
     type Args = Args<Gpu>;
 
-    fn new(handle: &Self::Handle) -> Self {
+    fn new(processor: &Self::Hardware) -> Self {
         Self {
-            handle: handle.0.clone(),
+            handle: processor.0.clone(),
             scheme: None,
         }
     }
 
-    fn scheme(&mut self, args: &Self::Args) -> Result<(), SchemeError> {
+    fn scheme(
+        &mut self,
+        args: &Self::Args,
+        _max_workspace_size: usize,
+    ) -> Result<usize, SchemeError> {
         let Meta { dt } = args.meta()?;
         if dt != F16 {
             todo!()
         }
         self.scheme_(self.handle.device().compute_capability())?;
-        Ok(())
+        Ok(0)
     }
 
-    fn launch(&self, args: &Self::Args, queue: &QueueOf<Self::Handle>) -> Result<(), LaunchError> {
+    fn launch<T>(
+        &self,
+        args: &Self::Args,
+        _workspace: &mut [ByteOf<Self::Hardware>],
+        queue: &T,
+    ) -> Result<(), LaunchError>
+    where
+        T: QueueAlloc<Hardware = Self::Hardware>,
+    {
         let Meta { dt } = args.meta()?;
         let Args {
             att_layout,
@@ -87,7 +97,7 @@ impl common::Operator for Operator {
                 att_len,
                 params.as_ptr(),
                 0,
-                queue,
+                queue.queue(),
             );
         } else {
             let num_items_thread = (att_len + block_size - 1) / block_size;
@@ -98,7 +108,7 @@ impl common::Operator for Operator {
                 block_size,
                 params.as_ptr(),
                 smem * size_of::<c_float>(),
-                queue,
+                queue.queue(),
             );
         }
 
@@ -164,11 +174,11 @@ extern "C" __global__ void {folding}(
 #[cfg(test)]
 mod test {
     use super::{Args, Gpu, Operator};
-    use common::{Handle, Operator as _, TensorLayout};
+    use crate::{Hardware, Operator as _, TensorLayout};
     use digit_layout::{types as ty, DigitLayout};
 
-    fn dyn_args<H: Handle>(dt: DigitLayout) -> Args<H> {
-        use common::dyn_;
+    fn dyn_args<H: Hardware>(dt: DigitLayout) -> Args<H> {
+        use crate::dyn_;
         use std::ptr::null_mut;
         Args {
             att_layout: TensorLayout::new_dyn(dt, &[dyn_(); 3], &[dyn_(); 3]),
@@ -176,7 +186,7 @@ mod test {
         }
     }
 
-    fn args<H: Handle>(
+    fn args<H: Hardware>(
         dt: DigitLayout,
         nh: usize,
         seq_len: usize,
@@ -197,7 +207,7 @@ mod test {
         println!("{}", gpu.0.device().info());
 
         let mut op = Operator::new(&gpu);
-        op.scheme(&dyn_args(ty::F16)).unwrap();
+        op.scheme(&dyn_args(ty::F16), 0).unwrap();
 
         let (scheme, module) = op.scheme.as_ref().unwrap();
         gpu.apply(|ctx| {
@@ -213,9 +223,9 @@ mod test {
     fn test_compute() {
         use super::super::common_cpu::Operator as RefOp;
         use crate::{
-            common_cpu::{Handle as Cpu, ThisThread},
+            common_cpu::{Cpu, ThisThread},
             nvidia_gpu::cast_load,
-            utils::{Diff, ErrorCollector},
+            test_utils::{Diff, ErrorCollector},
         };
         use dev_mempool::cuda::memcpy_d2h;
         use half::f16;
@@ -228,8 +238,8 @@ mod test {
 
         let mut cpu_op = RefOp::new(&Cpu);
         let mut gpu_op = Operator::new(&gpu);
-        cpu_op.scheme(&dyn_args(ty::F64)).unwrap();
-        gpu_op.scheme(&dyn_args(ty::F16)).unwrap();
+        cpu_op.scheme(&dyn_args(ty::F64), 0).unwrap();
+        gpu_op.scheme(&dyn_args(ty::F16), 0).unwrap();
 
         let nh = 32;
         for (seq_len, att_len) in [(1, 511), (1, 2048), (7, 511), (7, 2048)] {
@@ -238,10 +248,11 @@ mod test {
 
             let att_ans = gpu.apply(|ctx| {
                 let stream = ctx.stream();
-                let mut att = cast_load(&att, |&x| f16::from_f64(x), &stream);
+                let mut att = cast_load(&att, f16::from_f64, &stream);
                 gpu_op
                     .launch(
                         &args(ty::F16, nh, seq_len, att_len, att.as_mut_ptr().cast()),
+                        &mut [],
                         &stream,
                     )
                     .unwrap();
@@ -254,6 +265,7 @@ mod test {
             cpu_op
                 .launch(
                     &args(ty::F64, nh, seq_len, att_len, att_ref.as_mut_ptr().cast()),
+                    &mut [],
                     &ThisThread,
                 )
                 .unwrap();

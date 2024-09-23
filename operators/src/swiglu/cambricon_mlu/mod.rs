@@ -3,9 +3,9 @@ use crate::{
     cambricon_mlu::{Handle as Mlu, Internal as Handle},
     utils::get_or_err,
 };
+use crate::{locate_error, QueueOf};
 use cndrv::AsRaw;
 use cnnl::{cnnl, DataType, Tensor};
-use common::{locate_error, QueueOf};
 use digit_layout::types::F16;
 use std::{
     ptr::{addr_eq, null_mut},
@@ -20,7 +20,7 @@ pub struct Operator {
 
 impl Swiglu<Mlu> for Operator {}
 
-impl common::Operator for Operator {
+impl crate::Operator for Operator {
     type Handle = Mlu;
     type Args = Args<Mlu>;
 

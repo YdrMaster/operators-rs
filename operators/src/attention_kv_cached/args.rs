@@ -1,5 +1,5 @@
 ﻿use crate::utils::{dim_distinct, rank_not_support, type_distinct, ConstPtr, MutPtr};
-use common::{Argument, Handle, ParamError, TensorLayout};
+use crate::{Argument, Handle, ParamError, TensorLayout};
 use digit_layout::DigitLayout;
 
 pub struct Args<H: Handle> {

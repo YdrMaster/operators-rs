@@ -1,6 +1,5 @@
 ﻿use super::{args::Meta, Args, FusedSoftmax};
-use crate::{common_cpu::Handle as Cpu, utils::get_static};
-use common::{LaunchError, QueueOf, SchemeError};
+use crate::{common_cpu::Cpu, get_static, ByteOf, LaunchError, QueueAlloc, SchemeError};
 use half::f16;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
@@ -8,22 +7,33 @@ pub struct Operator;
 
 impl FusedSoftmax<Cpu> for Operator {}
 
-impl common::Operator for Operator {
-    type Handle = Cpu;
+impl crate::Operator for Operator {
+    type Hardware = Cpu;
     type Args = Args<Cpu>;
 
     #[inline]
-    fn new(_handle: &Self::Handle) -> Self {
+    fn new(_processor: &Self::Hardware) -> Self {
         Self
     }
 
-    #[inline]
-    fn scheme(&mut self, args: &Self::Args) -> Result<(), SchemeError> {
+    fn scheme(
+        &mut self,
+        args: &Self::Args,
+        _max_workspace_size: usize,
+    ) -> Result<usize, SchemeError> {
         let _meta = args.meta()?;
-        Ok(())
+        Ok(0)
     }
 
-    fn launch(&self, args: &Self::Args, _queue: &QueueOf<Self::Handle>) -> Result<(), LaunchError> {
+    fn launch<QA>(
+        &self,
+        args: &Self::Args,
+        _workspace: &mut [ByteOf<Self::Hardware>],
+        _queue_alloc: &QA,
+    ) -> Result<(), LaunchError>
+    where
+        QA: QueueAlloc<Hardware = Self::Hardware>,
+    {
         let Meta { dt } = args.meta()?;
         let Args {
             att_layout,

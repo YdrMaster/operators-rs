@@ -3,7 +3,7 @@ use crate::{
     fuesd_softmax, mat_mul, rearrange,
     utils::{get_static, sizeof},
 };
-use common::{
+use crate::{
     dyn_, out_of_workspace, Argument, Handle, LaunchError, QueueOf, SchemeError, TensorLayout,
 };
 use digit_layout::DigitLayout;
@@ -38,7 +38,7 @@ where
     }
 }
 
-impl<H, M, S, R> common::Operator for Operator<H, M, S, R>
+impl<H, M, S, R> crate::Operator for Operator<H, M, S, R>
 where
     H: Handle,
     M: mat_mul::MatMul<H>,

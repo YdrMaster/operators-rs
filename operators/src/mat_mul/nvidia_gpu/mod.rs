@@ -1,6 +1,6 @@
 ﻿use super::{args::SchemeLayout, Args, MatMul};
-use crate::nvidia_gpu::{Handle as Gpu, Internal as Handle};
-use common::{type_not_support, LaunchError, QueueOf, SchemeError};
+use crate::nvidia_gpu::{Gpu, Handle};
+use crate::{type_not_support, LaunchError, SchemeError};
 use cublas::cublas;
 use dev_mempool::cuda::AsRaw;
 use digit_layout::types::F16;
@@ -13,23 +13,33 @@ pub struct Operator {
 
 impl MatMul<Gpu> for Operator {}
 
-impl common::Operator for Operator {
-    type Handle = Gpu;
+impl crate::Operator for Operator {
+    type Hardware = Gpu;
     type Args = Args<Gpu>;
 
-    #[inline]
-    fn new(handle: &Self::Handle) -> Self {
+    fn new(processor: &Self::Hardware) -> Self {
         Self {
-            handle: handle.0.clone(),
+            handle: processor.0.clone(),
         }
     }
 
-    #[inline]
-    fn scheme(&mut self, _args: &Self::Args) -> Result<(), SchemeError> {
-        Ok(())
+    fn scheme(
+        &mut self,
+        _args: &Self::Args,
+        _max_workspace_size: usize,
+    ) -> Result<usize, SchemeError> {
+        Ok(0)
     }
 
-    fn launch(&self, args: &Self::Args, queue: &QueueOf<Self::Handle>) -> Result<(), LaunchError> {
+    fn launch<QA>(
+        &self,
+        args: &Self::Args,
+        _workspace: &mut [crate::ByteOf<Self::Hardware>],
+        queue_alloc: &QA,
+    ) -> Result<(), LaunchError>
+    where
+        QA: crate::QueueAlloc<Hardware = Self::Hardware>,
+    {
         let SchemeLayout {
             dt,
             ab_swap,
@@ -71,7 +81,7 @@ impl common::Operator for Operator {
         let alpha = f16::from_f32(alpha);
         let beta = f16::from_f32(beta);
 
-        self.handle.cublas(queue, |handle| {
+        self.handle.cublas(queue_alloc.queue(), |handle| {
             cublas!(cublasGemmStridedBatchedEx(
                 handle.as_raw(),
                 if a_trans {
@@ -114,13 +124,13 @@ impl common::Operator for Operator {
 #[cfg(test)]
 mod test {
     use super::Args;
-    use common::{Handle, TensorLayout};
+    use crate::{Hardware, TensorLayout};
     use digit_layout::DigitLayout;
 
     const ALPHA: f32 = 0.5;
     const BETA: f32 = 1.;
 
-    fn args<H: Handle>(
+    fn args<H: Hardware>(
         dt: DigitLayout,
         batch: usize,
         m: usize,
@@ -145,12 +155,12 @@ mod test {
     #[test]
     fn test_compute() {
         use super::{super::common_cpu::Operator as RefOp, Gpu, Operator};
-        use crate::common_cpu::{Handle as Cpu, ThisThread};
+        use crate::common_cpu::{Cpu, ThisThread};
+        use crate::Operator as _;
         use crate::{
             nvidia_gpu::cast_load,
-            utils::{Diff, ErrorCollector},
+            test_utils::{Diff, ErrorCollector},
         };
-        use common::Operator as _;
         use dev_mempool::cuda::memcpy_d2h;
         use digit_layout::types::{F16, F64};
         use half::f16;
@@ -179,9 +189,9 @@ mod test {
 
             let c_ans = gpu.apply(|ctx| {
                 let stream = ctx.stream();
-                let mut c = cast_load(&c, |&x| f16::from_f64(x), &stream);
-                let a = cast_load(&a, |&x| f16::from_f64(x), &stream);
-                let b = cast_load(&b, |&x| f16::from_f64(x), &stream);
+                let mut c = cast_load(&c, f16::from_f64, &stream);
+                let a = cast_load(&a, f16::from_f64, &stream);
+                let b = cast_load(&b, f16::from_f64, &stream);
 
                 gpu_op
                     .launch(
@@ -195,6 +205,7 @@ mod test {
                             a.as_ptr().cast(),
                             b.as_ptr().cast(),
                         ),
+                        &mut [],
                         &stream,
                     )
                     .unwrap();
@@ -217,6 +228,7 @@ mod test {
                         a.as_ptr().cast(),
                         b.as_ptr().cast(),
                     ),
+                    &mut [],
                     &ThisThread,
                 )
                 .unwrap();

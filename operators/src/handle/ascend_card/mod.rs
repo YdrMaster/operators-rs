@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 pub struct Handle(pub(crate) Arc<Internal>);
 
-impl common::Handle for Handle {
+impl crate::Handle for Handle {
     type Byte = DevByte;
     type Queue<'ctx> = Stream<'ctx>;
 }

@@ -1,8 +1,11 @@
-﻿use crate::utils::{dim_distinct, rank_not_support, type_distinct, ConstPtr, MutPtr};
-use common::{dyn_, Argument, Handle, ParamError, TensorLayout};
+﻿use crate::{
+    dyn_,
+    utils::{dim_distinct, rank_error, type_distinct},
+    ConstPtr, Hardware, MaybeDyn, MutPtr, ParamError, TensorLayout,
+};
 use digit_layout::DigitLayout;
 
-pub struct Args<H: Handle> {
+pub struct Args<H: Hardware> {
     pub y_layout: TensorLayout,
     pub y_base: MutPtr<H>,
 
@@ -16,18 +19,38 @@ pub struct Args<H: Handle> {
     pub w_down_base: ConstPtr<H>,
     pub down_alpha: f32,
     pub down_bias: bool,
-
-    pub workspace_size: usize,
-    pub workspace: MutPtr<H>,
 }
 
 pub(super) struct Meta {
     pub dt: DigitLayout,
-    pub nt: Argument<usize>,
-    pub di: Argument<usize>,
+    pub nt: MaybeDyn<usize>,
+    pub di: MaybeDyn<usize>,
 }
 
-impl<H: Handle> Args<H> {
+impl<H: Hardware> Args<H> {
+    pub fn new_null(
+        y_layout: TensorLayout,
+        x_layout: TensorLayout,
+        w_gate_up_layout: TensorLayout,
+        w_down_layout: TensorLayout,
+        down_alpha: f32,
+        down_bias: bool,
+    ) -> Self {
+        use std::ptr::{null, null_mut};
+        Self {
+            y_layout,
+            y_base: null_mut(),
+            x_layout,
+            x_base: null(),
+            w_gate_up_layout,
+            w_gate_up_base: null(),
+            w_down_layout,
+            w_down_base: null(),
+            down_alpha,
+            down_bias,
+        }
+    }
+
     pub(super) fn meta(&self) -> Result<Meta, ParamError> {
         let Self {
             y_layout,
@@ -38,16 +61,16 @@ impl<H: Handle> Args<H> {
         } = self;
 
         let &[nt_y, d_y] = y_layout.shape() else {
-            return Err(rank_not_support("y", 2, y_layout.ndim()));
+            return Err(rank_error("y", 2, y_layout.ndim()));
         };
         let &[nt_x, d_x] = x_layout.shape() else {
-            return Err(rank_not_support("x", 2, x_layout.ndim()));
+            return Err(rank_error("x", 2, x_layout.ndim()));
         };
         let &[d_gu, di_gu] = w_gate_up_layout.shape() else {
-            return Err(rank_not_support("w_gate_up", 2, w_gate_up_layout.ndim()));
+            return Err(rank_error("w_gate_up", 2, w_gate_up_layout.ndim()));
         };
         let &[di_d, d_d] = w_down_layout.shape() else {
-            return Err(rank_not_support("w_down", 2, w_down_layout.ndim()));
+            return Err(rank_error("w_down", 2, w_down_layout.ndim()));
         };
 
         let _ = dim_distinct(&[d_y, d_x, d_gu, d_d])?;

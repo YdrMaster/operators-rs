@@ -3,7 +3,7 @@ use crate::{
     attention, rearrange,
     utils::{get_static, sizeof},
 };
-use common::{
+use crate::{
     dyn_, dyn_not_support, out_of_workspace, shape_mismatch, Argument, Handle, LaunchError,
     QueueOf, SchemeError, TensorLayout,
 };
@@ -38,7 +38,7 @@ where
     }
 }
 
-impl<H, R, A> common::Operator for Operator<H, R, A>
+impl<H, R, A> crate::Operator for Operator<H, R, A>
 where
     H: Handle,
     R: rearrange::Rearrange<H>,

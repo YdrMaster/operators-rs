@@ -1,9 +1,9 @@
 ﻿use super::{Args, KVPair, RandomSample};
+use crate::random_sample::args::Meta;
+use crate::{common_cpu::Cpu, random_sample::args::SampleArgs, utils::sizeof};
 use crate::{
-    between_f32::BetweenF32, common_cpu::Handle as Cpu, random_sample::args::SampleArgs,
-    utils::sizeof,
+    get_static, strides_not_support, type_not_support, ByteOf, LaunchError, QueueAlloc, SchemeError,
 };
-use common::{strides_not_support, type_not_support, LaunchError, QueueOf, SchemeError};
 use half::f16;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use std::{cmp::Ordering::Equal, slice::from_raw_parts};
@@ -11,67 +11,81 @@ use std::{cmp::Ordering::Equal, slice::from_raw_parts};
 pub struct Operator;
 
 impl RandomSample<Cpu> for Operator {
-    type Workspace<'ctx> = Vec<u8>;
-    fn workspace<'ctx>(&self, _queue: &QueueOf<'ctx, Cpu>) -> Self::Workspace<'ctx> {
-        vec![]
+    fn build_indices<QA>(_n: usize, queue_alloc: &QA) -> QA::DevMem
+    where
+        QA: QueueAlloc<Hardware = Self::Hardware>,
+    {
+        queue_alloc.alloc(0)
     }
 }
 
-impl common::Operator for Operator {
-    type Handle = Cpu;
+impl crate::Operator for Operator {
+    type Hardware = Cpu;
     type Args = Args<Cpu>;
 
-    #[inline]
-    fn new(_handle: &Self::Handle) -> Self {
+    fn new(_processor: &Self::Hardware) -> Self {
         Self
     }
 
-    #[inline]
-    fn scheme(&mut self, _args: &Self::Args) -> Result<(), SchemeError> {
-        Ok(())
+    fn scheme(
+        &mut self,
+        _args: &Self::Args,
+        _max_workspace_size: usize,
+    ) -> Result<usize, SchemeError> {
+        Ok(0)
     }
 
-    fn launch(&self, args: &Self::Args, _queue: &QueueOf<Self::Handle>) -> Result<(), LaunchError> {
-        let meta = args.meta()?;
-        let &[s] = args.data.strides() else {
+    fn launch<QA>(
+        &self,
+        args: &Self::Args,
+        _workspace: &mut [ByteOf<Self::Hardware>],
+        _queue_alloc: &QA,
+    ) -> Result<(), LaunchError>
+    where
+        QA: QueueAlloc<Hardware = Self::Hardware>,
+    {
+        let Meta { dt, n } = args.meta()?;
+        let &[s] = args.logits.strides() else {
             unreachable!()
         };
-        let unit = sizeof(meta.dt)? as isize;
+        let unit = sizeof(dt)? as isize;
         if s.get_static().copied() != Some(unit) {
             return Err(strides_not_support("").into());
         }
 
+        get_static!(n);
+
         use digit_layout::types as ty;
-        if args.detail.is_argmax() {
+        let kv = if args.config.is_argmax() {
             macro_rules! argmax {
                 ($ty:ty) => {
-                    argmax::<$ty>(args.data_base, meta.n).into_raw()
+                    argmax::<$ty>(args.logits_base, n).into_raw()
                 };
             }
-            let kv = match meta.dt {
+            match dt {
                 ty::F16 => argmax!(f16),
                 ty::F32 => argmax!(f32),
                 e => return Err(type_not_support(format!("{e} not support")).into()),
-            };
-            unsafe { args.kv_pair_base.cast::<KVPair<()>>().write(kv) };
+            }
         } else {
             let SampleArgs {
                 temperature,
                 top_p,
                 top_k,
-            } = args.detail;
+            } = args.config;
             macro_rules! random {
                 ($ty:ty) => {
-                    random::<$ty>(args.data_base, meta.n, temperature, top_p, top_k).into_raw()
+                    random::<$ty>(args.logits_base, n, temperature, top_p, top_k, args.seed)
+                        .into_raw()
                 };
             }
-            let kv = match meta.dt {
+            match dt {
                 ty::F16 => random!(f16),
                 ty::F32 => random!(f32),
                 e => return Err(type_not_support(format!("{e} not support")).into()),
-            };
-            unsafe { args.kv_pair_base.cast::<KVPair<()>>().write(kv) };
-        }
+            }
+        };
+        unsafe { args.kv_pair_base.cast::<KVPair<()>>().write(kv) };
 
         Ok(())
     }
@@ -86,7 +100,7 @@ fn argmax<T: PartialOrd + Copy>(ptr: *const u8, len: usize) -> KVPair<T> {
     KVPair::new(key as _, *val)
 }
 
-fn random<T>(ptr: *const u8, len: usize, t: f32, top_p: f32, top_k: usize) -> KVPair<T>
+fn random<T>(ptr: *const u8, len: usize, t: f32, top_p: f32, top_k: usize, seed: f32) -> KVPair<T>
 where
     T: BetweenF32 + Copy,
 {
@@ -107,8 +121,35 @@ where
     // topk & topp & random
     let pk = logits[top_k.min(logits.len()) - 1].val();
     let pp = logits[logits.len() - 1].val() * top_p;
-    let plimit = rand::random::<f32>() * f32::min(pk, pp);
+    let plimit = seed * f32::min(pk, pp);
     // sample
     let ans = *logits.iter().find(|p| p.val() >= plimit).unwrap();
     KVPair::new(ans.idx() as _, T::cast(ans.val()))
+}
+
+trait BetweenF32 {
+    fn cast(f: f32) -> Self;
+    fn f32(self) -> f32;
+}
+
+impl BetweenF32 for f32 {
+    #[inline]
+    fn cast(f: f32) -> Self {
+        f
+    }
+    #[inline]
+    fn f32(self) -> f32 {
+        self
+    }
+}
+
+impl BetweenF32 for half::f16 {
+    #[inline]
+    fn cast(f: f32) -> Self {
+        Self::from_f32(f)
+    }
+    #[inline]
+    fn f32(self) -> f32 {
+        Self::to_f32(self)
+    }
 }

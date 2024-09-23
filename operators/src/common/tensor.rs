@@ -1,4 +1,4 @@
-﻿use crate::Argument;
+﻿use crate::MaybeDyn;
 use digit_layout::DigitLayout;
 use std::{
     alloc::{alloc, dealloc, Layout},
@@ -18,8 +18,8 @@ pub struct TensorLayout(NonNull<usize>);
 impl TensorLayout {
     pub fn new_dyn(
         dt: DigitLayout,
-        shape: &[Argument<usize>],
-        strides: &[Argument<isize>],
+        shape: &[MaybeDyn<usize>],
+        strides: &[MaybeDyn<isize>],
     ) -> Self {
         let shape: &[usize] = unsafe { std::mem::transmute(shape) };
         let strides: &[isize] = unsafe { std::mem::transmute(strides) };
@@ -72,15 +72,15 @@ impl TensorLayout {
     }
 
     #[inline]
-    pub fn shape(&self) -> &[Argument<usize>] {
-        let ptr = self.0.cast::<Argument<usize>>().as_ptr();
+    pub fn shape(&self) -> &[MaybeDyn<usize>] {
+        let ptr = self.0.cast::<MaybeDyn<usize>>().as_ptr();
         let len = self.ndim();
         unsafe { from_raw_parts(ptr.add(1), len) }
     }
 
     #[inline]
-    pub fn strides(&self) -> &[Argument<isize>] {
-        let ptr = self.0.cast::<Argument<isize>>().as_ptr();
+    pub fn strides(&self) -> &[MaybeDyn<isize>] {
+        let ptr = self.0.cast::<MaybeDyn<isize>>().as_ptr();
         let len = self.ndim();
         unsafe { from_raw_parts(ptr.add(1 + len), len) }
     }

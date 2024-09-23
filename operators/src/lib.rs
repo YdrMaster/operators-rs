@@ -1,4 +1,6 @@
-mod between_f32;
+#![deny(warnings)]
+
+mod common;
 mod handle;
 
 pub mod fuesd_softmax;
@@ -9,12 +11,11 @@ pub mod rms_norm;
 pub mod rope;
 pub mod swiglu;
 
-pub mod attention;
-pub mod attention_kv_cached;
+// pub mod attention;
+// pub mod attention_kv_cached;
 pub mod mlp;
 
 pub use common::*;
-pub use record::{is_recording, start_record, stop_record};
 
 #[cfg(use_cpu)]
 pub use handle::common_cpu;
@@ -39,6 +40,3 @@ pub extern crate cnnl;
 pub use handle::ascend_card;
 #[cfg(use_ascend)]
 pub extern crate ascendcl;
-
-mod record;
-mod utils;

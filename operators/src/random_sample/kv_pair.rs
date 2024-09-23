@@ -7,7 +7,7 @@ use std::{
 
 #[derive(Clone, Copy, Debug)]
 #[repr(C)]
-pub struct KVPair<T> {
+pub struct KVPair<T = ()> {
     idx: u32,
     val: u32,
     _phantom: PhantomData<T>,

@@ -1,4 +1,4 @@
-﻿use super::{Internal, Key};
+﻿use super::{Handle, Key};
 use dev_mempool::cuda::{
     bindings::nvrtcResult, ContextResource, ContextSpore, CurrentCtx, Dim3, KernelFn, ModuleSpore,
     Ptx, Stream,
@@ -12,17 +12,13 @@ use std::{
 };
 
 pub(crate) struct ModuleBox {
-    handle: Arc<Internal>,
+    handle: Arc<Handle>,
     key: Key,
     module: Option<ModuleSpore>,
 }
 
 impl ModuleBox {
-    pub(super) fn share(
-        handle: Arc<Internal>,
-        key: Key,
-        code: impl FnOnce() -> String,
-    ) -> Arc<Self> {
+    pub(super) fn share(handle: Arc<Handle>, key: Key, code: impl FnOnce() -> String) -> Arc<Self> {
         let ptx = cache_ptx(&key, code).unwrap();
         let module = handle.context.apply(|ctx| ctx.load(&ptx).sporulate());
         Arc::new(Self {

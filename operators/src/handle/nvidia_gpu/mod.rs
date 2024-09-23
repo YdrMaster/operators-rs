@@ -1,10 +1,10 @@
 mod library;
 mod module;
 
-use common::Pool;
+use crate::{Hardware, Pool, QueueAlloc, QueueOf};
 use cublas::{Cublas, CublasLtSpore, CublasSpore};
 use dev_mempool::cuda::{
-    self, Context, ContextResource, ContextSpore, CurrentCtx, Device, Stream, Version,
+    self, Context, ContextResource, ContextSpore, CurrentCtx, DevMem, Device, Stream, Version,
 };
 use digit_layout::DigitLayout;
 use libloading::Library;
@@ -16,18 +16,25 @@ use std::{
 pub(crate) use library::{EXPORT, EXPORT_H};
 pub(crate) use module::ModuleBox;
 
-pub struct Handle(pub(crate) Arc<Internal>);
+pub struct Gpu(pub(crate) Arc<Handle>);
 
-impl common::Handle for Handle {
+impl Hardware for Gpu {
     type Byte = cuda::DevByte;
-    type DevMem<'ctx> = cuda::DevMem<'ctx>;
     type Queue<'ctx> = cuda::Stream<'ctx>;
 }
 
-impl Handle {
+impl<'ctx> QueueAlloc for Stream<'ctx> {
+    type Hardware = Gpu;
+    type DevMem = DevMem<'ctx>;
+    fn queue(&self) -> &QueueOf<Self::Hardware> {
+        self
+    }
+}
+
+impl Gpu {
     #[inline]
     pub fn new(context: Context) -> Self {
-        Self(Arc::new(Internal {
+        Self(Arc::new(Handle {
             context,
             cublas: Default::default(),
             cublas_lt: Default::default(),
@@ -49,7 +56,7 @@ impl Handle {
     }
 }
 
-pub(crate) struct Internal {
+pub(crate) struct Handle {
     context: Context,
     cublas: Pool<CublasSpore>,
     cublas_lt: Pool<CublasLtSpore>,
@@ -58,7 +65,7 @@ pub(crate) struct Internal {
 
 type Key = (String, Version);
 
-impl Internal {
+impl Handle {
     #[inline]
     pub fn device(&self) -> Device {
         self.context.device()
@@ -110,7 +117,7 @@ impl Internal {
     }
 }
 
-impl Drop for Internal {
+impl Drop for Handle {
     fn drop(&mut self) {
         assert!(self.modules.read().unwrap().is_empty());
         self.context.apply(|ctx| {
@@ -152,13 +159,13 @@ pub(crate) fn dt_name(dt: DigitLayout) -> &'static str {
 #[cfg(test)]
 pub(crate) fn cast_load<'ctx, T, U, F>(val: &[T], f: F, stream: &Stream<'ctx>) -> cuda::DevMem<'ctx>
 where
-    T: Sync,
+    T: Sync + Copy,
     U: Send + Copy,
-    F: Sync + Fn(&T) -> U,
+    F: Sync + Fn(T) -> U,
 {
     use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
     let mut host = stream.ctx().malloc_host::<U>(val.len());
     let host = unsafe { std::slice::from_raw_parts_mut(host.as_mut_ptr().cast(), val.len()) };
-    host.into_par_iter().zip(val).for_each(|(y, x)| *y = f(x));
+    host.into_par_iter().zip(val).for_each(|(y, x)| *y = f(*x));
     stream.from_host(host)
 }

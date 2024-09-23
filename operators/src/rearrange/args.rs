@@ -1,8 +1,11 @@
-﻿use crate::utils::{sizeof, static_from, type_distinct, ConstPtr, MutPtr};
-use common::{rank_mismatch, shape_mismatch, shape_not_support, Handle, ParamError, TensorLayout};
+﻿use crate::{
+    rank_mismatch, shape_mismatch, shape_not_support, static_from,
+    utils::{sizeof, type_distinct},
+    ConstPtr, Hardware, MutPtr, ParamError, TensorLayout,
+};
 use std::{cmp::Ordering, iter::zip};
 
-pub struct Args<H: Handle> {
+pub struct Args<H: Hardware> {
     pub dst_layout: TensorLayout,
     pub dst_base: MutPtr<H>,
     pub src_layout: TensorLayout,
@@ -14,7 +17,7 @@ pub struct Args<H: Handle> {
 pub(super) struct Scheme(Vec<isize>);
 
 impl Scheme {
-    pub fn new<H: Handle>(args: &Args<H>) -> Result<Self, ParamError> {
+    pub fn new<H: Hardware>(args: &Args<H>) -> Result<Self, ParamError> {
         let Args {
             dst_layout: dst_,
             src_layout: src_,
@@ -219,7 +222,7 @@ impl Scheme {
 
 #[test]
 fn test_scheme() {
-    use crate::common_cpu::Handle as Cpu;
+    use crate::common_cpu::Cpu;
     use digit_layout::types::F16;
     use std::ptr::{null, null_mut};
 

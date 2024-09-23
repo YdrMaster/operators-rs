@@ -93,7 +93,7 @@ fn xmake_config(dir: impl AsRef<Path>, cuda_root: impl fmt::Display, arch: impl 
         .arg(format!("--cuda={cuda_root}"))
         .arg(format!("--cuflags={arch}"))
         .arg(format!("--culdflags={arch}"))
-        .current_dir(dir)
+        .current_dir(&dir)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
@@ -102,14 +102,14 @@ fn xmake_config(dir: impl AsRef<Path>, cuda_root: impl fmt::Display, arch: impl 
     if output.status.success() {
         info!("{log}");
     } else {
-        panic!("xmake config failed: {log}");
+        panic!("xmake config failed at {}: {log}", dir.as_ref().display());
     }
 }
 
 fn xmake_build(dir: impl AsRef<Path>) {
     let output = Command::new("xmake")
         .arg("build")
-        .current_dir(dir)
+        .current_dir(&dir)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
@@ -118,7 +118,7 @@ fn xmake_build(dir: impl AsRef<Path>) {
     if output.status.success() {
         info!("{log}");
     } else {
-        panic!("xmake build failed: {log}");
+        panic!("xmake build failed at {}: {log}", dir.as_ref().display());
     }
 }
 
@@ -126,7 +126,7 @@ fn xmake_install(dir: impl AsRef<Path>) {
     let output = Command::new("xmake")
         .arg("install")
         .arg("--installdir=.")
-        .current_dir(dir)
+        .current_dir(&dir)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
@@ -135,7 +135,7 @@ fn xmake_install(dir: impl AsRef<Path>) {
     if output.status.success() {
         info!("{log}");
     } else {
-        panic!("xmake install failed: {log}");
+        panic!("xmake install failed at {}: {log}", dir.as_ref().display());
     }
 }
 

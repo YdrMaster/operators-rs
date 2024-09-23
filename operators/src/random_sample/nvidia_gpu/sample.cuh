@@ -5,12 +5,15 @@
 
 template<class T>
 cudaError arg_max_(
-    void *workspace_ptr, size_t &workspace_len,
-    cub::KeyValuePair<int, T> *kv_pair, T const *data, int n,
+    cub::KeyValuePair<int, T> *kv_pair,
+    T const *logits,
+    int n,
+    void *workspace_ptr,
+    size_t &workspace_len,
     cudaStream_t stream) {
     return cub::DeviceReduce::ArgMax(
         workspace_ptr, workspace_len,
-        data, kv_pair, n,
+        logits, kv_pair, n,
         stream);
 }
 
@@ -90,14 +93,15 @@ constexpr size_t align(size_t size, size_t alignment) {
 }
 
 template<class T>
-cudaError random_sample_workspace(
-    size_t *workspace_len, size_t n_) {
+cudaError calculate_workspace_size(
+    size_t *argmax,
+    size_t *random_sample,
+    size_t n_) {
     auto const n = static_cast<int>(n_);
 
-    size_t size_argmax;
     CHECK(arg_max_<T>(
-        nullptr, size_argmax,
         nullptr, nullptr, n,
+        nullptr, *argmax,
         nullptr))
 
     size_t size_radix_sort;
@@ -115,75 +119,82 @@ cudaError random_sample_workspace(
         nullptr))
 
     size_t size_random = 0;
-    size_random += sizeof(unsigned int) * n;// indices_in
+    size_random += sizeof(T) * n;           // sorted
     size_random = align(size_random, 256);  //
     size_random += sizeof(unsigned int) * n;// indices_out
     size_random = align(size_random, 256);  //
-    size_random += sizeof(T) * n;           // sorted
-    size_random = align(size_random, 256);  //
     size_random += cub::Max()(size_radix_sort, size_inclusive_sum);
+    *random_sample = size_random;
 
-    *workspace_len = cub::Max()(size_argmax, size_random);
     return cudaGetLastError();
 }
 
 template<class T>
 cudaError arg_max(
-    void *workspace_ptr, size_t workspace_len,
     cub::KeyValuePair<int, T> *kv_pair,
-    T *const data, size_t n,
+    T const *logits,
+    size_t n,
+
+    void *workspace_ptr,
+    size_t workspace_len,
     cudaStream_t stream) {
     return arg_max_(
-        workspace_ptr, workspace_len,
-        kv_pair, data, n,
+        kv_pair,
+        logits,
+        n,
+        workspace_ptr,
+        workspace_len,
         stream);
 }
 
 template<class T>
 cudaError random_sample(
-    void *workspace_ptr, size_t workspace_len,
     cub::KeyValuePair<int, T> *kv_pair,
-    T *const data, size_t n,
+    T const *logits,
+    unsigned int const *indices,
+    size_t n,
 
     float random,
     float temperature,
     float topp,
     size_t topk,
 
+    void *workspace_ptr,
+    size_t workspace_len,
     cudaStream_t stream) {
 
     auto workspace = reinterpret_cast<size_t>(workspace_ptr);
     auto workspace_end = workspace + workspace_len;
 
-    auto indices_in = reinterpret_cast<unsigned int *>(workspace);
-    workspace += sizeof(unsigned int) * n;
+    auto sorted = reinterpret_cast<T *>(workspace);
+    workspace += sizeof(T) * n;
     workspace = align(workspace, 256);
 
     auto indices_out = reinterpret_cast<unsigned int *>(workspace);
     workspace += sizeof(unsigned int) * n;
     workspace = align(workspace, 256);
 
-    auto sorted = reinterpret_cast<T *>(workspace);
-    workspace += sizeof(T) * n;
-    workspace = align(workspace, 256);
-
     workspace_ptr = reinterpret_cast<void *>(workspace);
     workspace_len = workspace_end - workspace;
 
+    // sort
     CHECK(radix_sort(
         workspace_ptr, workspace_len,
-        data, sorted,
-        indices_in, indices_out,
+        logits, sorted,
+        indices, indices_out,
         n,
         stream));
+    // softmax
     auto block = cub::Min()((size_t) 1024, n);
     auto grid = (n + block - 1) / block;
     partial_softmax_kernel<<<grid, block, 0, stream>>>(sorted, n, temperature);
     set_softmax_max_kernel<<<1, 1, 0, stream>>>(sorted);
+    // sum
     CHECK(inclusive_sum(
         workspace_ptr, workspace_len,
         sorted, n,
         stream));
+    // sample
     random_sample_kernel<<<1, 1, 0, stream>>>(
         kv_pair,
         sorted, indices_out, n,

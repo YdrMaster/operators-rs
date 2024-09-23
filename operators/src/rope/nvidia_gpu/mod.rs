@@ -1,11 +1,10 @@
 ﻿use super::{args::Meta, Args, Rope};
 use crate::{
-    nvidia_gpu::{Handle as Gpu, Internal as Handle, ModuleBox},
-    utils::{get_static, sizeof},
-};
-use common::{
-    scheme_not_set, shape_not_support, strides_not_support, type_not_support, LaunchError, QueueOf,
-    SchemeError,
+    get_static,
+    nvidia_gpu::{Gpu, Handle, ModuleBox},
+    scheme_not_set, shape_not_support, strides_not_support, type_not_support,
+    utils::sizeof,
+    LaunchError, SchemeError,
 };
 use digit_layout::types::{F16, U32};
 use std::{ffi::CString, sync::Arc};
@@ -20,19 +19,23 @@ const CODE: &str = include_str!("rope.cuh");
 
 impl Rope<Gpu> for Operator {}
 
-impl common::Operator for Operator {
-    type Handle = Gpu;
+impl crate::Operator for Operator {
+    type Hardware = Gpu;
     type Args = Args<Gpu>;
 
-    fn new(handle: &Self::Handle) -> Self {
+    fn new(processor: &Self::Hardware) -> Self {
         Self {
-            handle: handle.0.clone(),
-            max_threads_block: handle.0.device().block_limit().max_threads,
+            handle: processor.0.clone(),
+            max_threads_block: processor.0.device().block_limit().max_threads,
             scheme: None,
         }
     }
 
-    fn scheme(&mut self, args: &Self::Args) -> Result<(), SchemeError> {
+    fn scheme(
+        &mut self,
+        args: &Self::Args,
+        _max_workspace_size: usize,
+    ) -> Result<usize, SchemeError> {
         let Meta { dt_t, dt_p, .. } = args.meta()?;
 
         if dt_t != F16 || dt_p != U32 {
@@ -55,10 +58,18 @@ extern "C" __global__ void {NAME}(
 }}"#
             )
         }));
-        Ok(())
+        Ok(0)
     }
 
-    fn launch(&self, args: &Self::Args, queue: &QueueOf<Self::Handle>) -> Result<(), LaunchError> {
+    fn launch<QA>(
+        &self,
+        args: &Self::Args,
+        _workspace: &mut [crate::ByteOf<Self::Hardware>],
+        queue_alloc: &QA,
+    ) -> Result<(), LaunchError>
+    where
+        QA: crate::QueueAlloc<Hardware = Self::Hardware>,
+    {
         let Meta {
             dt_t, dt_p, nt, dh, ..
         } = args.meta()?;
@@ -119,7 +130,7 @@ extern "C" __global__ void {NAME}(
             (nh_l as _, dh as _),
             params.as_ptr(),
             0,
-            queue,
+            queue_alloc.queue(),
         );
         Ok(())
     }
@@ -128,14 +139,14 @@ extern "C" __global__ void {NAME}(
 #[cfg(test)]
 mod test {
     use super::{Args, Gpu, Operator};
-    use common::{Handle, Operator as _, TensorLayout};
+    use crate::{Hardware, Operator as _, TensorLayout};
     use digit_layout::{
         types::{F16, F64, U32},
         DigitLayout,
     };
 
-    fn dyn_args<H: Handle>(dt_t: DigitLayout, dt_p: DigitLayout) -> Args<H> {
-        use common::dyn_;
+    fn dyn_args<H: Hardware>(dt_t: DigitLayout, dt_p: DigitLayout) -> Args<H> {
+        use crate::dyn_;
         use std::ptr::{null, null_mut};
         Args {
             t_layout: TensorLayout::new_dyn(dt_t, &[dyn_(); 3], &[dyn_(); 3]),
@@ -150,7 +161,7 @@ mod test {
         }
     }
 
-    fn args<H: Handle>(
+    fn args<H: Hardware>(
         dt_t: DigitLayout,
         dt_p: DigitLayout,
         nt: usize,
@@ -185,7 +196,7 @@ mod test {
         println!("{}", gpu.0.device().info());
 
         let mut op = Operator::new(&gpu);
-        op.scheme(&dyn_args(F16, U32)).unwrap();
+        op.scheme(&dyn_args(F16, U32), 0).unwrap();
 
         let module = op.scheme.as_ref().unwrap();
         gpu.apply(|ctx| {
@@ -200,9 +211,9 @@ mod test {
     fn test_compute() {
         use super::super::common_cpu::Operator as RefOp;
         use crate::{
-            common_cpu::{Handle as Cpu, ThisThread},
+            common_cpu::{Cpu, ThisThread},
             nvidia_gpu::cast_load,
-            utils::{Diff, ErrorCollector},
+            test_utils::{Diff, ErrorCollector},
         };
         use dev_mempool::cuda::memcpy_d2h;
         use half::f16;
@@ -215,8 +226,8 @@ mod test {
 
         let mut cpu_op = RefOp::new(&Cpu);
         let mut gpu_op = Operator::new(&gpu);
-        cpu_op.scheme(&dyn_args(F64, U32)).unwrap();
-        gpu_op.scheme(&dyn_args(F16, U32)).unwrap();
+        cpu_op.scheme(&dyn_args(F64, U32), 0).unwrap();
+        gpu_op.scheme(&dyn_args(F16, U32), 0).unwrap();
 
         const NT: usize = 7;
         let nh = 32;
@@ -228,7 +239,7 @@ mod test {
 
         let t_ans = gpu.apply(|ctx| {
             let stream = ctx.stream();
-            let mut t = cast_load(&t, |&x| f16::from_f64(x), &stream);
+            let mut t = cast_load(&t, f16::from_f64, &stream);
             let p = stream.from_host(&p);
             gpu_op
                 .launch(
@@ -242,6 +253,7 @@ mod test {
                         t.as_mut_ptr().cast(),
                         p.as_ptr().cast(),
                     ),
+                    &mut [],
                     &stream,
                 )
                 .unwrap();
@@ -263,6 +275,7 @@ mod test {
                     t_ref.as_mut_ptr().cast(),
                     p.as_ptr().cast(),
                 ),
+                &mut [],
                 &ThisThread,
             )
             .unwrap();

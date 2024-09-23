@@ -1,9 +1,0 @@
-[package]
-name = "common"
-version = "0.0.0"
-edition = "2021"
-authors = ["YdrMaster <ydrml@hotmail.com>"]
-
-[dependencies]
-dev-mempool.workspace = true
-digit-layout.workspace = true

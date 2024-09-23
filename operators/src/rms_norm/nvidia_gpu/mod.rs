@@ -1,11 +1,12 @@
 ﻿use super::{args::Meta, Args, RmsNorm};
 use crate::{
-    nvidia_gpu::{dt_name, Handle as Gpu, Internal as Handle, ModuleBox},
-    utils::{get_static, sizeof},
+    get_static,
+    nvidia_gpu::{dt_name, Gpu, Handle, ModuleBox},
+    utils::sizeof,
 };
-use common::{
+use crate::{
     scheme_not_compatible, scheme_not_set, shape_not_support, strides_not_support, LaunchError,
-    QueueOf, SchemeError,
+    SchemeError,
 };
 use dev_mempool::cuda::Version;
 use digit_layout::DigitLayout;
@@ -18,19 +19,22 @@ pub struct Operator {
 
 impl RmsNorm<Gpu> for Operator {}
 
-impl common::Operator for Operator {
-    type Handle = Gpu;
+impl crate::Operator for Operator {
+    type Hardware = Gpu;
     type Args = Args<Gpu>;
 
-    #[inline]
-    fn new(handle: &Self::Handle) -> Self {
+    fn new(processor: &Self::Hardware) -> Self {
         Self {
-            handle: handle.0.clone(),
+            handle: processor.0.clone(),
             scheme: None,
         }
     }
 
-    fn scheme(&mut self, args: &Self::Args) -> Result<(), SchemeError> {
+    fn scheme(
+        &mut self,
+        args: &Self::Args,
+        _max_workspace_size: usize,
+    ) -> Result<usize, SchemeError> {
         let Meta {
             dt_w,
             dt_a,
@@ -48,13 +52,22 @@ impl common::Operator for Operator {
         let max_num_threads_block = device.block_limit().max_threads;
 
         if d <= max_num_threads_block {
-            self.padding_scheme(dt_w, dt_a, d, cc)
+            self.padding_scheme(dt_w, dt_a, d, cc)?
         } else {
-            self.folding_scheme(dt_w, dt_a, d, cc, max_num_threads_block, device.warp_size())
+            self.folding_scheme(dt_w, dt_a, d, cc, max_num_threads_block, device.warp_size())?
         }
+        Ok(0)
     }
 
-    fn launch(&self, args: &Self::Args, queue: &QueueOf<Self::Handle>) -> Result<(), LaunchError> {
+    fn launch<QA>(
+        &self,
+        args: &Self::Args,
+        _workspace: &mut [crate::ByteOf<Self::Hardware>],
+        queue_alloc: &QA,
+    ) -> Result<(), LaunchError>
+    where
+        QA: crate::QueueAlloc<Hardware = Self::Hardware>,
+    {
         let Meta { dt_w, dt_a, n, d } = args.meta()?;
         let Args {
             y_layout,
@@ -107,7 +120,14 @@ impl common::Operator for Operator {
         let nsx = (nsx / unit) as i32;
         let params = dev_mempool::cuda::params![y_base, nsy, x_base, nsx, w_base, epsilon];
 
-        m.launch(name, n as u32, block_dims as u32, params.as_ptr(), 0, queue);
+        m.launch(
+            name,
+            n as u32,
+            block_dims as u32,
+            params.as_ptr(),
+            0,
+            queue_alloc.queue(),
+        );
         Ok(())
     }
 }
@@ -251,14 +271,14 @@ extern "C" __global__ void {name}(
 #[cfg(test)]
 mod test {
     use super::{Args, Gpu, Operator, Scheme};
-    use common::{Handle, Operator as _, TensorLayout};
+    use crate::{Hardware, Operator as _, TensorLayout};
     use digit_layout::{
         types::{F16, F32, F64},
         DigitLayout,
     };
 
-    fn dyn_args<H: Handle>(dt_w: DigitLayout, dt_a: DigitLayout, d: usize) -> Args<H> {
-        use common::dyn_;
+    fn dyn_args<H: Hardware>(dt_w: DigitLayout, dt_a: DigitLayout, d: usize) -> Args<H> {
+        use crate::dyn_;
         use std::ptr::{null, null_mut};
         Args {
             y_layout: TensorLayout::new_dyn(dt_a, &[dyn_(), d.into()], &[dyn_(); 2]),
@@ -271,7 +291,7 @@ mod test {
         }
     }
 
-    fn args<H: Handle>(
+    fn args<H: Hardware>(
         dt_w: DigitLayout,
         dt_a: DigitLayout,
         n: usize,
@@ -302,7 +322,7 @@ mod test {
         let mut op = Operator::new(&gpu);
         for k in 8..=13 {
             let d = 1 << k;
-            op.scheme(&dyn_args(F32, F16, d)).unwrap();
+            op.scheme(&dyn_args(F32, F16, d), 0).unwrap();
             let (scheme, module) = op.scheme.as_ref().unwrap();
             match scheme {
                 Scheme::Common { .. } => todo!(),
@@ -328,9 +348,9 @@ mod test {
     fn test_compute() {
         use super::super::common_cpu::Operator as RefOp;
         use crate::{
-            common_cpu::{Handle as Cpu, ThisThread},
+            common_cpu::{Cpu, ThisThread},
             nvidia_gpu::cast_load,
-            utils::{Diff, ErrorCollector},
+            test_utils::{Diff, ErrorCollector},
         };
         use dev_mempool::cuda::memcpy_d2h;
         use half::f16;
@@ -346,8 +366,8 @@ mod test {
         for k in 8..=13 {
             let n = 4;
             let d = 1 << k;
-            cpu_op.scheme(&dyn_args(F64, F64, d)).unwrap();
-            gpu_op.scheme(&dyn_args(F32, F16, d)).unwrap();
+            cpu_op.scheme(&dyn_args(F64, F64, d), 0).unwrap();
+            gpu_op.scheme(&dyn_args(F32, F16, d), 0).unwrap();
 
             let mut x = vec![0.0f64; n * d];
             let mut w = vec![0.0f64; d];
@@ -359,8 +379,8 @@ mod test {
             let y_ans = gpu.apply(|ctx| {
                 let stream = ctx.stream();
                 let mut y = stream.malloc::<f16>(n * d);
-                let x = cast_load(&x, |&x| f16::from_f64(x), &stream);
-                let w = cast_load(&w, |&x| x as f32, &stream);
+                let x = cast_load(&x, f16::from_f64, &stream);
+                let w = cast_load(&w, |x| x as f32, &stream);
                 gpu_op
                     .launch(
                         &args(
@@ -372,6 +392,7 @@ mod test {
                             x.as_ptr().cast(),
                             w.as_ptr().cast(),
                         ),
+                        &mut [],
                         &stream,
                     )
                     .unwrap();
@@ -392,6 +413,7 @@ mod test {
                         x.as_ptr().cast(),
                         w.as_ptr().cast(),
                     ),
+                    &mut [],
                     &ThisThread,
                 )
                 .unwrap();

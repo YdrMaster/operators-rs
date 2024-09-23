@@ -3,24 +3,20 @@ mod operator;
 
 pub use args::Args;
 
-crate::utils::op_trait! { Mlp
-    fn workspace_size(&self) -> Option<usize>;
-}
+crate::op_trait!(Mlp);
 
 macro_rules! impl_op {
-    ($dev:ident) => {
-        pub mod $dev {
-            pub type Operator = super::operator::Operator<
-                crate::$dev::Handle,
-                crate::mat_mul::$dev::Operator,
-                crate::swiglu::$dev::Operator,
-            >;
-        }
+    ($dev:ident, $proc:ident) => {
+        pub type Operator = super::operator::Operator<
+            crate::$dev::$proc,
+            crate::mat_mul::$dev::Operator,
+            crate::swiglu::$dev::Operator,
+        >;
     };
 }
 
 #[cfg(use_cpu)]
-impl_op!(common_cpu);
+pub mod common_cpu;
 
 #[cfg(use_cuda)]
-impl_op!(nvidia_gpu);
+pub mod nvidia_gpu;

@@ -1,21 +1,21 @@
 ﻿use super::KVPair;
-use crate::utils::{rank_not_support, sizeof, ConstPtr, MutPtr};
-use common::{dyn_not_support, type_not_support, Handle, ParamError, TensorLayout};
-use digit_layout::DigitLayout;
-use std::{
-    hash::{Hash, Hasher},
-    ptr::{null, null_mut},
+use crate::{
+    type_not_support,
+    utils::{rank_error, sizeof},
+    ConstPtr, Hardware, MaybeDyn, MutPtr, ParamError, TensorLayout,
 };
+use digit_layout::{types as ty, DigitLayout};
+use std::ptr::{null, null_mut};
 
-pub struct Args<H: Handle> {
+pub struct Args<H: Hardware> {
     pub kv_pair: TensorLayout,
     pub kv_pair_base: MutPtr<H>,
-    pub data: TensorLayout,
-    pub data_base: ConstPtr<H>,
-    pub detail: SampleArgs,
-
-    pub workspace_size: usize,
-    pub workspace: MutPtr<H>,
+    pub logits: TensorLayout,
+    pub logits_base: ConstPtr<H>,
+    pub indices: TensorLayout,
+    pub indices_base: ConstPtr<H>,
+    pub config: SampleArgs,
+    pub seed: f32,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -31,20 +31,21 @@ pub enum SampleArgsError {
     NonPositiveTop,
 }
 
-impl<H: Handle> Args<H> {
-    pub fn new(dt: DigitLayout, n: usize) -> Self {
+impl<H: Hardware> Args<H> {
+    pub fn layout(dt: DigitLayout, n: usize) -> Self {
         Args {
             kv_pair: TensorLayout::new(KVPair::<()>::LAYOUT, &[], &[]),
             kv_pair_base: null_mut(),
-            data: TensorLayout::new(dt, &[n], &[dt.nbytes().unwrap() as _]),
-            data_base: null(),
-            detail: SampleArgs {
+            logits: TensorLayout::new(dt, &[n], &[dt.nbytes().unwrap() as _]),
+            logits_base: null(),
+            indices: TensorLayout::new(ty::U32, &[n], &[ty::U32.nbytes().unwrap() as _]),
+            indices_base: null(),
+            config: SampleArgs {
                 temperature: 0.0,
                 top_p: 0.0,
                 top_k: usize::MAX,
             },
-            workspace_size: usize::MAX,
-            workspace: null_mut(),
+            seed: 0.0,
         }
     }
 }
@@ -86,34 +87,36 @@ impl SampleArgs {
 #[derive(PartialEq, Eq, Debug)]
 pub(super) struct Meta {
     pub dt: DigitLayout,
-    pub n: usize,
+    pub n: MaybeDyn<usize>,
 }
 
-impl Hash for Meta {
-    #[inline(always)]
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.dt.to_u32().hash(state);
-        self.n.hash(state);
-    }
-}
-
-impl<H: Handle> Args<H> {
+impl<H: Hardware> Args<H> {
     pub(super) fn meta(&self) -> Result<Meta, ParamError> {
-        if self.kv_pair.dt() != KVPair::<()>::LAYOUT {
-            return Err(type_not_support("index must be KVpair"));
+        let Self {
+            kv_pair,
+            logits,
+            indices,
+            ..
+        } = self;
+
+        if kv_pair.dt() != KVPair::<()>::LAYOUT {
+            return Err(type_not_support("output must be KVpair"));
         }
 
-        let dt = self.data.dt();
-        if sizeof(dt)? > size_of::<u32>() {
+        let dt_p = logits.dt();
+        if sizeof(dt_p)? > size_of::<u32>() {
             return Err(type_not_support("element too large"));
         }
-        let &[n] = self.data.shape() else {
-            return Err(rank_not_support("logits", 1, self.data.ndim()));
+        if indices.dt() != ty::U32 {
+            return Err(type_not_support("indices must be u32"));
+        }
+        let &[n] = self.logits.shape() else {
+            return Err(rank_error("logits", 1, self.logits.ndim()));
+        };
+        let &[_] = self.indices.shape() else {
+            return Err(rank_error("indices", 1, self.indices.ndim()));
         };
 
-        Ok(Meta {
-            dt,
-            n: *n.get_static().ok_or_else(|| dyn_not_support(""))?,
-        })
+        Ok(Meta { dt: dt_p, n })
     }
 }

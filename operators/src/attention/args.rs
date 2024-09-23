@@ -1,5 +1,5 @@
 ﻿use crate::utils::{dim_distinct, rank_not_support, type_distinct, ConstPtr, MutPtr};
-use common::{Argument, Handle, ParamError, TensorLayout};
+use crate::{Argument, Handle, ParamError, TensorLayout};
 use digit_layout::DigitLayout;
 
 pub struct Args<H: Handle> {
@@ -30,7 +30,7 @@ pub(crate) struct Meta {
 
 impl<H: Handle> From<Meta> for Args<H> {
     fn from(value: Meta) -> Self {
-        use common::dyn_;
+        use crate::dyn_;
         use std::ptr::{null, null_mut};
 
         let Meta {

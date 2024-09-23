@@ -41,7 +41,6 @@ pub enum LaunchErrorKind {
     Param(ParamErrorKind),
     SchemeNotSet,
     SchemeNotCompatible,
-    OutOfWorkspace,
     ExecutionFailed,
 }
 
@@ -86,6 +85,5 @@ pub(super) mod functions {
 
     builder!(LaunchError: scheme_not_set        SchemeNotSet       );
     builder!(LaunchError: scheme_not_compatible SchemeNotCompatible);
-    builder!(LaunchError: out_of_workspace      OutOfWorkspace     );
     builder!(LaunchError: execution_failed      ExecutionFailed    );
 }

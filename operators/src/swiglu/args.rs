@@ -1,8 +1,10 @@
-﻿use crate::utils::{dim_distinct, rank_not_support, type_distinct, ConstPtr, MutPtr};
-use common::{Argument, Handle, ParamError, TensorLayout};
+﻿use crate::{
+    utils::{dim_distinct, rank_error, type_distinct},
+    ConstPtr, Hardware, MaybeDyn, MutPtr, ParamError, TensorLayout,
+};
 use digit_layout::DigitLayout;
 
-pub struct Args<H: Handle> {
+pub struct Args<H: Hardware> {
     pub gate_layout: TensorLayout,
     pub gate_base: MutPtr<H>,
     pub up_layout: TensorLayout,
@@ -11,11 +13,21 @@ pub struct Args<H: Handle> {
 
 pub(super) struct Meta {
     pub dt: DigitLayout,
-    pub n: Argument<usize>,
-    pub d: Argument<usize>,
+    pub n: MaybeDyn<usize>,
+    pub d: MaybeDyn<usize>,
 }
 
-impl<H: Handle> Args<H> {
+impl<H: Hardware> Args<H> {
+    pub fn new_layout(gate_layout: TensorLayout, up_layout: TensorLayout) -> Self {
+        use std::ptr::{null, null_mut};
+        Self {
+            gate_layout,
+            gate_base: null_mut(),
+            up_layout,
+            up_base: null(),
+        }
+    }
+
     pub(super) fn meta(&self) -> Result<Meta, ParamError> {
         let Self {
             gate_layout,
@@ -24,10 +36,10 @@ impl<H: Handle> Args<H> {
         } = self;
 
         let &[gn, gd] = gate_layout.shape() else {
-            return Err(rank_not_support("gate", 2, gate_layout.ndim()));
+            return Err(rank_error("gate", 2, gate_layout.ndim()));
         };
         let &[un, ud] = up_layout.shape() else {
-            return Err(rank_not_support("up", 2, up_layout.ndim()));
+            return Err(rank_error("up", 2, up_layout.ndim()));
         };
 
         Ok(Meta {

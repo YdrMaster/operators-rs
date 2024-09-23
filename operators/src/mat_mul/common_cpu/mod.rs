@@ -1,27 +1,37 @@
 ﻿use super::{args::SchemeLayout, Args, MatMul};
-use crate::common_cpu::Handle as Cpu;
-use common::{type_not_support, LaunchError, QueueOf, SchemeError};
+use crate::{common_cpu::Cpu, type_not_support, ByteOf, LaunchError, QueueAlloc, SchemeError};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 pub struct Operator;
 
 impl MatMul<Cpu> for Operator {}
 
-impl common::Operator for Operator {
-    type Handle = Cpu;
+impl crate::Operator for Operator {
+    type Hardware = Cpu;
     type Args = Args<Cpu>;
 
     #[inline]
-    fn new(_handle: &Self::Handle) -> Self {
+    fn new(_processor: &Self::Hardware) -> Self {
         Self
     }
 
-    #[inline]
-    fn scheme(&mut self, _args: &Self::Args) -> Result<(), SchemeError> {
-        Ok(())
+    fn scheme(
+        &mut self,
+        _args: &Self::Args,
+        _max_workspace_size: usize,
+    ) -> Result<usize, SchemeError> {
+        Ok(0)
     }
 
-    fn launch(&self, args: &Self::Args, _queue: &QueueOf<Self::Handle>) -> Result<(), LaunchError> {
+    fn launch<QA>(
+        &self,
+        args: &Self::Args,
+        _workspace: &mut [ByteOf<Self::Hardware>],
+        _queue_alloc: &QA,
+    ) -> Result<(), LaunchError>
+    where
+        QA: QueueAlloc<Hardware = Self::Hardware>,
+    {
         let SchemeLayout {
             dt,
             ab_swap,

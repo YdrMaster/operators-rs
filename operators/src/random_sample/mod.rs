@@ -9,7 +9,7 @@ mod kv_pair;
 pub use args::{Args, SampleArgs, SampleArgsError};
 pub use kv_pair::KVPair;
 
-crate::utils::op_trait! { RandomSample
-    type Workspace<'ctx>: std::ops::DerefMut<Target = [H::Byte]>;
-    fn workspace<'ctx>(&self, queue: &H::Queue<'ctx>) -> Self::Workspace<'ctx>;
+crate::op_trait! { RandomSample
+    fn build_indices<QA>(n:usize, queue_alloc: &QA) -> QA::DevMem
+        where QA: crate::QueueAlloc<Hardware = Self::Hardware>;
 }

@@ -1,11 +1,11 @@
-﻿use cndrv::{Context, ContextResource, ContextSpore, CurrentCtx, DevByte, Queue};
+use crate::Pool;
+use cndrv::{Context, ContextResource, ContextSpore, CurrentCtx, DevByte, Queue};
 use cnnl::{Cnnl, CnnlSpore};
-use common::Pool;
 use std::sync::Arc;
 
 pub struct Handle(pub(crate) Arc<Internal>);
 
-impl common::Handle for Handle {
+impl crate::Handle for Handle {
     type Byte = DevByte;
     type Queue<'ctx> = Queue<'ctx>;
 }

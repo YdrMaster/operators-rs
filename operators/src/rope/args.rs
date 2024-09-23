@@ -1,8 +1,11 @@
-﻿use crate::utils::{dim_distinct, rank_not_support, ConstPtr, MutPtr};
-use common::{type_not_support, Argument, Handle, ParamError, TensorLayout};
+﻿use crate::{
+    type_not_support,
+    utils::{dim_distinct, rank_error},
+    ConstPtr, Hardware, MaybeDyn, MutPtr, ParamError, TensorLayout,
+};
 use digit_layout::DigitLayout;
 
-pub struct Args<H: Handle> {
+pub struct Args<H: Hardware> {
     pub t_layout: TensorLayout,
     pub t_base: MutPtr<H>,
     pub p_layout: TensorLayout,
@@ -17,11 +20,11 @@ pub struct Args<H: Handle> {
 pub(super) struct Meta {
     pub dt_t: DigitLayout,
     pub dt_p: DigitLayout,
-    pub nt: Argument<usize>,
-    pub dh: Argument<usize>,
+    pub nt: MaybeDyn<usize>,
+    pub dh: MaybeDyn<usize>,
 }
 
-impl<H: Handle> Args<H> {
+impl<H: Hardware> Args<H> {
     pub(super) fn meta(&self) -> Result<Meta, ParamError> {
         let Self {
             t_layout,
@@ -32,16 +35,16 @@ impl<H: Handle> Args<H> {
         } = self;
 
         let &[nt, _, dh] = t_layout.shape() else {
-            return Err(rank_not_support("t", 3, t_layout.ndim()));
+            return Err(rank_error("t", 3, t_layout.ndim()));
         };
         let &[np] = p_layout.shape() else {
-            return Err(rank_not_support("p", 1, p_layout.ndim()));
+            return Err(rank_error("p", 1, p_layout.ndim()));
         };
         let &[_, dh_sin] = sin_layout.shape() else {
-            return Err(rank_not_support("sin", 2, sin_layout.ndim()));
+            return Err(rank_error("sin", 2, sin_layout.ndim()));
         };
         let &[_, dh_cos] = cos_layout.shape() else {
-            return Err(rank_not_support("cos", 2, cos_layout.ndim()));
+            return Err(rank_error("cos", 2, cos_layout.ndim()));
         };
 
         let dt_t = t_layout.dt();

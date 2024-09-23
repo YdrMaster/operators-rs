@@ -1,8 +1,10 @@
-﻿use crate::utils::{dim_distinct, rank_not_support, type_distinct, ConstPtr, MutPtr};
-use common::{Argument, Handle, ParamError, TensorLayout};
+﻿use crate::{
+    utils::{dim_distinct, rank_error, type_distinct},
+    ConstPtr, Hardware, MaybeDyn, MutPtr, ParamError, TensorLayout,
+};
 use digit_layout::DigitLayout;
 
-pub struct Args<H: Handle> {
+pub struct Args<H: Hardware> {
     pub y_layout: TensorLayout,
     pub y_base: MutPtr<H>,
     pub x_layout: TensorLayout,
@@ -15,11 +17,11 @@ pub struct Args<H: Handle> {
 pub(super) struct Meta {
     pub dt_w: DigitLayout,
     pub dt_a: DigitLayout,
-    pub n: Argument<usize>,
-    pub d: Argument<usize>,
+    pub n: MaybeDyn<usize>,
+    pub d: MaybeDyn<usize>,
 }
 
-impl<H: Handle> Args<H> {
+impl<H: Hardware> Args<H> {
     pub(super) fn meta(&self) -> Result<Meta, ParamError> {
         let Self {
             y_layout,
@@ -29,13 +31,13 @@ impl<H: Handle> Args<H> {
         } = self;
 
         let &[ny, dy] = y_layout.shape() else {
-            return Err(rank_not_support("y", 2, y_layout.ndim()));
+            return Err(rank_error("y", 2, y_layout.ndim()));
         };
         let &[nx, dx] = x_layout.shape() else {
-            return Err(rank_not_support("x", 2, x_layout.ndim()));
+            return Err(rank_error("x", 2, x_layout.ndim()));
         };
         let &[dw] = w_layout.shape() else {
-            return Err(rank_not_support("w", 1, w_layout.ndim()));
+            return Err(rank_error("w", 1, w_layout.ndim()));
         };
 
         Ok(Meta {

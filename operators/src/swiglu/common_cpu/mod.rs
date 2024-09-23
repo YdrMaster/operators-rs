@@ -1,6 +1,6 @@
 ﻿use super::{args::Meta, Args, Swiglu};
-use crate::{common_cpu::Handle as Cpu, utils::get_static};
-use common::{LaunchError, QueueOf, SchemeError};
+use crate::{common_cpu::Cpu, get_static};
+use crate::{LaunchError, SchemeError};
 use half::f16;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
@@ -8,22 +8,32 @@ pub struct Operator;
 
 impl Swiglu<Cpu> for Operator {}
 
-impl common::Operator for Operator {
-    type Handle = Cpu;
+impl crate::Operator for Operator {
+    type Hardware = Cpu;
     type Args = Args<Cpu>;
 
-    #[inline]
-    fn new(_handle: &Self::Handle) -> Self {
+    fn new(_processor: &Self::Hardware) -> Self {
         Self
     }
 
-    #[inline]
-    fn scheme(&mut self, args: &Self::Args) -> Result<(), SchemeError> {
+    fn scheme(
+        &mut self,
+        args: &Self::Args,
+        _max_workspace_size: usize,
+    ) -> Result<usize, SchemeError> {
         let _meta = args.meta()?;
-        Ok(())
+        Ok(0)
     }
 
-    fn launch(&self, args: &Self::Args, _queue: &QueueOf<Self::Handle>) -> Result<(), LaunchError> {
+    fn launch<QA>(
+        &self,
+        args: &Self::Args,
+        _workspace: &mut [crate::ByteOf<Self::Hardware>],
+        _queue_alloc: &QA,
+    ) -> Result<(), LaunchError>
+    where
+        QA: crate::QueueAlloc<Hardware = Self::Hardware>,
+    {
         let Meta { dt, n, d } = args.meta()?;
         let Args {
             gate_layout,

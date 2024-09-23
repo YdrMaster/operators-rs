@@ -1,12 +1,15 @@
-﻿use crate::utils::{sizeof, type_distinct, ConstPtr, MutPtr};
-use common::{
+﻿use crate::{
     dyn_not_support, rank_not_support, shape_mismatch, shape_not_support, strides_not_support,
-    Argument, Handle, ParamError, TensorLayout,
+    utils::{sizeof, type_distinct},
+    ConstPtr, Hardware, MaybeDyn, MutPtr, ParamError, TensorLayout,
 };
 use digit_layout::DigitLayout;
-use std::mem::swap;
+use std::{
+    mem::swap,
+    ptr::{null, null_mut},
+};
 
-pub struct Args<H: Handle> {
+pub struct Args<H: Hardware> {
     pub c_layout: TensorLayout,
     pub c_base: MutPtr<H>,
     pub beta: f32,
@@ -39,7 +42,26 @@ pub(super) struct SchemeLayout {
     pub b_ld: isize,
 }
 
-impl<H: Handle> Args<H> {
+impl<H: Hardware> Args<H> {
+    pub fn new_null(
+        c_layout: TensorLayout,
+        beta: f32,
+        a_layout: TensorLayout,
+        b_layout: TensorLayout,
+        alpha: f32,
+    ) -> Self {
+        Self {
+            c_layout,
+            c_base: null_mut(),
+            beta,
+            a_layout,
+            a_base: null(),
+            b_layout,
+            b_base: null(),
+            alpha,
+        }
+    }
+
     pub(super) fn layout(&self) -> Result<SchemeLayout, ParamError> {
         let Self {
             c_layout,
@@ -114,10 +136,10 @@ impl TryFrom<&TensorLayout> for Matrix {
     type Error = ParamError;
 
     fn try_from(tensor: &TensorLayout) -> Result<Self, Self::Error> {
-        let Some(shape) = Argument::lock(tensor.shape()) else {
+        let Some(shape) = MaybeDyn::get_all(tensor.shape()) else {
             return Err(dyn_not_support(""));
         };
-        let Some(strides) = Argument::lock(tensor.strides()) else {
+        let Some(strides) = MaybeDyn::get_all(tensor.strides()) else {
             return Err(dyn_not_support(""));
         };
 

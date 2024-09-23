@@ -4,7 +4,7 @@ mod operator;
 pub use args::Args;
 pub(crate) use args::Meta;
 
-crate::utils::op_trait! { Attention
+crate::op_trait! { Attention
     fn workspace_size(&self) -> Option<usize>;
 }
 
