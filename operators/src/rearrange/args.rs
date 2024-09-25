@@ -1,7 +1,7 @@
 ﻿use crate::{
     rank_mismatch, shape_mismatch, shape_not_support, static_from,
     utils::{sizeof, type_distinct},
-    ConstPtr, Hardware, MutPtr, ParamError, TensorLayout,
+    ConstPtr, Hardware, MutPtr, SchemeError, TensorLayout,
 };
 use std::{cmp::Ordering, iter::zip};
 
@@ -17,7 +17,7 @@ pub struct Args<H: Hardware> {
 pub(super) struct Scheme(Vec<isize>);
 
 impl Scheme {
-    pub fn new<H: Hardware>(args: &Args<H>) -> Result<Self, ParamError> {
+    pub fn new<H: Hardware>(args: &Args<H>) -> Result<Self, SchemeError> {
         let Args {
             dst_layout: dst_,
             src_layout: src_,

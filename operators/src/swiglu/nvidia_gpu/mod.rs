@@ -4,18 +4,17 @@ use crate::{
     nvidia_gpu::{Gpu, Handle, ModuleBox},
     utils::{gcd, sizeof},
 };
-use crate::{scheme_not_set, strides_not_support, type_not_support, LaunchError, SchemeError};
+use crate::{strides_not_support, type_not_support, LaunchError, SchemeError};
 use digit_layout::types::F16;
 use std::{ffi::CString, sync::Arc};
 
 pub struct Operator {
-    handle: Arc<Handle>,
+    _handle: Arc<Handle>,
     max_threads_block: usize,
-    scheme: Option<Arc<ModuleBox>>,
+    module: Arc<ModuleBox>,
 }
 
 const NAME: &str = "swiglu_f16";
-const CODE: &str = include_str!("swiglu.cuh");
 
 impl Swiglu<Gpu> for Operator {}
 
@@ -24,10 +23,13 @@ impl crate::Operator for Operator {
     type Args = Args<Gpu>;
 
     fn new(processor: &Self::Hardware) -> Self {
+        let device = processor.0.device();
         Self {
-            handle: processor.0.clone(),
-            max_threads_block: processor.0.device().block_limit().max_threads,
-            scheme: None,
+            _handle: processor.0.clone(),
+            max_threads_block: device.block_limit().max_threads,
+            module: processor
+                .0
+                .compile_kernel(NAME, device.compute_capability(), format_code),
         }
     }
 
@@ -36,26 +38,12 @@ impl crate::Operator for Operator {
         args: &Self::Args,
         _max_workspace_size: usize,
     ) -> Result<usize, SchemeError> {
-        let Meta { dt, n: _, d: _ } = args.meta()?;
-        if dt != F16 {
-            todo!()
+        let Meta { dt, .. } = args.meta()?;
+        if dt == F16 {
+            Ok(0)
+        } else {
+            Err(type_not_support(""))
         }
-        let cc = self.handle.device().compute_capability();
-        self.scheme = Some(self.handle.compile_kernel(NAME, cc, || {
-            format!(
-                r#"{CODE}
-
-extern "C" __global__ void {NAME}(
-    half *__restrict__ gate,
-    int const stride_gate,
-    half const *__restrict__ up,
-    int const stride_up
-){{
-    swiglu(gate, stride_gate, up, stride_up);
-}}"#
-            )
-        }));
-        Ok(0)
     }
 
     fn launch<QA>(
@@ -85,10 +73,6 @@ extern "C" __global__ void {NAME}(
             return Err(type_not_support("").into());
         }
 
-        let Some(m) = self.scheme.as_ref() else {
-            return Err(scheme_not_set(""));
-        };
-
         get_static! {
               n   d
             sgn sgd
@@ -105,7 +89,7 @@ extern "C" __global__ void {NAME}(
         let params = dev_mempool::cuda::params![gate_base, sg, up_base, su];
         let block = gcd(self.max_threads_block, d);
 
-        m.launch(
+        self.module.launch(
             CString::new(NAME).unwrap(),
             (n as _, (d / block) as _),
             block as u32,
@@ -117,9 +101,21 @@ extern "C" __global__ void {NAME}(
     }
 }
 
-#[test]
-fn test() {}
+fn format_code() -> String {
+    const CODE: &str = include_str!("swiglu.cuh");
+    format!(
+        r#"{CODE}
 
+extern "C" __global__ void {NAME}(
+    half *__restrict__ gate,
+    int const stride_gate,
+    half const *__restrict__ up,
+    int const stride_up
+){{
+    swiglu(gate, stride_gate, up, stride_up);
+}}"#
+    )
+}
 #[cfg(test)]
 mod test {
     use super::{Args, Gpu, Operator};
@@ -169,11 +165,10 @@ mod test {
         let mut op = Operator::new(&gpu);
         op.scheme(&dyn_args(F16), 0).unwrap();
 
-        let module = op.scheme.as_ref().unwrap();
         gpu.apply(|ctx| {
             println!(
                 "{NAME}\n{}",
-                module.load(CString::new(NAME).unwrap(), ctx).info()
+                op.module.load(CString::new(NAME).unwrap(), ctx).info()
             );
         })
     }

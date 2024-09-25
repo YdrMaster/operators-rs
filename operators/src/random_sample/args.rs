@@ -2,7 +2,7 @@
 use crate::{
     type_not_support,
     utils::{rank_error, sizeof},
-    ConstPtr, Hardware, MaybeDyn, MutPtr, ParamError, TensorLayout,
+    ConstPtr, Hardware, MaybeDyn, MutPtr, SchemeError, TensorLayout,
 };
 use digit_layout::{types as ty, DigitLayout};
 use std::ptr::{null, null_mut};
@@ -91,7 +91,7 @@ pub(super) struct Meta {
 }
 
 impl<H: Hardware> Args<H> {
-    pub(super) fn meta(&self) -> Result<Meta, ParamError> {
+    pub(super) fn meta(&self) -> Result<Meta, SchemeError> {
         let Self {
             kv_pair,
             logits,

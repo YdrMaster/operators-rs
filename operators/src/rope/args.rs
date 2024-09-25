@@ -1,7 +1,7 @@
 ﻿use crate::{
     type_not_support,
     utils::{dim_distinct, rank_error},
-    ConstPtr, Hardware, MaybeDyn, MutPtr, ParamError, TensorLayout,
+    ConstPtr, Hardware, MaybeDyn, MutPtr, SchemeError, TensorLayout,
 };
 use digit_layout::DigitLayout;
 
@@ -26,7 +26,7 @@ pub(super) struct Meta {
 }
 
 impl<H: Hardware> Args<H> {
-    pub(super) fn meta(&self) -> Result<Meta, ParamError> {
+    pub(super) fn meta(&self) -> Result<Meta, SchemeError> {
         let Self {
             t_layout,
             p_layout,

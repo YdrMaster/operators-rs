@@ -1,7 +1,7 @@
 ﻿use crate::{
     dyn_not_support, rank_not_support, shape_mismatch, shape_not_support, strides_not_support,
     utils::{sizeof, type_distinct},
-    ConstPtr, Hardware, MaybeDyn, MutPtr, ParamError, TensorLayout,
+    ConstPtr, Hardware, MaybeDyn, MutPtr, SchemeError, TensorLayout,
 };
 use digit_layout::DigitLayout;
 use std::{
@@ -62,7 +62,7 @@ impl<H: Hardware> Args<H> {
         }
     }
 
-    pub(super) fn layout(&self) -> Result<SchemeLayout, ParamError> {
+    pub(super) fn layout(&self) -> Result<SchemeLayout, SchemeError> {
         let Self {
             c_layout,
             a_layout,
@@ -133,7 +133,7 @@ struct Matrix {
 }
 
 impl TryFrom<&TensorLayout> for Matrix {
-    type Error = ParamError;
+    type Error = SchemeError;
 
     fn try_from(tensor: &TensorLayout) -> Result<Self, Self::Error> {
         let Some(shape) = MaybeDyn::get_all(tensor.shape()) else {
@@ -178,7 +178,7 @@ impl Matrix {
         self.batch == 1 || self.batch == batch
     }
     #[inline(always)]
-    fn ld_trans(&mut self) -> Result<(isize, bool), ParamError> {
+    fn ld_trans(&mut self) -> Result<(isize, bool), SchemeError> {
         match (self.rs, self.cs) {
             (1, cs) => Ok((cs, false)),
             (rs, 1) => Ok((rs, true)),

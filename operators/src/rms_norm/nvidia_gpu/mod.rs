@@ -2,10 +2,10 @@
 use crate::{
     get_static,
     nvidia_gpu::{dt_name, Gpu, Handle, ModuleBox},
+    shape_not_support, strides_not_support,
     utils::sizeof,
-    ByteOf, ParamError, QueueAlloc, SchemeDiversity,
+    ByteOf, LaunchError, QueueAlloc, SchemeDiversity, SchemeError,
 };
-use crate::{shape_not_support, strides_not_support, LaunchError, SchemeError};
 use digit_layout::DigitLayout;
 use lru::LruCache;
 use std::{
@@ -139,7 +139,7 @@ impl Scheme {
     pub fn new(
         handle: &Arc<Handle>,
         SchemeKey { dt_a, dt_w, d }: SchemeKey,
-    ) -> Result<Self, ParamError> {
+    ) -> Result<Self, SchemeError> {
         let device = handle.device();
         let cc = device.compute_capability();
         let block_size = device.block_limit().max_threads;

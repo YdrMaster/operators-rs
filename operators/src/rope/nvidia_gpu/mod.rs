@@ -2,7 +2,7 @@
 use crate::{
     get_static,
     nvidia_gpu::{Gpu, Handle, ModuleBox},
-    scheme_not_set, shape_not_support, strides_not_support, type_not_support,
+    shape_not_support, strides_not_support, type_not_support,
     utils::sizeof,
     LaunchError, SchemeError,
 };
@@ -10,12 +10,11 @@ use digit_layout::types::{F16, U32};
 use std::{ffi::CString, sync::Arc};
 
 pub struct Operator {
-    handle: Arc<Handle>,
+    _handle: Arc<Handle>,
     max_threads_block: usize,
-    scheme: Option<Arc<ModuleBox>>,
+    module: Arc<ModuleBox>,
 }
 const NAME: &str = "rope_f16";
-const CODE: &str = include_str!("rope.cuh");
 
 impl Rope<Gpu> for Operator {}
 
@@ -24,10 +23,11 @@ impl crate::Operator for Operator {
     type Args = Args<Gpu>;
 
     fn new(processor: &Self::Hardware) -> Self {
+        let cc = processor.0.device().compute_capability();
         Self {
-            handle: processor.0.clone(),
+            _handle: processor.0.clone(),
             max_threads_block: processor.0.device().block_limit().max_threads,
-            scheme: None,
+            module: processor.0.compile_kernel(NAME, cc, format_code),
         }
     }
 
@@ -37,28 +37,11 @@ impl crate::Operator for Operator {
         _max_workspace_size: usize,
     ) -> Result<usize, SchemeError> {
         let Meta { dt_t, dt_p, .. } = args.meta()?;
-
-        if dt_t != F16 || dt_p != U32 {
-            todo!()
+        if dt_t == F16 || dt_p == U32 {
+            Ok(0)
+        } else {
+            Err(type_not_support(""))
         }
-
-        let cc = self.handle.device().compute_capability();
-        self.scheme = Some(self.handle.compile_kernel(NAME, cc, || {
-            format!(
-                r#"{CODE}
-
-extern "C" __global__ void {NAME}(
-    half2 *__restrict__ t,
-    int const stride_token,
-    int const stride_head,
-    unsigned int const *__restrict__ pos,
-    float theta
-){{
-    padding(t, stride_token, stride_head, pos, theta);
-}}"#
-            )
-        }));
-        Ok(0)
     }
 
     fn launch<QA>(
@@ -77,10 +60,6 @@ extern "C" __global__ void {NAME}(
         if dt_t != F16 || dt_p != U32 {
             return Err(type_not_support("").into());
         }
-
-        let Some(m) = self.scheme.as_ref() else {
-            return Err(scheme_not_set(""));
-        };
 
         let Args {
             t_layout,
@@ -124,7 +103,7 @@ extern "C" __global__ void {NAME}(
         let nh_l = (1..=max_nh_l).rev().find(|nhl| nh % nhl == 0).unwrap();
         let nh_h = nh / nh_l;
 
-        m.launch(
+        self.module.launch(
             CString::new(NAME).unwrap(),
             (nt as _, nh_h as _),
             (nh_l as _, dh as _),
@@ -134,6 +113,23 @@ extern "C" __global__ void {NAME}(
         );
         Ok(())
     }
+}
+
+fn format_code() -> String {
+    const CODE: &str = include_str!("rope.cuh");
+    format!(
+        r#"{CODE}
+
+extern "C" __global__ void {NAME}(
+    half2 *__restrict__ t,
+    int const stride_token,
+    int const stride_head,
+    unsigned int const *__restrict__ pos,
+    float theta
+){{
+    padding(t, stride_token, stride_head, pos, theta);
+}}"#
+    )
 }
 
 #[cfg(test)]
@@ -198,11 +194,10 @@ mod test {
         let mut op = Operator::new(&gpu);
         op.scheme(&dyn_args(F16, U32), 0).unwrap();
 
-        let module = op.scheme.as_ref().unwrap();
         gpu.apply(|ctx| {
             println!(
                 "{NAME}\n{}",
-                module.load(CString::new(NAME).unwrap(), ctx).info()
+                op.module.load(CString::new(NAME).unwrap(), ctx).info()
             );
         })
     }

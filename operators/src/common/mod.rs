@@ -4,10 +4,7 @@ mod pool;
 mod tensor;
 mod workspace;
 
-pub use error::{
-    functions::*, LaunchError, LaunchErrorKind, ParamError, ParamErrorKind, SchemeError,
-    SchemeErrorKind,
-};
+pub use error::{functions::*, LaunchError, LaunchErrorKind, SchemeError, SchemeErrorKind};
 pub use maybe_dyn::{dyn_, DynVal, MaybeDyn};
 pub use pool::Pool;
 pub use tensor::TensorLayout;
@@ -110,7 +107,7 @@ mod traits {
 
 pub mod utils {
     use super::{
-        rank_not_support, shape_mismatch, type_mismatch, type_not_support, MaybeDyn, ParamError,
+        rank_not_support, shape_mismatch, type_mismatch, type_not_support, MaybeDyn, SchemeError,
     };
     use digit_layout::DigitLayout;
 
@@ -126,13 +123,13 @@ pub mod utils {
     }
 
     #[inline]
-    pub(crate) fn sizeof(dt: DigitLayout) -> Result<usize, ParamError> {
+    pub(crate) fn sizeof(dt: DigitLayout) -> Result<usize, SchemeError> {
         dt.nbytes()
             .ok_or_else(|| type_not_support(format!("{dt} not supported")))
     }
 
     #[inline]
-    pub(crate) fn type_distinct(pairs: &[DigitLayout]) -> Result<DigitLayout, ParamError> {
+    pub(crate) fn type_distinct(pairs: &[DigitLayout]) -> Result<DigitLayout, SchemeError> {
         let [dt, tail @ ..] = pairs else {
             unreachable!("pairs empty");
         };
@@ -144,12 +141,12 @@ pub mod utils {
     }
 
     #[inline]
-    pub(crate) fn rank_error(arg: &str, expected: usize, actual: usize) -> ParamError {
+    pub(crate) fn rank_error(arg: &str, expected: usize, actual: usize) -> SchemeError {
         rank_not_support(format!("{arg}.ndim = {actual}, {expected} expected"))
     }
 
     #[inline]
-    pub(crate) fn dim_distinct(args: &[MaybeDyn<usize>]) -> Result<MaybeDyn<usize>, ParamError> {
+    pub(crate) fn dim_distinct(args: &[MaybeDyn<usize>]) -> Result<MaybeDyn<usize>, SchemeError> {
         MaybeDyn::merge(args)
             .copied()
             .map_err(|_| shape_mismatch(format!("{args:?} are not distinct")))

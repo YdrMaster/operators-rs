@@ -1,5 +1,5 @@
 ﻿use crate::MutPtr;
-use crate::{rank_not_support, Hardware, ParamError, TensorLayout};
+use crate::{rank_not_support, Hardware, SchemeError, TensorLayout};
 use digit_layout::DigitLayout;
 
 pub struct Args<H: Hardware> {
@@ -12,7 +12,7 @@ pub(super) struct Meta {
 }
 
 impl<H: Hardware> Args<H> {
-    pub(super) fn meta(&self) -> Result<Meta, ParamError> {
+    pub(super) fn meta(&self) -> Result<Meta, SchemeError> {
         let dt = self.att_layout.dt();
         if self.att_layout.ndim() != 3 {
             return Err(rank_not_support(""));

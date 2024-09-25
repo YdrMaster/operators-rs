@@ -2,10 +2,8 @@
 use crate::nvidia_gpu::{Gpu, Handle, ModuleBox};
 use crate::utils::sizeof;
 use crate::{
-    get_static, scheme_not_set, strides_not_support, type_not_support, ByteOf, LaunchError,
-    ParamError, QueueAlloc, SchemeError,
+    get_static, strides_not_support, type_not_support, ByteOf, LaunchError, QueueAlloc, SchemeError,
 };
-use dev_mempool::cuda::Version;
 use digit_layout::types::F16;
 use std::{
     ffi::{c_float, CString},
@@ -14,8 +12,8 @@ use std::{
 };
 
 pub struct Operator {
-    handle: Arc<Handle>,
-    scheme: Option<(Scheme, Arc<ModuleBox>)>,
+    _handle: Arc<Handle>,
+    scheme: Scheme,
 }
 
 impl FusedSoftmax<Gpu> for Operator {}
@@ -26,8 +24,8 @@ impl crate::Operator for Operator {
 
     fn new(processor: &Self::Hardware) -> Self {
         Self {
-            handle: processor.0.clone(),
-            scheme: None,
+            _handle: processor.0.clone(),
+            scheme: Scheme::new(&processor.0),
         }
     }
 
@@ -37,11 +35,11 @@ impl crate::Operator for Operator {
         _max_workspace_size: usize,
     ) -> Result<usize, SchemeError> {
         let Meta { dt } = args.meta()?;
-        if dt != F16 {
-            todo!()
+        if dt == F16 {
+            Ok(0)
+        } else {
+            Err(type_not_support(""))
         }
-        self.scheme_(self.handle.device().compute_capability())?;
-        Ok(0)
     }
 
     fn launch<T>(
@@ -69,10 +67,6 @@ impl crate::Operator for Operator {
             return Err(type_not_support("").into());
         }
 
-        let Some((scheme, m)) = self.scheme.as_ref() else {
-            return Err(scheme_not_set(""));
-        };
-
         get_static! {
             nh seq_len att_len
             sh ss      sa
@@ -84,15 +78,15 @@ impl crate::Operator for Operator {
         };
 
         let grid_dims = (nh as u32, seq_len as u32);
-        let block_size = scheme.max_threads_block as u32;
+        let block_size = self.scheme.max_threads_block as u32;
         let sh = (sh / unit) as i32;
         let ss = (ss / unit) as i32;
         let att_len = att_len as u32;
         let params = dev_mempool::cuda::params![att_base, 0i32, sh, ss, att_len];
 
         if att_len <= block_size {
-            m.launch(
-                &scheme.padding,
+            self.scheme.module.launch(
+                &self.scheme.padding,
                 grid_dims,
                 att_len,
                 params.as_ptr(),
@@ -102,8 +96,8 @@ impl crate::Operator for Operator {
         } else {
             let num_items_thread = (att_len + block_size - 1) / block_size;
             let smem = (num_items_thread * block_size) as usize;
-            m.launch(
-                &scheme.folding,
+            self.scheme.module.launch(
+                &self.scheme.folding,
                 grid_dims,
                 block_size,
                 params.as_ptr(),
@@ -120,18 +114,22 @@ struct Scheme {
     max_threads_block: usize,
     padding: CString,
     folding: CString,
+    module: Arc<ModuleBox>,
 }
 
-const NAME: &str = "fused_softmax";
-const CODE: &str = include_str!("fused_softmax.cuh");
-impl Operator {
-    fn scheme_(&mut self, cc: Version) -> Result<(), ParamError> {
+impl Scheme {
+    fn new(handle: &Arc<Handle>) -> Self {
+        const NAME: &str = "fused_softmax";
+        const CODE: &str = include_str!("fused_softmax.cuh");
+
         let mask = "AttentionCausualMask";
-        let max_threads_block = self.handle.device().block_limit().max_threads;
+        let device = handle.device();
+        let max_threads_block = device.block_limit().max_threads;
+        let cc = device.compute_capability();
         let padding = format!("fused_softmax_padding_{max_threads_block}");
         let folding = format!("fused_softmax_folding_{max_threads_block}");
 
-        let module = self.handle.compile_kernel(NAME, cc, || {
+        let module = handle.compile_kernel(NAME, cc, || {
             format!(
                 r#"{CODE}
 
@@ -159,15 +157,12 @@ extern "C" __global__ void {folding}(
 "#
             )
         });
-        self.scheme = Some((
-            Scheme {
-                max_threads_block,
-                padding: CString::new(padding).unwrap(),
-                folding: CString::new(folding).unwrap(),
-            },
+        Self {
+            max_threads_block,
+            padding: CString::new(padding).unwrap(),
+            folding: CString::new(folding).unwrap(),
             module,
-        ));
-        Ok(())
+        }
     }
 }
 
@@ -209,13 +204,12 @@ mod test {
         let mut op = Operator::new(&gpu);
         op.scheme(&dyn_args(ty::F16), 0).unwrap();
 
-        let (scheme, module) = op.scheme.as_ref().unwrap();
         gpu.apply(|ctx| {
             println!("============================");
-            println!("{}", scheme.padding.to_str().unwrap());
-            println!("{}", module.load(&scheme.padding, ctx).info());
-            println!("{}", scheme.folding.to_str().unwrap());
-            println!("{}", module.load(&scheme.folding, ctx).info());
+            println!("{}", op.scheme.padding.to_str().unwrap());
+            println!("{}", op.scheme.module.load(&op.scheme.padding, ctx).info());
+            println!("{}", op.scheme.folding.to_str().unwrap());
+            println!("{}", op.scheme.module.load(&op.scheme.folding, ctx).info());
         })
     }
 
