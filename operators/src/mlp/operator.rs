@@ -1,7 +1,7 @@
 ﻿use super::{args::Meta, Args, Mlp};
 use crate::{
     dyn_, get_static, mat_mul, swiglu, utils::sizeof, ByteOf, Hardware, LaunchError, QueueAlloc,
-    SchemeError, TensorLayout, Workspace,
+    SchemeError, TensorLayout, Workspace, WorkspaceCollector,
 };
 use ndarray_layout::{ArrayLayout, Endian::BigEndian};
 use std::marker::PhantomData;
@@ -60,27 +60,32 @@ where
 
         // 如果不能保证 nt di 已知，用任意值初始化算子
         let (Some(&nt), Some(&di)) = (nt.get_static(), di.get_static()) else {
+            let mut wc = WorkspaceCollector::new();
+
             let layout = TensorLayout::new_dyn(dt, &[dyn_(); 2], &[dyn_(); 2]);
-            self.mat_mul.scheme(
+            wc.push_sub(self.mat_mul.scheme(
                 &mat_mul::Args::new_null(layout.clone(), 1., layout.clone(), layout, 1.),
                 max_workspace_size,
-            )?;
+            )?);
 
             let layout = TensorLayout::new_dyn(dt, &[nt, di], &[dyn_(); 2]);
-            self.swiglu.scheme(
+            wc.push_sub(self.swiglu.scheme(
                 &swiglu::Args::new_layout(layout.clone(), layout),
                 max_workspace_size,
-            )?;
+            )?);
 
-            return Ok(0);
+            return Ok(wc.cauculate(max_workspace_size));
         };
 
         let ele = sizeof(dt)?;
         let gate_up_layout = ArrayLayout::<3>::new_contiguous(&[nt, di * 2], BigEndian, ele);
         let gate_up_size = nt * di * 2 * ele;
-        let max_workspace_size = max_workspace_size.saturating_sub(gate_up_size);
+        let workspace_size = max_workspace_size.saturating_sub(gate_up_size);
 
-        let gate_up_workspace = self.mat_mul.scheme(
+        let mut wc = WorkspaceCollector::new();
+        wc.push_base(gate_up_size);
+
+        wc.push_sub(self.mat_mul.scheme(
             &mat_mul::Args {
                 c_layout: TensorLayout::new(dt, gate_up_layout.shape(), gate_up_layout.strides()),
                 c_base: null_mut(),
@@ -91,22 +96,22 @@ where
                 b_base: *w_gate_up_base,
                 alpha: 1.,
             },
-            max_workspace_size,
-        )?;
+            workspace_size,
+        )?);
 
         let up_layout = gate_up_layout.tile_be(1, &[2, di]).index(1, 1);
         let swiglu_layout = TensorLayout::new(dt, up_layout.shape(), up_layout.strides());
-        let swiglu_workspace = self.swiglu.scheme(
+        wc.push_sub(self.swiglu.scheme(
             &swiglu::Args {
                 gate_layout: swiglu_layout.clone(),
                 gate_base: null_mut(),
                 up_layout: swiglu_layout.clone(),
                 up_base: null_mut(),
             },
-            max_workspace_size,
-        )?;
+            workspace_size,
+        )?);
 
-        let down_workspace = self.mat_mul.scheme(
+        wc.push_sub(self.mat_mul.scheme(
             &mat_mul::Args {
                 c_layout: y_layout.clone(),
                 c_base: *y_base,
@@ -117,21 +122,10 @@ where
                 b_base: *w_down_base,
                 alpha: *down_alpha,
             },
-            max_workspace_size,
-        )?;
+            workspace_size,
+        )?);
 
-        let workspace_size = gate_up_size
-            + [gate_up_workspace, swiglu_workspace, down_workspace]
-                .into_iter()
-                .max()
-                .unwrap();
-        Ok(if workspace_size <= max_workspace_size {
-            workspace_size
-        } else if gate_up_size <= max_workspace_size {
-            gate_up_size
-        } else {
-            0
-        })
+        Ok(wc.cauculate(max_workspace_size))
     }
 
     fn launch<QA>(

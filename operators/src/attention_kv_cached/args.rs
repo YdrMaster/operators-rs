@@ -1,8 +1,10 @@
-﻿use crate::utils::{dim_distinct, rank_not_support, type_distinct, ConstPtr, MutPtr};
-use crate::{Argument, Handle, ParamError, TensorLayout};
+﻿use crate::{
+    utils::{dim_distinct, rank_error, type_distinct},
+    ConstPtr, Hardware, MaybeDyn, MutPtr, SchemeError, TensorLayout,
+};
 use digit_layout::DigitLayout;
 
-pub struct Args<H: Handle> {
+pub struct Args<H: Hardware> {
     pub q_layout: TensorLayout,
     pub q_base: MutPtr<H>,
 
@@ -21,23 +23,47 @@ pub struct Args<H: Handle> {
     pub v_cache_layout: TensorLayout,
     pub v_cache_base: MutPtr<H>,
 
-    pub pos: usize,
-
-    pub workspace_size: usize,
-    pub workspace: MutPtr<H>,
+    pub pos: MaybeDyn<usize>,
 }
 
 pub(super) struct Meta {
     pub dt: DigitLayout,
-    pub nh: Argument<usize>,
-    pub nkvh: Argument<usize>,
-    pub dh: Argument<usize>,
+    pub nh: MaybeDyn<usize>,
+    pub nkvh: MaybeDyn<usize>,
+    pub dh: MaybeDyn<usize>,
 
-    pub seq: Argument<usize>,
+    pub seq: MaybeDyn<usize>,
 }
 
-impl<H: Handle> Args<H> {
-    pub(super) fn meta(&self) -> Result<Meta, ParamError> {
+impl<H: Hardware> Args<H> {
+    pub fn new_null(
+        q_layout: TensorLayout,
+        k_layout: TensorLayout,
+        v_layout: TensorLayout,
+        o_layout: TensorLayout,
+        k_cache_layout: TensorLayout,
+        v_cache_layout: TensorLayout,
+        pos: MaybeDyn<usize>,
+    ) -> Self {
+        use std::ptr::{null, null_mut};
+        Self {
+            q_layout,
+            q_base: null_mut(),
+            k_layout,
+            k_base: null(),
+            v_layout,
+            v_base: null(),
+            o_layout,
+            o_base: null_mut(),
+            k_cache_layout,
+            k_cache_base: null_mut(),
+            v_cache_layout,
+            v_cache_base: null_mut(),
+            pos,
+        }
+    }
+
+    pub(super) fn meta(&self) -> Result<Meta, SchemeError> {
         let Self {
             q_layout,
             k_layout,
@@ -49,22 +75,22 @@ impl<H: Handle> Args<H> {
         } = self;
 
         let &[nh_q, seq_q, dh_q] = q_layout.shape() else {
-            return Err(rank_not_support("q", 3, q_layout.ndim()));
+            return Err(rank_error("q", 3, q_layout.ndim()));
         };
         let &[nkvh_k, seq_k, dh_k] = k_layout.shape() else {
-            return Err(rank_not_support("k", 3, k_layout.ndim()));
+            return Err(rank_error("k", 3, k_layout.ndim()));
         };
         let &[nkvh_v, seq_v, dh_v] = v_layout.shape() else {
-            return Err(rank_not_support("v", 3, v_layout.ndim()));
+            return Err(rank_error("v", 3, v_layout.ndim()));
         };
         let &[nh_o, seq_o, dh_o] = o_layout.shape() else {
-            return Err(rank_not_support("o", 3, o_layout.ndim()));
+            return Err(rank_error("o", 3, o_layout.ndim()));
         };
         let &[nkvh_kc, _buf, dh_kc] = k_cache_layout.shape() else {
-            return Err(rank_not_support("k_cache", 3, k_cache_layout.ndim()));
+            return Err(rank_error("k_cache", 3, k_cache_layout.ndim()));
         };
         let &[nkvh_vc, _buf, dh_vc] = v_cache_layout.shape() else {
-            return Err(rank_not_support("v_cache", 3, v_cache_layout.ndim()));
+            return Err(rank_error("v_cache", 3, v_cache_layout.ndim()));
         };
 
         Ok(Meta {

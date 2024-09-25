@@ -12,7 +12,7 @@ pub use traits::{ArgsOf, ByteOf, Hardware, Operator, QueueAlloc, QueueOf};
 
 pub(crate) use maybe_dyn::{get_static, static_from};
 pub(crate) use traits::{op_trait, ConstPtr, MutPtr};
-pub(crate) use workspace::Workspace;
+pub(crate) use workspace::{Workspace, WorkspaceCollector};
 #[allow(dead_code)]
 pub(crate) enum SchemeDiversity {
     Low,

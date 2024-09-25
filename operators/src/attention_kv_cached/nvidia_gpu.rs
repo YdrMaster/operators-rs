@@ -2,47 +2,58 @@
 
 #[cfg(test)]
 mod test {
-    use super::{
-        super::{args::Meta, Args},
-        Operator,
-    };
+    use super::{super::Args, Operator};
     use crate::{nvidia_gpu::Gpu, ByteOf, Hardware, Operator as _, TensorLayout};
     use digit_layout::{types as ty, DigitLayout};
 
-    fn dyn_args<H: Hardware>(dt: DigitLayout, nh: usize, seq: usize, att: usize) -> Args<H> {
+    fn dyn_args<H: Hardware>(
+        dt: DigitLayout,
+        nh: usize,
+        seq: usize,
+        dh: usize,
+        pos: usize,
+    ) -> Args<H> {
         use crate::dyn_;
-        Meta {
-            dt,
-            nh: nh.into(),
-            nkvh: dyn_(),
-            seq: seq.into(),
-            att: att.into(),
-            dh: dyn_(),
-        }
-        .into()
+        Args::new_null(
+            TensorLayout::new_dyn(dt, &[nh.into(), seq.into(), dh.into()], &[dyn_(); 3]),
+            TensorLayout::new_dyn(dt, &[dyn_(), seq.into(), dh.into()], &[dyn_(); 3]),
+            TensorLayout::new_dyn(dt, &[dyn_(), seq.into(), dh.into()], &[dyn_(); 3]),
+            TensorLayout::new_dyn(dt, &[nh.into(), seq.into(), dh.into()], &[dyn_(); 3]),
+            TensorLayout::new_dyn(dt, &[nh.into(), seq.into(), dh.into()], &[dyn_(); 3]),
+            TensorLayout::new_dyn(dt, &[nh.into(), seq.into(), dh.into()], &[dyn_(); 3]),
+            pos.into(),
+        )
     }
 
+    #[allow(dead_code)]
     fn args<H: Hardware>(
         dt: DigitLayout,
         nh: usize,
         nkvh: usize,
         seq: usize,
-        att: usize,
         dh: usize,
+        pos: usize,
         q_base: *mut ByteOf<H>,
         k_base: *const ByteOf<H>,
         v_base: *const ByteOf<H>,
         o_base: *mut ByteOf<H>,
+        k_cache_base: *mut ByteOf<H>,
+        v_cache_base: *mut ByteOf<H>,
     ) -> Args<H> {
         Args {
             q_layout: TensorLayout::new_contiguous(dt, &[nh, seq, dh]),
-            k_layout: TensorLayout::new_contiguous(dt, &[nkvh, att, dh]),
-            v_layout: TensorLayout::new_contiguous(dt, &[nkvh, att, dh]),
+            k_layout: TensorLayout::new_contiguous(dt, &[nkvh, seq, dh]),
+            v_layout: TensorLayout::new_contiguous(dt, &[nkvh, seq, dh]),
             o_layout: TensorLayout::new_contiguous(dt, &[nh, seq, dh]),
+            k_cache_layout: TensorLayout::new_contiguous(dt, &[nkvh, seq + pos, dh]),
+            v_cache_layout: TensorLayout::new_contiguous(dt, &[nkvh, seq + pos, dh]),
+            pos: pos.into(),
             q_base,
             k_base,
             v_base,
             o_base,
+            k_cache_base,
+            v_cache_base,
         }
     }
 
@@ -54,7 +65,7 @@ mod test {
         println!("{}", gpu.0.device().info());
 
         let mut op = Operator::new(&gpu);
-        let workspace = op.scheme(&dyn_args(ty::F16, 32, 7, 127), usize::MAX);
+        let workspace = op.scheme(&dyn_args(ty::F16, 32, 7, 64, 13), usize::MAX);
         println!("workspace: {workspace:?}");
     }
 
@@ -78,19 +89,23 @@ mod test {
         let nh = 32;
         let nkvh = 4;
         let seq = 7;
-        let att = 127;
         let dh = 64;
+        let pos = 13;
 
         let cpu_op = RefOp::new(&Cpu);
         let gpu_op = Operator::new(&gpu);
 
         let mut q = vec![0.0f64; nh * seq * dh];
-        let mut k = vec![0.0f64; nkvh * att * dh];
-        let mut v = vec![0.0f64; nkvh * att * dh];
+        let mut k = vec![0.0f64; nkvh * seq * dh];
+        let mut v = vec![0.0f64; nkvh * seq * dh];
         let o = vec![0.0f64; nh * seq * dh];
+        let mut k_cache = vec![0.0f64; nkvh * (pos + seq) * dh];
+        let mut v_cache = vec![0.0f64; nkvh * (pos + seq) * dh];
         rand::thread_rng().fill(&mut q[..]);
         rand::thread_rng().fill(&mut k[..]);
         rand::thread_rng().fill(&mut v[..]);
+        rand::thread_rng().fill(&mut k_cache[..]);
+        rand::thread_rng().fill(&mut v_cache[..]);
         let k = k;
         let v = v;
 
@@ -100,6 +115,8 @@ mod test {
             let k = cast_load(&k, f16::from_f64, &stream);
             let v = cast_load(&v, f16::from_f64, &stream);
             let mut o = stream.malloc::<f16>(o.len());
+            let mut k_cache = cast_load(&k_cache, f16::from_f64, &stream);
+            let mut v_cache = cast_load(&v_cache, f16::from_f64, &stream);
             gpu_op
                 .launch(
                     &args(
@@ -107,12 +124,14 @@ mod test {
                         nh,
                         nkvh,
                         seq,
-                        att,
                         dh,
+                        pos,
                         q.as_mut_ptr(),
                         k.as_ptr(),
                         v.as_ptr(),
                         o.as_mut_ptr(),
+                        k_cache.as_mut_ptr(),
+                        v_cache.as_mut_ptr(),
                     ),
                     &mut [],
                     &stream,
@@ -132,12 +151,14 @@ mod test {
                     nh,
                     nkvh,
                     seq,
-                    att,
                     dh,
+                    pos,
                     q.as_mut_ptr().cast(),
                     k.as_ptr().cast(),
                     v.as_ptr().cast(),
                     o_ref.as_mut_ptr().cast(),
+                    k_cache.as_mut_ptr().cast(),
+                    v_cache.as_mut_ptr().cast(),
                 ),
                 &mut [],
                 &ThisThread,

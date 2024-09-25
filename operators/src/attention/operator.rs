@@ -1,7 +1,7 @@
 ﻿use super::{args::Meta, Args, Attention};
 use crate::{
     dyn_, fuesd_softmax, get_static, mat_mul, rearrange, utils::sizeof, ByteOf, Hardware,
-    LaunchError, QueueAlloc, SchemeError, TensorLayout, Workspace,
+    LaunchError, QueueAlloc, SchemeError, TensorLayout, Workspace, WorkspaceCollector,
 };
 use ndarray_layout::ArrayLayout;
 use std::marker::PhantomData;
@@ -61,32 +61,39 @@ where
         let (Some(&nh), Some(&seq), Some(&att)) =
             (nh.get_static(), seq.get_static(), att.get_static())
         else {
+            let mut wc = WorkspaceCollector::new();
+
             let layout = TensorLayout::new_dyn(dt, &[dyn_(); 3], &[dyn_(); 3]);
-            self.mat_mul.scheme(
+            wc.push_sub(self.mat_mul.scheme(
                 &mat_mul::Args::new_null(layout.clone(), 1., layout.clone(), layout, 1.),
                 max_workspace_size,
-            )?;
+            )?);
 
             let layout = TensorLayout::new_dyn(dt, &[nh, seq, att], &[dyn_(); 3]);
-            self.softmax
-                .scheme(&fuesd_softmax::Args::new_null(layout), max_workspace_size)?;
+            wc.push_sub(
+                self.softmax
+                    .scheme(&fuesd_softmax::Args::new_null(layout), max_workspace_size)?,
+            );
 
             let layout = TensorLayout::new_dyn(dt, &[dyn_(); 3], &[dyn_(); 3]);
-            self.rearrange.scheme(
+            wc.push_sub(self.rearrange.scheme(
                 &rearrange::Args::new_null(layout.clone(), layout),
                 max_workspace_size,
-            )?;
+            )?);
 
-            return Ok(0);
+            return Ok(wc.cauculate(max_workspace_size));
         };
 
         let ele = sizeof(dt)?;
         let att_layout = TensorLayout::new_contiguous(dt, &[nh, seq, att]);
         let att_size = nh * seq * att * ele;
-        let max_workspace_size = max_workspace_size.saturating_sub(att_size);
+        let workspace_size = max_workspace_size.saturating_sub(att_size);
+
+        let mut wc = WorkspaceCollector::new();
+        wc.push_base(att_size);
 
         // att = q . k^T
-        let qk = self.mat_mul.scheme(
+        wc.push_sub(self.mat_mul.scheme(
             &mat_mul::Args::new_null(
                 att_layout.clone(),
                 0.,
@@ -94,32 +101,25 @@ where
                 k_layout.clone(),
                 1.,
             ),
-            max_workspace_size,
-        )?;
+            workspace_size,
+        )?);
         // att = softmax(att)
-        let softmax = self.softmax.scheme(
+        wc.push_sub(self.softmax.scheme(
             &fuesd_softmax::Args::new_null(att_layout.clone()),
-            max_workspace_size,
-        )?;
+            workspace_size,
+        )?);
         // q = att . v
-        let av = self.mat_mul.scheme(
+        wc.push_sub(self.mat_mul.scheme(
             &mat_mul::Args::new_null(q_layout.clone(), 0., att_layout, v_layout.clone(), 1.),
-            max_workspace_size,
-        )?;
+            workspace_size,
+        )?);
         // o = rearrange(q)
-        let out = self.rearrange.scheme(
+        wc.push_sub(self.rearrange.scheme(
             &rearrange::Args::new_null(o_layout.clone(), q_layout.clone()),
-            max_workspace_size,
-        )?;
+            workspace_size,
+        )?);
 
-        let workspace_size = att_size + [qk, softmax, av, out].into_iter().max().unwrap();
-        Ok(if workspace_size <= max_workspace_size {
-            workspace_size
-        } else if att_size <= max_workspace_size {
-            att_size
-        } else {
-            0
-        })
+        Ok(wc.cauculate(max_workspace_size))
     }
 
     fn launch<QA>(

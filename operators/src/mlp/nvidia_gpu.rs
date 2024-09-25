@@ -78,20 +78,8 @@ mod test {
         let di = 11 * 512;
         let d = 4 * 512;
 
-        let mut cpu_op = RefOp::new(&Cpu);
-        let mut gpu_op = Operator::new(&gpu);
-        println!(
-            "cpu workspace: {}",
-            cpu_op
-                .scheme(&dyn_args(ty::F64, nt, di, d), usize::MAX)
-                .unwrap()
-        );
-        println!(
-            "gpu workspace: {}",
-            gpu_op
-                .scheme(&dyn_args(ty::F16, nt, di, d), usize::MAX)
-                .unwrap()
-        );
+        let cpu_op = RefOp::new(&Cpu);
+        let gpu_op = Operator::new(&gpu);
 
         let mut y = vec![0.0f64; nt * d];
         let mut x = vec![0.0f64; nt * d];
