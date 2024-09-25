@@ -3,13 +3,28 @@
     utils::{sizeof, type_distinct},
     ConstPtr, Hardware, MutPtr, SchemeError, TensorLayout,
 };
-use std::{cmp::Ordering, iter::zip};
+use std::{
+    cmp::Ordering,
+    iter::zip,
+    ptr::{null, null_mut},
+};
 
 pub struct Args<H: Hardware> {
     pub dst_layout: TensorLayout,
     pub dst_base: MutPtr<H>,
     pub src_layout: TensorLayout,
     pub src_base: ConstPtr<H>,
+}
+
+impl<H: Hardware> Args<H> {
+    pub fn new_null(dst_layout: TensorLayout, src_layout: TensorLayout) -> Self {
+        Self {
+            dst_layout,
+            dst_base: null_mut(),
+            src_layout,
+            src_base: null(),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]

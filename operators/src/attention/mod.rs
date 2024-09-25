@@ -2,27 +2,22 @@
 mod operator;
 
 pub use args::Args;
-pub(crate) use args::Meta;
 
-crate::op_trait! { Attention
-    fn workspace_size(&self) -> Option<usize>;
-}
+crate::op_trait!(Attention);
 
 macro_rules! impl_op {
-    ($dev:ident) => {
-        pub mod $dev {
-            pub type Operator = super::operator::Operator<
-                crate::$dev::Handle,
-                crate::mat_mul::$dev::Operator,
-                crate::fuesd_softmax::$dev::Operator,
-                crate::rearrange::$dev::Operator,
-            >;
-        }
+    ($dev:ident, $proc:ident) => {
+        pub type Operator = super::operator::Operator<
+            crate::$dev::$proc,
+            crate::mat_mul::$dev::Operator,
+            crate::fuesd_softmax::$dev::Operator,
+            crate::rearrange::$dev::Operator,
+        >;
     };
 }
 
-#[cfg(use_cpu)]
-impl_op!(common_cpu);
+#[cfg(any(use_cpu, test))]
+pub mod common_cpu;
 
 #[cfg(use_cuda)]
-impl_op!(nvidia_gpu);
+pub mod nvidia_gpu;

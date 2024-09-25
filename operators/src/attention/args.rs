@@ -1,8 +1,10 @@
-﻿use crate::utils::{dim_distinct, rank_not_support, type_distinct, ConstPtr, MutPtr};
-use crate::{Argument, Handle, ParamError, TensorLayout};
+﻿use crate::{
+    utils::{dim_distinct, rank_error, type_distinct},
+    ConstPtr, Hardware, MaybeDyn, MutPtr, SchemeError, TensorLayout,
+};
 use digit_layout::DigitLayout;
 
-pub struct Args<H: Handle> {
+pub struct Args<H: Hardware> {
     pub q_layout: TensorLayout,
     pub q_base: MutPtr<H>,
 
@@ -14,21 +16,18 @@ pub struct Args<H: Handle> {
 
     pub o_layout: TensorLayout,
     pub o_base: MutPtr<H>,
-
-    pub workspace_size: usize,
-    pub workspace: MutPtr<H>,
 }
 
 pub(crate) struct Meta {
     pub dt: DigitLayout,
-    pub nh: Argument<usize>,
-    pub nkvh: Argument<usize>,
-    pub seq: Argument<usize>,
-    pub att: Argument<usize>,
-    pub dh: Argument<usize>,
+    pub nh: MaybeDyn<usize>,
+    pub nkvh: MaybeDyn<usize>,
+    pub seq: MaybeDyn<usize>,
+    pub att: MaybeDyn<usize>,
+    pub dh: MaybeDyn<usize>,
 }
 
-impl<H: Handle> From<Meta> for Args<H> {
+impl<H: Hardware> From<Meta> for Args<H> {
     fn from(value: Meta) -> Self {
         use crate::dyn_;
         use std::ptr::{null, null_mut};
@@ -53,14 +52,12 @@ impl<H: Handle> From<Meta> for Args<H> {
             v_base: null(),
             o_layout: qo_layout,
             o_base: null_mut(),
-            workspace_size: usize::MAX,
-            workspace: null_mut(),
         }
     }
 }
 
-impl<H: Handle> Args<H> {
-    pub(super) fn meta(&self) -> Result<Meta, ParamError> {
+impl<H: Hardware> Args<H> {
+    pub(super) fn meta(&self) -> Result<Meta, SchemeError> {
         let Self {
             q_layout,
             k_layout,
@@ -70,16 +67,16 @@ impl<H: Handle> Args<H> {
         } = self;
 
         let &[nh_q, seq_q, dh_q] = self.q_layout.shape() else {
-            return Err(rank_not_support("q", 3, q_layout.ndim()));
+            return Err(rank_error("q", 3, q_layout.ndim()));
         };
         let &[nkvh_k, att_k, dh_k] = self.k_layout.shape() else {
-            return Err(rank_not_support("k", 3, k_layout.ndim()));
+            return Err(rank_error("k", 3, k_layout.ndim()));
         };
         let &[nkvh_v, att_v, dh_v] = self.v_layout.shape() else {
-            return Err(rank_not_support("v", 3, v_layout.ndim()));
+            return Err(rank_error("v", 3, v_layout.ndim()));
         };
         let &[nh_o, seq_o, dh_o] = self.o_layout.shape() else {
-            return Err(rank_not_support("o", 3, o_layout.ndim()));
+            return Err(rank_error("o", 3, o_layout.ndim()));
         };
 
         Ok(Meta {

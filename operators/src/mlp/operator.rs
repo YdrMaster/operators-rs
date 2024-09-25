@@ -12,19 +12,19 @@ pub struct Operator<Hardware, MatMul, Swiglu> {
     _phantom: PhantomData<Hardware>,
 }
 
-impl<H, M, A> Mlp<H> for Operator<H, M, A>
+impl<H, M, S> Mlp<H> for Operator<H, M, S>
 where
     H: Hardware,
     M: mat_mul::MatMul<H>,
-    A: swiglu::Swiglu<H>,
+    S: swiglu::Swiglu<H>,
 {
 }
 
-impl<H, M, A> crate::Operator for Operator<H, M, A>
+impl<H, M, S> crate::Operator for Operator<H, M, S>
 where
     H: Hardware,
     M: mat_mul::MatMul<H>,
-    A: swiglu::Swiglu<H>,
+    S: swiglu::Swiglu<H>,
 {
     type Hardware = H;
     type Args = Args<H>;
@@ -32,7 +32,7 @@ where
     fn new(processor: &Self::Hardware) -> Self {
         Self {
             mat_mul: M::new(processor),
-            swiglu: A::new(processor),
+            swiglu: S::new(processor),
             _phantom: PhantomData,
         }
     }
@@ -125,10 +125,12 @@ where
                 .into_iter()
                 .max()
                 .unwrap();
-        Ok(if workspace_size > max_workspace_size {
-            0
-        } else {
+        Ok(if workspace_size <= max_workspace_size {
             workspace_size
+        } else if gate_up_size <= max_workspace_size {
+            gate_up_size
+        } else {
+            0
         })
     }
 

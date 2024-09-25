@@ -11,7 +11,7 @@ pub mod rms_norm;
 pub mod rope;
 pub mod swiglu;
 
-// pub mod attention;
+pub mod attention;
 // pub mod attention_kv_cached;
 pub mod mlp;
 
