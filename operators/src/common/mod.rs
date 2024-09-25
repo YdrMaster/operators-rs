@@ -2,6 +2,7 @@ mod error;
 mod maybe_dyn;
 mod pool;
 mod tensor;
+mod workspace;
 
 pub use error::{
     functions::*, LaunchError, LaunchErrorKind, ParamError, ParamErrorKind, SchemeError,
@@ -14,6 +15,13 @@ pub use traits::{ArgsOf, ByteOf, Hardware, Operator, QueueAlloc, QueueOf};
 
 pub(crate) use maybe_dyn::{get_static, static_from};
 pub(crate) use traits::{op_trait, ConstPtr, MutPtr};
+pub(crate) use workspace::Workspace;
+#[allow(dead_code)]
+pub(crate) enum SchemeDiversity {
+    Low,
+    Medium,
+    High,
+}
 
 mod traits {
     use crate::{LaunchError, SchemeError};
@@ -37,13 +45,13 @@ mod traits {
     pub(crate) type MutPtr<H> = *mut <H as Hardware>::Byte;
     pub(crate) type ConstPtr<H> = *const <H as Hardware>::Byte;
 
-    /// 绑定到流的分配器。
+    /// 绑定到队列的分配器。
     pub trait QueueAlloc: Alloc<Self::DevMem> {
-        /// 流分配器对应的硬件。
+        /// 队列分配器对应的硬件。
         type Hardware: Hardware;
         /// 分配器分配和回收的对象，表示对某块存储区域的所有权。
         type DevMem: DerefMut<Target = [ByteOf<Self::Hardware>]>;
-        /// 分配器对应的流。
+        /// 分配器对应的队列。
         fn queue(&self) -> &QueueOf<Self::Hardware>;
     }
 
@@ -106,6 +114,7 @@ pub mod utils {
     };
     use digit_layout::DigitLayout;
 
+    #[cfg(use_cuda)]
     #[inline]
     pub(crate) const fn gcd(mut a: usize, mut b: usize) -> usize {
         while b != 0 {
@@ -148,6 +157,7 @@ pub mod utils {
 }
 
 #[cfg(test)]
+#[allow(dead_code)]
 pub(crate) mod test_utils {
     use std::fmt;
 

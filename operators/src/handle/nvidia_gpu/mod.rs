@@ -1,22 +1,43 @@
 mod library;
 mod module;
 
-use crate::{Hardware, Pool, QueueAlloc, QueueOf};
+use crate::{Hardware, Pool, QueueAlloc, QueueOf, SchemeDiversity};
 use cublas::{Cublas, CublasLtSpore, CublasSpore};
 use dev_mempool::cuda::{
-    self, Context, ContextResource, ContextSpore, CurrentCtx, DevMem, Device, Stream, Version,
+    self, AsRaw, Context, ContextResource, ContextSpore, CurrentCtx, DevMem, Device, Stream,
+    Version,
 };
 use digit_layout::DigitLayout;
 use libloading::Library;
+use lru::LruCache;
 use std::{
     collections::HashMap,
-    sync::{Arc, RwLock, Weak},
+    hash::Hash,
+    num::NonZeroUsize,
+    sync::{Arc, Mutex, RwLock, Weak},
 };
 
 pub(crate) use library::{EXPORT, EXPORT_H};
 pub(crate) use module::ModuleBox;
 
 pub struct Gpu(pub(crate) Arc<Handle>);
+
+#[derive(Clone, Debug)]
+pub struct Config {
+    pub low_diversity_cache: usize,
+    pub medium_diversity_cache: usize,
+    pub high_diversity_cache: usize,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            low_diversity_cache: 4,
+            medium_diversity_cache: 16,
+            high_diversity_cache: 64,
+        }
+    }
+}
 
 impl Hardware for Gpu {
     type Byte = cuda::DevByte;
@@ -33,9 +54,10 @@ impl<'ctx> QueueAlloc for Stream<'ctx> {
 
 impl Gpu {
     #[inline]
-    pub fn new(context: Context) -> Self {
+    pub fn new(context: Context, config: Config) -> Self {
         Self(Arc::new(Handle {
             context,
+            config,
             cublas: Default::default(),
             cublas_lt: Default::default(),
             modules: Default::default(),
@@ -52,12 +74,13 @@ impl Gpu {
         if let Err(cuda::NoDevice) = cuda::init() {
             return None;
         }
-        Some(Self::new(cuda::Device::new(0).context()))
+        Some(Self::new(cuda::Device::new(0).context(), Config::default()))
     }
 }
 
 pub(crate) struct Handle {
     context: Context,
+    config: Config,
     cublas: Pool<CublasSpore>,
     cublas_lt: Pool<CublasLtSpore>,
     modules: RwLock<HashMap<Key, Weak<ModuleBox>>>,
@@ -72,12 +95,26 @@ impl Handle {
     }
 
     pub fn cublas(&self, stream: &Stream, f: impl FnOnce(&Cublas)) {
-        let cublas = self.cublas.pop().map_or_else(
-            || Cublas::new(stream.ctx()),
-            |cublas| cublas.sprout(stream.ctx()),
-        );
+        let ctx = stream.ctx();
+        unsafe { assert_eq!(ctx.as_raw(), self.context.as_raw()) };
+
+        let mut cublas = self
+            .cublas
+            .pop()
+            .map_or_else(|| Cublas::new(ctx), |cublas| cublas.sprout(ctx));
+
+        cublas.set_stream(stream);
         f(&cublas);
+
         self.cublas.push(cublas.sporulate());
+    }
+
+    pub fn cublas_init(&self) {
+        self.cublas.push(
+            self.cublas
+                .pop()
+                .unwrap_or_else(|| self.context.apply(|ctx| Cublas::new(ctx).sporulate())),
+        );
     }
 
     pub fn compile_kernel(
@@ -114,6 +151,20 @@ impl Handle {
         code: impl FnOnce() -> String,
     ) -> Arc<Library> {
         library::cache_lib(&(name.as_ref().to_string(), cc), code)
+    }
+
+    pub fn scheme_cache<K: Hash + Eq, V>(
+        &self,
+        diversity: SchemeDiversity,
+    ) -> Mutex<LruCache<K, V>> {
+        Mutex::new(LruCache::new(
+            NonZeroUsize::new(match diversity {
+                SchemeDiversity::Low => self.config.low_diversity_cache,
+                SchemeDiversity::Medium => self.config.medium_diversity_cache,
+                SchemeDiversity::High => self.config.high_diversity_cache,
+            })
+            .unwrap(),
+        ))
     }
 }
 

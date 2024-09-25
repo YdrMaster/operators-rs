@@ -21,6 +21,7 @@ pub(super) struct Meta {
     pub dt_t: DigitLayout,
     pub dt_p: DigitLayout,
     pub nt: MaybeDyn<usize>,
+    #[allow(dead_code)]
     pub dh: MaybeDyn<usize>,
 }
 

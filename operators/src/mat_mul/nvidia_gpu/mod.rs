@@ -1,6 +1,6 @@
 ﻿use super::{args::SchemeLayout, Args, MatMul};
 use crate::nvidia_gpu::{Gpu, Handle};
-use crate::{type_not_support, LaunchError, SchemeError};
+use crate::{type_not_support, ByteOf, LaunchError, QueueAlloc, SchemeError};
 use cublas::cublas;
 use dev_mempool::cuda::AsRaw;
 use digit_layout::types::F16;
@@ -18,6 +18,8 @@ impl crate::Operator for Operator {
     type Args = Args<Gpu>;
 
     fn new(processor: &Self::Hardware) -> Self {
+        // 保证 cublas Handle 池非空
+        processor.0.cublas_init();
         Self {
             handle: processor.0.clone(),
         }
@@ -28,17 +30,18 @@ impl crate::Operator for Operator {
         _args: &Self::Args,
         _max_workspace_size: usize,
     ) -> Result<usize, SchemeError> {
+        // 仅支持 cublas，不需要为执行做准备
         Ok(0)
     }
 
     fn launch<QA>(
         &self,
         args: &Self::Args,
-        _workspace: &mut [crate::ByteOf<Self::Hardware>],
+        _workspace: &mut [ByteOf<Self::Hardware>],
         queue_alloc: &QA,
     ) -> Result<(), LaunchError>
     where
-        QA: crate::QueueAlloc<Hardware = Self::Hardware>,
+        QA: QueueAlloc<Hardware = Self::Hardware>,
     {
         let SchemeLayout {
             dt,

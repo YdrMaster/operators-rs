@@ -3,18 +3,19 @@ use crate::{
     get_static,
     nvidia_gpu::{dt_name, Gpu, Handle, ModuleBox},
     utils::sizeof,
+    ByteOf, ParamError, QueueAlloc, SchemeDiversity,
 };
-use crate::{
-    scheme_not_compatible, scheme_not_set, shape_not_support, strides_not_support, LaunchError,
-    SchemeError,
-};
-use dev_mempool::cuda::Version;
+use crate::{shape_not_support, strides_not_support, LaunchError, SchemeError};
 use digit_layout::DigitLayout;
-use std::{ffi::CString, sync::Arc};
+use lru::LruCache;
+use std::{
+    ffi::CString,
+    sync::{Arc, Mutex},
+};
 
 pub struct Operator {
     handle: Arc<Handle>,
-    scheme: Option<(Scheme, Arc<ModuleBox>)>,
+    schemes: Mutex<LruCache<SchemeKey, Scheme>>,
 }
 
 impl RmsNorm<Gpu> for Operator {}
@@ -26,7 +27,7 @@ impl crate::Operator for Operator {
     fn new(processor: &Self::Hardware) -> Self {
         Self {
             handle: processor.0.clone(),
-            scheme: None,
+            schemes: processor.0.scheme_cache(SchemeDiversity::Low),
         }
     }
 
@@ -35,38 +36,25 @@ impl crate::Operator for Operator {
         args: &Self::Args,
         _max_workspace_size: usize,
     ) -> Result<usize, SchemeError> {
-        let Meta {
-            dt_w,
-            dt_a,
-            n: _,
-            d,
-        } = args.meta()?;
+        let Meta { dt_a, dt_w, d, .. } = args.meta()?;
+        get_static!(d);
 
-        #[allow(unreachable_code, clippy::diverging_sub_expression)]
-        let Some(&d) = d.get_static() else {
-            self.scheme = Some((Scheme::Common { dt_w, dt_a }, todo!()));
-        };
-
-        let device = self.handle.device();
-        let cc = device.compute_capability();
-        let max_num_threads_block = device.block_limit().max_threads;
-
-        if d <= max_num_threads_block {
-            self.padding_scheme(dt_w, dt_a, d, cc)?
-        } else {
-            self.folding_scheme(dt_w, dt_a, d, cc, max_num_threads_block, device.warp_size())?
-        }
+        let key = SchemeKey { dt_a, dt_w, d };
+        self.schemes
+            .lock()
+            .unwrap()
+            .try_get_or_insert(key, || Scheme::new(&self.handle, key))?;
         Ok(0)
     }
 
     fn launch<QA>(
         &self,
         args: &Self::Args,
-        _workspace: &mut [crate::ByteOf<Self::Hardware>],
+        _workspace: &mut [ByteOf<Self::Hardware>],
         queue_alloc: &QA,
     ) -> Result<(), LaunchError>
     where
-        QA: crate::QueueAlloc<Hardware = Self::Hardware>,
+        QA: QueueAlloc<Hardware = Self::Hardware>,
     {
         let Meta { dt_w, dt_a, n, d } = args.meta()?;
         let Args {
@@ -100,30 +88,25 @@ impl crate::Operator for Operator {
             return Err(strides_not_support("").into());
         };
 
-        let (name, m, block_dims) = match self.scheme.as_ref() {
-            Some((s, m)) => {
-                if !s.is_match(dt_w, dt_a, d) {
-                    return Err(scheme_not_compatible(""));
-                }
-                match s {
-                    Scheme::Common { .. } => todo!(),
-                    Scheme::Padding { name, .. } => (name, m, d),
-                    Scheme::Folding {
-                        name, block_size, ..
-                    } => (name, m, *block_size),
-                }
-            }
-            None => return Err(scheme_not_set("")),
-        };
+        let key = SchemeKey { dt_a, dt_w, d };
+        let scheme = self
+            .schemes
+            .lock()
+            .unwrap()
+            .try_get_or_insert(key, || Scheme::new(&self.handle, key))?
+            .clone();
 
         let nsy = (nsy / unit) as i32;
         let nsx = (nsx / unit) as i32;
         let params = dev_mempool::cuda::params![y_base, nsy, x_base, nsx, w_base, epsilon];
 
-        m.launch(
-            name,
+        scheme.module.launch(
+            &scheme.name,
             n as u32,
-            block_dims as u32,
+            match scheme.ty {
+                SchemeType::Padding => d,
+                SchemeType::Folding { block_size } => block_size,
+            } as u32,
             params.as_ptr(),
             0,
             queue_alloc.queue(),
@@ -132,54 +115,44 @@ impl crate::Operator for Operator {
     }
 }
 
-enum Scheme {
-    Common {
-        dt_w: DigitLayout,
-        dt_a: DigitLayout,
-    },
-    Padding {
-        dt_w: DigitLayout,
-        dt_a: DigitLayout,
-        d: usize,
-        name: CString,
-    },
-    Folding {
-        dt_w: DigitLayout,
-        dt_a: DigitLayout,
-        d: usize,
-        block_size: usize,
-        name: CString,
-    },
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+struct SchemeKey {
+    dt_a: DigitLayout,
+    dt_w: DigitLayout,
+    d: usize,
+}
+
+#[derive(Clone)]
+struct Scheme {
+    ty: SchemeType,
+    module: Arc<ModuleBox>,
+    name: CString,
+}
+
+#[derive(Clone)]
+enum SchemeType {
+    Padding,
+    Folding { block_size: usize },
 }
 
 impl Scheme {
-    fn is_match(&self, dt_w_: DigitLayout, dt_a_: DigitLayout, d_: usize) -> bool {
-        match *self {
-            Scheme::Common { dt_w, dt_a } => dt_w == dt_w_ && dt_a == dt_a_,
-            Scheme::Padding { dt_w, dt_a, d, .. } => dt_w == dt_w_ && dt_a == dt_a_ && d == d_,
-            Scheme::Folding { dt_w, dt_a, d, .. } => dt_w == dt_w_ && dt_a == dt_a_ && d == d_,
-        }
-    }
-}
+    pub fn new(
+        handle: &Arc<Handle>,
+        SchemeKey { dt_a, dt_w, d }: SchemeKey,
+    ) -> Result<Self, ParamError> {
+        let device = handle.device();
+        let cc = device.compute_capability();
+        let block_size = device.block_limit().max_threads;
 
-const CODE: &str = include_str!("rms_norm.cuh");
-
-impl Operator {
-    fn padding_scheme(
-        &mut self,
-        dt_w: DigitLayout,
-        dt_a: DigitLayout,
-        d: usize,
-        cc: Version,
-    ) -> Result<(), SchemeError> {
-        let ww = sizeof(dt_w)? * 8;
-        let wa = sizeof(dt_a)? * 8;
-        let name = format!("rms_norm_padding_w{ww}a{wa}_{d}");
-        let tw = dt_name(dt_w);
         let ta = dt_name(dt_a);
-        let module = self.handle.compile_kernel(&name, cc, || {
-            format!(
-                r#"{CODE}
+        let tw = dt_name(dt_w);
+
+        const CODE: &str = include_str!("rms_norm.cuh");
+        if d <= block_size {
+            let name = format!("rms_norm_{ta}_{tw}_padding_{d}");
+            let module = handle.compile_kernel(&name, cc, || {
+                format!(
+                    r#"{CODE}
 
 extern "C" __global__ void {name}(
     {ta} *__restrict__ y,
@@ -192,53 +165,35 @@ extern "C" __global__ void {name}(
     padding<{d}>
     (y, stride_y, x, stride_x, w, epsilon);
 }}"#
-            )
-        });
-        self.scheme = Some((
-            Scheme::Padding {
-                dt_w,
-                dt_a,
-                d,
+                )
+            });
+
+            Ok(Self {
+                ty: SchemeType::Padding,
+                module,
                 name: CString::new(name).unwrap(),
-            },
-            module,
-        ));
-        Ok(())
-    }
+            })
+        } else {
+            let n_threads_warp = device.warp_size();
+            if d % n_threads_warp != 0 {
+                Err(shape_not_support(format!(
+                    "normalization shape {d} must be multiple of warp size {n_threads_warp}"
+                )))?
+            }
+            let max_num_warp_block = block_size / n_threads_warp;
+            // num_warp_block in [1, max_num_warp_block]
+            // num_threads_warp
+            // num_items_thread in [1, 2, 4, 8] // 8 = 128bit / sizeof(half)
+            // TODO 也许还能分得更好
+            let to_divid = d / n_threads_warp;
+            let num_warps_block = max_num_warp_block;
+            let num_threads_block = n_threads_warp * num_warps_block;
+            let num_items_thread = (to_divid + num_warps_block - 1) / num_warps_block;
 
-    fn folding_scheme(
-        &mut self,
-        dt_w: DigitLayout,
-        dt_a: DigitLayout,
-        d: usize,
-        cc: Version,
-        max_num_threads_block: usize,
-        num_threads_warp: usize,
-    ) -> Result<(), SchemeError> {
-        if d % num_threads_warp != 0 {
-            Err(shape_not_support(format!(
-                "normalization shape {d} must be multiple of warp size {num_threads_warp}"
-            )))?
-        }
-        let max_num_warp_block = max_num_threads_block / num_threads_warp;
-        // num_warp_block in [1, max_num_warp_block]
-        // num_threads_warp
-        // num_items_thread in [1, 2, 4, 8] // 8 = 128bit / sizeof(half)
-        // TODO 也许还能分得更好
-        let to_divid = d / num_threads_warp;
-        let num_warps_block = max_num_warp_block;
-        let num_threads_block = num_threads_warp * num_warps_block;
-        let num_items_thread = (to_divid + num_warps_block - 1) / num_warps_block;
-
-        let ww = sizeof(dt_w)? * 8;
-        let wa = sizeof(dt_a)? * 8;
-        let name = format!("rms_norm_padding_w{ww}a{wa}_{num_threads_block}x{num_items_thread}");
-        let tw = dt_name(dt_w);
-        let ta = dt_name(dt_a);
-
-        let module = self.handle.compile_kernel(&name, cc, || {
-            format!(
-                r#"{CODE}
+            let name = format!("rms_norm_{ta}_{tw}_folding_{num_threads_block}x{num_items_thread}");
+            let module = handle.compile_kernel(&name, cc, || {
+                format!(
+                    r#"{CODE}
 
 extern "C" __global__ void {name}(
     {ta} *__restrict__ y,
@@ -251,26 +206,21 @@ extern "C" __global__ void {name}(
     folding<{num_threads_block}, {num_items_thread}>
     (y, stride_y, x, stride_x, w, epsilon, {d});
 }}"#
-            )
-        });
+                )
+            });
 
-        self.scheme = Some((
-            Scheme::Folding {
-                dt_w,
-                dt_a,
-                d,
-                block_size: num_threads_block,
+            Ok(Self {
+                ty: SchemeType::Folding { block_size },
+                module,
                 name: CString::new(name).unwrap(),
-            },
-            module,
-        ));
-        Ok(())
+            })
+        }
     }
 }
 
 #[cfg(test)]
 mod test {
-    use super::{Args, Gpu, Operator, Scheme};
+    use super::{Args, Gpu, Operator};
     use crate::{Hardware, Operator as _, TensorLayout};
     use digit_layout::{
         types::{F16, F32, F64},
@@ -323,24 +273,14 @@ mod test {
         for k in 8..=13 {
             let d = 1 << k;
             op.scheme(&dyn_args(F32, F16, d), 0).unwrap();
-            let (scheme, module) = op.scheme.as_ref().unwrap();
-            match scheme {
-                Scheme::Common { .. } => todo!(),
-                Scheme::Padding { name, .. } => gpu.apply(|ctx| {
-                    println!(
-                        "{}\n{}",
-                        name.to_str().unwrap(),
-                        module.load(name, ctx).info()
-                    );
-                }),
-                Scheme::Folding { name, .. } => gpu.apply(|ctx| {
-                    println!(
-                        "{}\n{}",
-                        name.to_str().unwrap(),
-                        module.load(name, ctx).info()
-                    );
-                }),
-            }
+            let scheme = op.schemes.lock().unwrap().iter().next().unwrap().1.clone();
+            gpu.apply(|ctx| {
+                println!(
+                    "{}\n{}",
+                    scheme.name.to_str().unwrap(),
+                    scheme.module.load(&scheme.name, ctx).info()
+                )
+            });
         }
     }
 

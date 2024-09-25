@@ -1,9 +1,6 @@
 ﻿use super::{args::Scheme, Args, Rearrange};
 use crate::nvidia_gpu::{Gpu, Handle, ModuleBox};
-use crate::{
-    rank_not_support, scheme_not_set, shape_not_support, ByteOf, LaunchError, QueueAlloc,
-    SchemeError,
-};
+use crate::{rank_not_support, shape_not_support, ByteOf, LaunchError, QueueAlloc, SchemeError};
 use std::{
     ffi::CString,
     slice::{from_raw_parts, from_raw_parts_mut},
@@ -11,10 +8,10 @@ use std::{
 };
 
 pub struct Operator {
-    handle: Arc<Handle>,
+    _handle: Arc<Handle>,
     max_warps_block: usize,
     warp_size: usize,
-    scheme: Option<Arc<ModuleBox>>,
+    module: Arc<ModuleBox>,
 }
 
 const NAME: &str = "rearrange";
@@ -27,15 +24,18 @@ impl crate::Operator for Operator {
     type Args = Args<Gpu>;
 
     fn new(processor: &Self::Hardware) -> Self {
-        let handle = processor.0.clone();
-        let max_threads_block = handle.device().block_limit().max_threads;
-        let warp_size = handle.device().warp_size();
+        // 提取和检查设备参数
+        let device = processor.0.device();
+        let max_threads_block = device.block_limit().max_threads;
+        let warp_size = device.warp_size();
+        let cc = device.compute_capability();
         assert_eq!(max_threads_block % warp_size, 0);
+        // 生成执行资源
         Self {
-            handle,
+            _handle: processor.0.clone(),
             max_warps_block: max_threads_block / warp_size,
             warp_size,
-            scheme: None,
+            module: processor.0.compile_kernel(NAME, cc, format_code),
         }
     }
 
@@ -44,33 +44,7 @@ impl crate::Operator for Operator {
         _args: &Self::Args,
         _max_workspace_size: usize,
     ) -> Result<usize, SchemeError> {
-        let cc = self.handle.device().compute_capability();
-        self.scheme = Some(self.handle.compile_kernel(NAME, cc, || {
-            format!(
-                r#"{CODE}
-
-extern "C" __global__ void {NAME}(
-    void       *__restrict__ dst,
-    int const rsa,
-    int const csa,
-    void const *__restrict__ src,
-    int const rsb,
-    int const csb,
-    unsigned int const ncols,
-    unsigned int const bytes_per_thread
-){{
-    switch (bytes_per_thread) {{
-        case  1: rearrange<uchar1 >(dst, rsa, csa, src, rsb, csb, ncols); break;
-        case  2: rearrange<uchar2 >(dst, rsa, csa, src, rsb, csb, ncols); break;
-        case  4: rearrange<float1 >(dst, rsa, csa, src, rsb, csb, ncols); break;
-        case  8: rearrange<float2 >(dst, rsa, csa, src, rsb, csb, ncols); break;
-        case 16: rearrange<float4 >(dst, rsa, csa, src, rsb, csb, ncols); break;
-        case 32: rearrange<double4>(dst, rsa, csa, src, rsb, csb, ncols); break;
-    }}
-}}
-"#
-            )
-        }));
+        // 完全动态，不需要做任何准备工作
         Ok(0)
     }
 
@@ -148,9 +122,6 @@ extern "C" __global__ void {NAME}(
         };
 
         let name = CString::new(NAME).unwrap();
-        let Some(m) = self.scheme.as_ref() else {
-            return Err(scheme_not_set(""));
-        };
         if unit % self.warp_size != 0 {
             Err(shape_not_support(format!(
                 "memory region {unit} is not align to warp size, which is not supported yet on NV GPU",
@@ -183,9 +154,37 @@ extern "C" __global__ void {NAME}(
             c,
             bytes_thread
         ];
-        m.launch(&name, grid, block, params.as_ptr(), 0, queue_alloc.queue());
+        self.module
+            .launch(&name, grid, block, params.as_ptr(), 0, queue_alloc.queue());
         Ok(())
     }
+}
+
+fn format_code() -> String {
+    format!(
+        r#"{CODE}
+
+extern "C" __global__ void {NAME}(
+    void       *__restrict__ dst,
+    int const rsa,
+    int const csa,
+    void const *__restrict__ src,
+    int const rsb,
+    int const csb,
+    unsigned int const ncols,
+    unsigned int const bytes_per_thread
+){{
+    switch (bytes_per_thread) {{
+        case  1: rearrange<uchar1 >(dst, rsa, csa, src, rsb, csb, ncols); break;
+        case  2: rearrange<uchar2 >(dst, rsa, csa, src, rsb, csb, ncols); break;
+        case  4: rearrange<float1 >(dst, rsa, csa, src, rsb, csb, ncols); break;
+        case  8: rearrange<float2 >(dst, rsa, csa, src, rsb, csb, ncols); break;
+        case 16: rearrange<float4 >(dst, rsa, csa, src, rsb, csb, ncols); break;
+        case 32: rearrange<double4>(dst, rsa, csa, src, rsb, csb, ncols); break;
+    }}
+}}
+"#
+    )
 }
 
 #[cfg(test)]
@@ -235,7 +234,7 @@ mod test {
         let mut op = Operator::new(&gpu);
         op.scheme(&dyn_args(ty::F16), 0).unwrap();
 
-        let module = op.scheme.as_ref().unwrap();
+        let module = op.module;
         gpu.apply(|ctx| {
             println!(
                 "{NAME}\n{}",

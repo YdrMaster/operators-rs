@@ -138,6 +138,7 @@ impl Scheme {
     }
 
     /// 拆分 unit 到更小的规模以利于并行
+    #[allow(dead_code)]
     pub fn distribute_unit(&self, candidates: impl IntoIterator<Item = usize>) -> Self {
         let unit = candidates
             .into_iter()
@@ -211,6 +212,7 @@ impl Scheme {
         &self.0[2 + ndim * 2..][..ndim]
     }
 
+    #[allow(dead_code)]
     #[inline]
     pub fn shape(&self) -> impl Iterator<Item = usize> + '_ {
         let ndim = self.ndim();

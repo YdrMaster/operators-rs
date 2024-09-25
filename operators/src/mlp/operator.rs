@@ -1,7 +1,7 @@
 ﻿use super::{args::Meta, Args, Mlp};
 use crate::{
     dyn_, get_static, mat_mul, swiglu, utils::sizeof, ByteOf, Hardware, LaunchError, QueueAlloc,
-    SchemeError, TensorLayout,
+    SchemeError, TensorLayout, Workspace,
 };
 use ndarray_layout::{ArrayLayout, Endian::BigEndian};
 use std::marker::PhantomData;
@@ -159,23 +159,14 @@ where
         get_static!(nt di);
 
         let gate_up_size = nt * di * 2 * ele;
-        let (mut blob, buf, workspace): (Option<QA::DevMem>, &mut [ByteOf<H>], &mut [ByteOf<H>]) =
-            if workspace.len() < gate_up_size {
-                (Some(queue_alloc.alloc(gate_up_size)), &mut [], workspace)
-            } else {
-                let (buf, workspace) = workspace.split_at_mut(gate_up_size);
-                (None, buf, workspace)
-            };
-        let buf_base = match &mut blob {
-            Some(buf) => buf.as_mut_ptr(),
-            None => buf.as_mut_ptr(),
-        };
+        let mut workspace = Workspace::new(queue_alloc, workspace, gate_up_size);
+        let (gate_up, workspace) = workspace.split_at_mut(gate_up_size);
 
         let gate_up_layout = ArrayLayout::<3>::new_contiguous(&[nt, di * 2], BigEndian, ele);
         self.mat_mul.launch(
             &mat_mul::Args {
                 c_layout: TensorLayout::new(dt, gate_up_layout.shape(), gate_up_layout.strides()),
-                c_base: buf_base,
+                c_base: gate_up.as_mut_ptr(),
                 beta: 0.,
                 a_layout: x_layout.clone(),
                 a_base: *x_base,
@@ -192,9 +183,9 @@ where
         self.swiglu.launch(
             &swiglu::Args {
                 gate_layout: swiglu_layout.clone(),
-                gate_base: buf_base,
+                gate_base: gate_up.as_mut_ptr(),
                 up_layout: swiglu_layout.clone(),
-                up_base: unsafe { buf_base.byte_add(up_layout.offset()) },
+                up_base: unsafe { gate_up.as_mut_ptr().byte_add(up_layout.offset()) },
             },
             workspace,
             queue_alloc,
@@ -206,7 +197,7 @@ where
                 c_base: *y_base,
                 beta: if *down_bias { 1. } else { 0. },
                 a_layout: swiglu_layout,
-                a_base: buf_base,
+                a_base: gate_up.as_ptr(),
                 b_layout: w_down_layout.clone(),
                 b_base: *w_down_base,
                 alpha: *down_alpha,
@@ -214,10 +205,6 @@ where
             workspace,
             queue_alloc,
         )?;
-
-        if let Some(blob) = blob {
-            queue_alloc.free(blob);
-        }
 
         Ok(())
     }

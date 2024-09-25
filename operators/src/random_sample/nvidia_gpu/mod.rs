@@ -1,27 +1,31 @@
-﻿use super::{
+﻿mod ffi;
+
+use super::{
     args::{Meta, SampleArgs},
     Args, RandomSample,
 };
 use crate::{
     get_static,
-    nvidia_gpu::{dt_name, Gpu, Handle, EXPORT, EXPORT_H},
-    scheme_not_compatible, scheme_not_set, strides_not_support,
+    nvidia_gpu::{dt_name, Gpu, Handle},
+    strides_not_support,
     utils::sizeof,
-    ByteOf, LaunchError, ParamError, QueueAlloc, SchemeError,
+    ByteOf, LaunchError, QueueAlloc, SchemeDiversity, SchemeError, Workspace,
 };
-use dev_mempool::cuda::{bindings::CUstream, AsRaw, DevByte, Stream};
+use dev_mempool::cuda::{DevByte, Stream};
 use digit_layout::DigitLayout;
+use ffi::format_code;
 use libloading::Library;
+use lru::LruCache;
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 use std::{
     alloc::Layout,
-    collections::HashMap,
+    num::NonZero,
     sync::{Arc, Mutex, OnceLock},
 };
 
 pub struct Operator {
     handle: Arc<Handle>,
-    scheme: Option<Scheme>,
+    schemes: Mutex<LruCache<DigitLayout, Scheme>>,
 }
 
 impl RandomSample<Gpu> for Operator {
@@ -46,7 +50,7 @@ impl crate::Operator for Operator {
     fn new(processor: &Self::Hardware) -> Self {
         Self {
             handle: processor.0.clone(),
-            scheme: None,
+            schemes: processor.0.scheme_cache(SchemeDiversity::Low),
         }
     }
 
@@ -55,15 +59,21 @@ impl crate::Operator for Operator {
         args: &Self::Args,
         max_workspace_size: usize,
     ) -> Result<usize, SchemeError> {
-        let scheme = Scheme::new(args.meta()?, &self.handle)?;
-        let (argmax_size, sample_size) = (scheme.argmax.1, scheme.sample.1);
-        self.scheme = Some(scheme);
+        let meta = args.meta()?;
+        let mut schemes = self.schemes.lock().unwrap();
+        let scheme = schemes.get_or_insert(meta.dt, || Scheme::new(&self.handle, meta.dt));
+        let Some(&n) = meta.n.get_static() else {
+            return Ok(0);
+        };
+        let (argmax_size, sample_size) = scheme.workspace_size(n);
+        drop(schemes);
 
         let (max, min) = if argmax_size > sample_size {
             (argmax_size, sample_size)
         } else {
             (sample_size, argmax_size)
         };
+
         Ok(if max <= max_workspace_size {
             max
         } else if min <= max_workspace_size {
@@ -106,12 +116,6 @@ impl crate::Operator for Operator {
 
         get_static!(n sp si);
 
-        let Some(scheme) = self.scheme.as_ref() else {
-            return Err(scheme_not_set(""));
-        };
-        if scheme.dt != dt || scheme.n != n {
-            return Err(scheme_not_compatible(""));
-        }
         if sizeof(dt)? as isize != sp {
             return Err(strides_not_support("").into());
         }
@@ -119,252 +123,121 @@ impl crate::Operator for Operator {
             return Err(strides_not_support("").into());
         }
 
+        let scheme = self
+            .schemes
+            .lock()
+            .unwrap()
+            .get_or_insert(dt, || Scheme::new(&self.handle, dt))
+            .clone();
+        let (argmax_size, sample_size) = scheme.workspace_size(n);
+
         let stream = queue_alloc.queue();
         if args.config.is_argmax() {
-            if workspace.len() >= scheme.argmax.1 {
-                scheme.argmax(*kv_pair_base, *logits_base, workspace, stream)
-            } else {
-                let mut workspace = queue_alloc.alloc(scheme.argmax.1);
-                let res = scheme.argmax(*kv_pair_base, *logits_base, &mut workspace, stream);
-                queue_alloc.free(workspace);
-                res
-            }
-        } else if workspace.len() >= scheme.sample.1 {
+            let mut workspace = Workspace::new(queue_alloc, workspace, argmax_size);
+            scheme.argmax(*kv_pair_base, *logits_base, n, &mut workspace, stream)
+        } else {
+            let mut workspace = Workspace::new(queue_alloc, workspace, sample_size);
             scheme.sample(
                 *kv_pair_base,
                 *logits_base,
                 *indices_base,
-                *config,
-                *seed,
-                workspace,
-                stream,
-            )
-        } else {
-            let mut workspace = queue_alloc.alloc(scheme.sample.1);
-            let res = scheme.sample(
-                *kv_pair_base,
-                *logits_base,
-                *indices_base,
+                n,
                 *config,
                 *seed,
                 &mut workspace,
                 stream,
-            );
-            queue_alloc.free(workspace);
-            res
+            )
         }
     }
 }
 
-type WorkspaceFunc = unsafe extern "C" fn(
-    *mut usize, // argmax
-    *mut usize, // random_sample
-    usize,      // n
-) -> i32;
-
-type ArgMaxFunc = unsafe extern "C" fn(
-    *mut DevByte,   // - kv_pair
-    *const DevByte, //   logits
-    usize,          //   n
-    *mut DevByte,   // - workspace_ptr
-    usize,          //   workspace_len
-    CUstream,       //   stream
-) -> i32;
-
-type SampleFunc = unsafe extern "C" fn(
-    *mut DevByte,   // - kv_pair
-    *const DevByte, //   logits
-    *const DevByte, //   indices
-    usize,          //   n
-    f32,            // - seed
-    f32,            //   temperature
-    f32,            //   topp
-    usize,          //   topk
-    *mut DevByte,   // - workspace_ptr
-    usize,          //   workspace_len
-    CUstream,       //   stream
-) -> i32;
-
-macro_rules! extern_c {
-    ($ty:ty; $lib:expr, $name:expr; $($args:expr),* $(,)?) => {{
-        let result = unsafe { $lib.get::<$ty>($name.as_bytes()).unwrap()( $( $args ),* ) };
-        if result == $crate::cuda::bindings::CUresult::CUDA_SUCCESS as _ {
-            Ok(())
-        } else {
-            Err($crate::execution_failed(format!(
-                "{} failed with cuda error code {result}",
-                $name
-            )))
-        }
-    }};
-}
-
+#[derive(Clone, Debug)]
 struct Scheme {
     dt: DigitLayout,
-    n: usize,
-    argmax: (String, usize),
-    sample: (String, usize),
+    argmax: String,
+    sample: String,
     lib: Arc<Library>,
 }
 
 impl Scheme {
-    fn new(meta: Meta, handle: &Arc<Handle>) -> Result<Self, ParamError> {
-        const CODE: &str = include_str!("sample.cuh");
-        let dt = dt_name(meta.dt);
-        let mut workspace_name = format!("workspace_{dt}");
-        let mut argmax_name = format!("arg_max_{dt}");
-        let mut sample_name = format!("random_sample_{dt}");
-        let lib = handle.compile(
-            format!("random_sample_{dt}"),
-            handle.device().compute_capability(),
-            || {
-                format!(
-                    r#"
-{EXPORT_H}
-{CODE}
-
-{EXPORT}cudaError {workspace_name}(
-    size_t *argmax,
-    size_t *random_sample,
-    size_t n
-) {{
-    return calculate_workspace_size<{dt}>(argmax, random_sample, n);
-}}
-
-{EXPORT}cudaError {argmax_name}(
-    cub::KeyValuePair<int, {dt}> *kv_pair,
-    {dt} const *logits,
-    size_t n,
-
-    void *workspace_ptr,
-    size_t workspace_len,
-    cudaStream_t stream
-) {{
-    return arg_max(
-        kv_pair,
-        logits,
-        n,
-
-        workspace_ptr,
-        workspace_len,
-        stream);
-}}
-
-{EXPORT}cudaError {sample_name}(
-    cub::KeyValuePair<int, {dt}> *kv_pair,
-    {dt} const *logits,
-    unsigned int const *indices,
-    size_t n,
-
-    float random,
-    float temperature,
-    float topp,
-    size_t topk,
-
-    void *workspace_ptr,
-    size_t workspace_len,
-    cudaStream_t stream
-) {{
-    return random_sample(
-        kv_pair,
-        logits,
-        indices,
-        n,
-
-        random,
-        temperature,
-        topp,
-        topk,
-
-        workspace_ptr,
-        workspace_len,
-        stream);
-}}
-"#
-                )
-            },
-        );
-
-        let n = meta.n;
-        get_static!(n);
+    fn new(handle: &Arc<Handle>, dt: DigitLayout) -> Self {
+        let t = dt_name(dt);
+        let workspace_name = format!("workspace_{t}");
+        let mut argmax_name = format!("arg_max_{t}");
+        let mut sample_name = format!("random_sample_{t}");
+        let lib = handle.compile(&sample_name, handle.device().compute_capability(), || {
+            format_code(t, &workspace_name, &argmax_name, &sample_name)
+        });
 
         argmax_name.push('\0');
         sample_name.push('\0');
-        let (argmax_size, sample_size) = {
-            type Key = (u32, u32);
-            type WorkspaceSize = (usize, usize);
-            static CACHE: OnceLock<Mutex<HashMap<Key, WorkspaceSize>>> = OnceLock::new();
-            let cache = CACHE.get_or_init(Default::default);
 
-            use std::collections::hash_map::Entry::*;
-            match cache.lock().unwrap().entry((meta.dt.to_u32(), n as _)) {
-                Occupied(entry) => *entry.get(),
-                Vacant(entry) => {
-                    workspace_name.push('\0');
-
-                    let mut argmax_size = 0;
-                    let mut sample_size = 0;
-                    extern_c!(WorkspaceFunc; lib, workspace_name; &mut argmax_size, &mut sample_size, n).unwrap();
-                    *entry.insert((argmax_size, sample_size))
-                }
-            }
-        };
-        Ok(Self {
-            dt: meta.dt,
-            n,
-            argmax: (argmax_name, argmax_size),
-            sample: (sample_name, sample_size),
+        Self {
+            dt,
+            argmax: argmax_name,
+            sample: sample_name,
             lib,
-        })
+        }
+    }
+
+    fn workspace_size(&self, n: usize) -> (usize, usize) {
+        type Key = (DigitLayout, u32);
+        type Pair = (usize, usize);
+        static CACHE: OnceLock<Mutex<LruCache<Key, Pair>>> = OnceLock::new();
+
+        *CACHE
+            .get_or_init(|| Mutex::new(LruCache::new(NonZero::new(16).unwrap())))
+            .lock()
+            .unwrap()
+            .try_get_or_insert((self.dt, n as _), || {
+                ffi::workspace_size(&self.lib, &format!("workspace_{}\0", dt_name(self.dt)), n)
+            })
+            .unwrap()
     }
 
     fn argmax(
         &self,
         kv_pair: *mut DevByte,
         logits: *const DevByte,
+        n: usize,
         workspace: &mut [DevByte],
         stream: &Stream,
     ) -> Result<(), LaunchError> {
-        extern_c! { ArgMaxFunc;
-            self.lib, self.argmax.0;
-
+        ffi::argmax(
+            &self.lib,
+            &self.argmax,
             kv_pair,
             logits,
-            self.n,
-
-            workspace.as_mut_ptr(),
-            workspace.len(),
-            stream.as_raw(),
-        }
+            n,
+            workspace,
+            stream,
+        )
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn sample(
         &self,
         kv_pair: *mut DevByte,
         logits: *const DevByte,
         indices: *const DevByte,
+        n: usize,
         config: SampleArgs,
         seed: f32,
         workspace: &mut [DevByte],
         stream: &Stream,
     ) -> Result<(), LaunchError> {
-        extern_c! { SampleFunc;
-            self.lib, self.sample.0;
-
+        ffi::sample(
+            &self.lib,
+            &self.sample,
             kv_pair,
             logits,
             indices,
-            self.n,
-
+            n,
+            config,
             seed,
-            config.temperature,
-            config.top_p,
-            config.top_k,
-
-            workspace.as_mut_ptr(),
-            workspace.len(),
-            stream.as_raw(),
-        }
+            workspace,
+            stream,
+        )
     }
 }
 
@@ -386,11 +259,8 @@ fn test_compute() {
 
     let n = 32000;
 
-    let mut cpu_op = RefOp::new(&Cpu);
+    let cpu_op = RefOp::new(&Cpu);
     let mut gpu_op = Operator::new(&gpu);
-    cpu_op
-        .scheme(&Args::layout(ty::F32, n), usize::MAX)
-        .unwrap();
     println!(
         "workspace = {}",
         gpu_op

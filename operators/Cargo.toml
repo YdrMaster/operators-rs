@@ -16,6 +16,7 @@ dev-mempool.workspace = true
 digit-layout.workspace = true
 ndarray-layout = { git = "https://github.com/YdrMaster/ndarray-layout", rev = "3de35cc" }
 rayon = "1.10"
+lru = "0.12"
 half = "2.4"
 log = "0.4"
 
@@ -37,4 +38,6 @@ search-neuware-tools.workspace = true
 search-ascend-tools.workspace = true
 
 [dev-dependencies]
+dev-mempool = { workspace = true, features = ["common-cpu"] }
+gemm = "0.18"
 rand = "0.8"

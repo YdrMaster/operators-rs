@@ -15,8 +15,8 @@ pub struct Args<H: Hardware> {
 }
 
 pub(super) struct Meta {
-    pub dt_w: DigitLayout,
     pub dt_a: DigitLayout,
+    pub dt_w: DigitLayout,
     pub n: MaybeDyn<usize>,
     pub d: MaybeDyn<usize>,
 }
@@ -41,8 +41,8 @@ impl<H: Hardware> Args<H> {
         };
 
         Ok(Meta {
-            dt_w: w_layout.dt(),
             dt_a: type_distinct(&[y_layout.dt(), x_layout.dt()])?,
+            dt_w: w_layout.dt(),
             n: dim_distinct(&[ny, nx])?,
             d: dim_distinct(&[dy, dx, dw])?,
         })

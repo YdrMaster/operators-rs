@@ -17,7 +17,7 @@ pub mod mlp;
 
 pub use common::*;
 
-#[cfg(use_cpu)]
+#[cfg(any(use_cpu, test))]
 pub use handle::common_cpu;
 
 #[cfg(use_cuda)]
