@@ -4,7 +4,7 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-pub(crate) enum Workspace<'a, QA: QueueAlloc> {
+pub enum Workspace<'a, QA: QueueAlloc> {
     Ext(&'a mut [ByteOf<QA::Hardware>]),
     Int(ManuallyDrop<QA::DevMem>, &'a QA),
 }

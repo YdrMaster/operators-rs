@@ -18,7 +18,7 @@ pub struct Args<H: Hardware> {
     pub w_down_layout: TensorLayout,
     pub w_down_base: ConstPtr<H>,
     pub down_alpha: f32,
-    pub down_bias: bool,
+    pub residual: bool,
 }
 
 pub(super) struct Meta {
@@ -34,7 +34,7 @@ impl<H: Hardware> Args<H> {
         w_gate_up_layout: TensorLayout,
         w_down_layout: TensorLayout,
         down_alpha: f32,
-        down_bias: bool,
+        residual: bool,
     ) -> Self {
         use std::ptr::{null, null_mut};
         Self {
@@ -47,7 +47,7 @@ impl<H: Hardware> Args<H> {
             w_down_layout,
             w_down_base: null(),
             down_alpha,
-            down_bias,
+            residual,
         }
     }
 

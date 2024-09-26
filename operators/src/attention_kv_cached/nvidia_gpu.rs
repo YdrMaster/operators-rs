@@ -25,7 +25,6 @@ mod test {
         )
     }
 
-    #[allow(dead_code)]
     fn args<H: Hardware>(
         dt: DigitLayout,
         nh: usize,

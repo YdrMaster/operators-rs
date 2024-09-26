@@ -9,10 +9,11 @@ pub use maybe_dyn::{dyn_, DynVal, MaybeDyn};
 pub use pool::Pool;
 pub use tensor::TensorLayout;
 pub use traits::{ArgsOf, ByteOf, Hardware, Operator, QueueAlloc, QueueOf};
+pub use workspace::Workspace;
 
 pub(crate) use maybe_dyn::{get_static, static_from};
 pub(crate) use traits::{op_trait, ConstPtr, MutPtr};
-pub(crate) use workspace::{Workspace, WorkspaceCollector};
+pub(crate) use workspace::WorkspaceCollector;
 #[allow(dead_code)]
 pub(crate) enum SchemeDiversity {
     Low,

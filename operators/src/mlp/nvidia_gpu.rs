@@ -29,7 +29,7 @@ mod test {
         w_gate_up_base: *const H::Byte,
         w_down_base: *const H::Byte,
         down_alpha: f32,
-        down_bias: bool,
+        residual: bool,
     ) -> Args<H> {
         Args {
             y_layout: TensorLayout::new_contiguous(dt, &[nt, d]),
@@ -41,7 +41,7 @@ mod test {
             w_down_layout: TensorLayout::new_contiguous(dt, &[di, d]),
             w_down_base,
             down_alpha,
-            down_bias,
+            residual,
         }
     }
 

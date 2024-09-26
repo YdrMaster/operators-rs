@@ -1,10 +1,35 @@
-﻿use super::{args::Meta, Args, Rope};
-use crate::{common_cpu::Cpu, get_static, LaunchError, SchemeError};
+﻿use super::{args::Meta, Args, Rope, Seq};
+use crate::{common_cpu::Cpu, get_static, LaunchError, QueueAlloc, SchemeError};
 use half::f16;
+use std::alloc::Layout;
 
 pub struct Operator;
 
-impl Rope<Cpu> for Operator {}
+impl Rope<Cpu> for Operator {
+    fn build_sincos<QA>(_n: usize, queue_alloc: &QA) -> QA::DevMem
+    where
+        QA: QueueAlloc<Hardware = Self::Hardware>,
+    {
+        queue_alloc.alloc(0)
+    }
+
+    fn build_pos<I, QA>(nt: usize, iter: I, queue_alloc: &QA) -> QA::DevMem
+    where
+        I: IntoIterator<Item = Seq>,
+        QA: QueueAlloc<Hardware = Self::Hardware>,
+    {
+        let mut blob = queue_alloc.alloc(Layout::array::<u32>(nt).unwrap().size());
+        let slice = unsafe { std::slice::from_raw_parts_mut(blob.as_mut_ptr().cast::<u32>(), nt) };
+        let mut i = 0;
+        for seq in iter {
+            for j in 0..seq.len {
+                slice[i] = (seq.pos + j) as _;
+                i += 1;
+            }
+        }
+        blob
+    }
+}
 
 impl crate::Operator for Operator {
     type Hardware = Cpu;
@@ -30,7 +55,7 @@ impl crate::Operator for Operator {
         _queue_alloc: &QA,
     ) -> Result<(), LaunchError>
     where
-        QA: crate::QueueAlloc<Hardware = Self::Hardware>,
+        QA: QueueAlloc<Hardware = Self::Hardware>,
     {
         let Meta { dt_t, dt_p, nt, .. } = args.meta()?;
         let Args {

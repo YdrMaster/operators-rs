@@ -1,13 +1,13 @@
-﻿use super::{args::Meta, Args, Rope};
+﻿use super::{args::Meta, Args, Rope, Seq};
 use crate::{
     get_static,
     nvidia_gpu::{Gpu, Handle, ModuleBox},
     shape_not_support, strides_not_support, type_not_support,
     utils::sizeof,
-    LaunchError, SchemeError,
+    LaunchError, QueueAlloc, SchemeError,
 };
 use digit_layout::types::{F16, U32};
-use std::{ffi::CString, sync::Arc};
+use std::{alloc::Layout, ffi::CString, sync::Arc};
 
 pub struct Operator {
     _handle: Arc<Handle>,
@@ -16,7 +16,32 @@ pub struct Operator {
 }
 const NAME: &str = "rope_f16";
 
-impl Rope<Gpu> for Operator {}
+impl Rope<Gpu> for Operator {
+    fn build_sincos<QA>(_n: usize, queue_alloc: &QA) -> QA::DevMem
+    where
+        QA: QueueAlloc<Hardware = Self::Hardware>,
+    {
+        queue_alloc.alloc(0)
+    }
+
+    fn build_pos<I, QA>(nt: usize, iter: I, queue_alloc: &QA) -> QA::DevMem
+    where
+        I: IntoIterator<Item = Seq>,
+        QA: QueueAlloc<Hardware = Self::Hardware>,
+    {
+        let mut blob = queue_alloc.alloc(Layout::array::<u32>(nt).unwrap().size());
+        let mut host = vec![0u32; nt];
+        let mut i = 0;
+        for seq in iter {
+            for j in 0..seq.len {
+                host[i] = (seq.pos + j) as _;
+                i += 1;
+            }
+        }
+        queue_alloc.queue().memcpy_h2d(&mut blob, &host);
+        blob
+    }
+}
 
 impl crate::Operator for Operator {
     type Hardware = Gpu;
@@ -51,7 +76,7 @@ impl crate::Operator for Operator {
         queue_alloc: &QA,
     ) -> Result<(), LaunchError>
     where
-        QA: crate::QueueAlloc<Hardware = Self::Hardware>,
+        QA: QueueAlloc<Hardware = Self::Hardware>,
     {
         let Meta {
             dt_t, dt_p, nt, dh, ..

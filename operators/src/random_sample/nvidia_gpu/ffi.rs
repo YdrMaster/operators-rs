@@ -1,6 +1,4 @@
-﻿#![allow(clippy::too_many_arguments)]
-
-use crate::{random_sample::SampleArgs, LaunchError};
+﻿use crate::{random_sample::SampleArgs, LaunchError};
 use dev_mempool::cuda::{bindings::CUstream, AsRaw, DevByte, Stream};
 use libloading::Library;
 
@@ -80,6 +78,7 @@ pub(super) fn argmax(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn sample(
     lib: &Library,
     name: &str,

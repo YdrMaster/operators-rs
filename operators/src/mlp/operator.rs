@@ -55,7 +55,7 @@ where
             w_down_layout,
             w_down_base,
             down_alpha,
-            down_bias,
+            residual,
         } = args;
 
         // 如果不能保证 nt di 已知，用任意值初始化算子
@@ -115,7 +115,7 @@ where
             &mat_mul::Args {
                 c_layout: y_layout.clone(),
                 c_base: *y_base,
-                beta: if *down_bias { 1. } else { 0. },
+                beta: if *residual { 1. } else { 0. },
                 a_layout: swiglu_layout,
                 a_base: null(),
                 b_layout: w_down_layout.clone(),
@@ -148,7 +148,7 @@ where
             w_down_layout,
             w_down_base,
             down_alpha,
-            down_bias,
+            residual,
         } = args;
 
         let ele = sizeof(dt)?;
@@ -191,7 +191,7 @@ where
             &mat_mul::Args {
                 c_layout: y_layout.clone(),
                 c_base: *y_base,
-                beta: if *down_bias { 1. } else { 0. },
+                beta: if *residual { 1. } else { 0. },
                 a_layout: swiglu_layout,
                 a_base: gate_up.as_ptr(),
                 b_layout: w_down_layout.clone(),
