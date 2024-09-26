@@ -13,8 +13,8 @@ ascend-card = ["ascendcl"]
 
 [dependencies]
 dev-mempool.workspace = true
-digit-layout.workspace = true
-ndarray-layout = { git = "https://github.com/YdrMaster/ndarray-layout", rev = "3de35cc" }
+ndarray-layout.workspace = true
+digit-layout = "0.1"
 rayon = "1.10"
 lru = "0.12"
 half = "2.4"
@@ -32,7 +32,7 @@ cnnl = { workspace = true, optional = true }
 ascendcl = { workspace = true, optional = true }
 
 [build-dependencies]
-build-script-cfg.workspace = true
+build-script-cfg = "0.0"
 search-cuda-tools.workspace = true
 search-neuware-tools.workspace = true
 search-ascend-tools.workspace = true

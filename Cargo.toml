@@ -3,10 +3,9 @@ members = ["operators"]
 resolver = "2"
 
 [workspace.dependencies]
-digit-layout = "0.1"
-build-script-cfg = "0.0"
-
+ndarray-layout = { git = "https://github.com/YdrMaster/ndarray-layout", rev = "5c6b969" }
 dev-mempool = { git = "https://github.com/YdrMaster/dev-mempool", rev = "72429e2", default-features = false }
+
 cublas = { git = "https://github.com/YdrMaster/cuda-driver", rev = "d089ada" }
 nccl = { git = "https://github.com/YdrMaster/cuda-driver", rev = "d089ada" }
 search-cuda-tools = { git = "https://github.com/YdrMaster/cuda-driver", rev = "d089ada" }

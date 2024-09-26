@@ -47,7 +47,12 @@ where
         max_workspace_size: usize,
     ) -> Result<usize, SchemeError> {
         let Meta {
-            dt, nh, seq, att, ..
+            dt,
+            nh,
+            seq,
+            att,
+            dh,
+            ..
         } = args.meta()?;
         let Args {
             q_layout,
@@ -57,10 +62,13 @@ where
             ..
         } = args;
 
-        // 如果不能保证 nh seq att 已知，用任意值初始化算子
-        let (Some(&nh), Some(&seq), Some(&att)) =
-            (nh.get_static(), seq.get_static(), att.get_static())
-        else {
+        // 如果不能保证 nh seq att dh 已知，用任意值初始化算子
+        let (Some(&nh), Some(&seq), Some(&att), Some(&dh)) = (
+            nh.get_static(),
+            seq.get_static(),
+            att.get_static(),
+            dh.get_static(),
+        ) else {
             let mut wc = WorkspaceCollector::new();
 
             let layout = TensorLayout::new_dyn(dt, &[dyn_(); 3], &[dyn_(); 3]);
@@ -86,10 +94,12 @@ where
 
         let ele = sizeof(dt)?;
         let att_layout = TensorLayout::new_contiguous(dt, &[nh, seq, att]);
+        let q_size = nh * seq * dh * ele;
         let att_size = nh * seq * att * ele;
-        let workspace_size = max_workspace_size.saturating_sub(att_size);
+        let workspace_size = max_workspace_size.saturating_sub(q_size + att_size);
 
         let mut wc = WorkspaceCollector::new();
+        wc.push_base(q_size);
         wc.push_base(att_size);
 
         // att = q . k^T
@@ -165,24 +175,45 @@ where
             nkvh_sk att_sk dh_sk
         };
 
-        let att_size = nh * seq * att * ele;
-        let mut workspace = Workspace::new(queue_alloc, workspace, att_size);
-        let (att_buf, workspace) = workspace.split_at_mut(att_size);
-
         #[inline(always)]
-        fn layout(shape: [usize; 3], strides: [isize; 3]) -> ArrayLayout<4> {
+        fn layout(shape: [usize; 3], strides: [isize; 3]) -> ArrayLayout<3> {
             ArrayLayout::new(&shape, &strides, 0)
         }
-        let att_layout = layout([nh, seq, dh], [nh_sq, seq_sq, dh_sq]);
-        let k_layout = layout([nkvh, att, dh], [nkvh_sk, att_sk, dh_sk]);
+        let qx = layout([nh, seq, dh], [nh_sq, seq_sq, dh_sq]).merge(0..2);
+        let k_layout = layout([nkvh, att, dh], [nkvh_sk, att_sk, dh_sk]).transpose(&[2, 1]);
+
+        let q_size = if qx.is_none() { nh * seq * dh * ele } else { 0 };
+        let att_size = nh * seq * att * ele;
+        let mut workspace = Workspace::new(queue_alloc, workspace, q_size + att_size);
+        let (q_buf, workspace) = workspace.split_at_mut(q_size);
+        let (att_buf, workspace) = workspace.split_at_mut(att_size);
 
         let head_group = nh / nkvh;
-        let att_layout = att_layout.tile_be(0, &[nkvh, head_group]).merge(1..3);
-        let k_layout = k_layout.transpose(&[2, 1]);
+        let (q_layout, qx_layout, q_base) = match qx {
+            None => {
+                let q_layout = TensorLayout::new_contiguous(dt, &[nh, seq, dh]);
+                let qx_layout = TensorLayout::new_contiguous(dt, &[nkvh, head_group * seq, dh]);
+                let q_base = q_buf.as_mut_ptr();
+                self.rearrange.launch(
+                    &rearrange::Args {
+                        dst_layout: q_layout.clone(),
+                        dst_base: q_base,
+                        src_layout: args.q_layout.clone(),
+                        src_base: args.q_base,
+                    },
+                    workspace,
+                    queue_alloc,
+                )?;
+                (q_layout, qx_layout, q_base)
+            }
+            Some(qx) => {
+                let qx = qx.tile_be(0, &[nkvh, head_group * seq]);
+                let qx_layout = TensorLayout::new(dt, qx.shape(), qx.strides());
+                (q_layout.clone(), qx_layout, *q_base)
+            }
+        };
 
-        assert_eq!(att_layout.offset(), 0);
         assert_eq!(k_layout.offset(), 0);
-        let att_layout = TensorLayout::new(dt, att_layout.shape(), att_layout.strides());
         let k_layout = TensorLayout::new(dt, k_layout.shape(), k_layout.strides());
         let att_mat_mul = TensorLayout::new_contiguous(dt, &[nkvh, head_group * seq, att]);
         let att_softmax = TensorLayout::new_contiguous(dt, &[nh, seq, att]);
@@ -193,8 +224,8 @@ where
                 c_layout: att_mat_mul.clone(),
                 c_base: att_buf.as_mut_ptr(),
                 beta: 0.,
-                a_layout: att_layout.clone(),
-                a_base: *q_base,
+                a_layout: qx_layout.clone(),
+                a_base: q_base,
                 b_layout: k_layout,
                 b_base: *k_base,
                 alpha: (dh as f32).sqrt().recip(),
@@ -214,8 +245,8 @@ where
         // q = att . v
         self.mat_mul.launch(
             &mat_mul::Args {
-                c_layout: att_layout.clone(),
-                c_base: *q_base,
+                c_layout: qx_layout.clone(),
+                c_base: q_base,
                 beta: 0.,
                 a_layout: att_mat_mul,
                 a_base: att_buf.as_ptr(),
@@ -232,7 +263,7 @@ where
                 dst_layout: o_layout.clone(),
                 dst_base: *o_base,
                 src_layout: q_layout.clone(),
-                src_base: *q_base,
+                src_base: q_base,
             },
             workspace,
             queue_alloc,
