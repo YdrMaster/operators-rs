@@ -1,6 +1,5 @@
 ﻿use super::{args::SchemeLayout, Args, MatMul};
 use crate::{common_cpu::Cpu, type_not_support, ByteOf, LaunchError, QueueAlloc, SchemeError};
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 pub struct Operator;
 
@@ -69,7 +68,7 @@ impl crate::Operator for Operator {
 
         macro_rules! gemm {
             ($ty:ty; $alpha:expr, $beta:expr) => {
-                (0..batch as isize).into_par_iter().for_each(|i| unsafe {
+                (0..batch as isize).for_each(|i| unsafe {
                     gemm::gemm(
                         m,
                         n,

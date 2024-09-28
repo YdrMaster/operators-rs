@@ -5,7 +5,6 @@ mod test {
     use super::{super::Args, Operator};
     use crate::{nvidia_gpu::Gpu, Hardware, Operator as _, TensorLayout};
     use digit_layout::{types as ty, DigitLayout};
-    use rayon::iter::IntoParallelRefMutIterator;
 
     fn dyn_args<H: Hardware>(dt: DigitLayout, nt: usize, di: usize, d: usize) -> Args<H> {
         use crate::dyn_;
@@ -68,7 +67,6 @@ mod test {
         use dev_mempool::cuda::memcpy_d2h;
         use half::f16;
         use rand::Rng;
-        use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 
         let Some(gpu) = Gpu::init() else {
             return;
@@ -89,7 +87,7 @@ mod test {
         rand::thread_rng().fill(&mut x[..]);
         rand::thread_rng().fill(&mut w_gate_up[..]);
         rand::thread_rng().fill(&mut w_down[..]);
-        x.par_iter_mut().for_each(|x| *x *= 1e-4);
+        x.iter_mut().for_each(|x| *x *= 1e-4);
         let y = y;
         let x = x;
         let w_gate_up = w_gate_up;
@@ -145,7 +143,7 @@ mod test {
             .unwrap();
 
         let diff = y_ref
-            .into_par_iter()
+            .into_iter()
             .zip(y_ans)
             .map(|(a, b)| Diff::new(a, b.to_f64()))
             .collect::<Vec<_>>();

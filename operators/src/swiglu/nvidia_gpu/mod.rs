@@ -2,9 +2,10 @@
 use crate::{
     get_static,
     nvidia_gpu::{Gpu, Handle, ModuleBox},
+    strides_not_support, type_not_support,
     utils::{gcd, sizeof},
+    LaunchError, SchemeError,
 };
-use crate::{strides_not_support, type_not_support, LaunchError, SchemeError};
 use digit_layout::types::F16;
 use std::{ffi::CString, sync::Arc};
 
@@ -184,7 +185,6 @@ mod test {
         use dev_mempool::cuda::memcpy_d2h;
         use half::f16;
         use rand::Rng;
-        use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 
         let Some(gpu) = Gpu::init() else {
             return;
@@ -230,7 +230,7 @@ mod test {
             .unwrap();
 
         let diff = gate_ref
-            .into_par_iter()
+            .into_iter()
             .zip(gate_ans)
             .map(|(a, b)| Diff::new(a, b.to_f64()))
             .collect::<Vec<_>>();

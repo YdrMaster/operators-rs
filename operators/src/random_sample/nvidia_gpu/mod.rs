@@ -16,7 +16,6 @@ use digit_layout::DigitLayout;
 use ffi::format_code;
 use libloading::Library;
 use lru::LruCache;
-use rayon::iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator};
 use std::{
     alloc::Layout,
     num::NonZero,
@@ -35,9 +34,7 @@ impl RandomSample<Gpu> for Operator {
     {
         let mut indices = queue_alloc.alloc(Layout::array::<u32>(n).unwrap().size());
         let mut host = vec![0u32; n];
-        host.par_iter_mut()
-            .enumerate()
-            .for_each(|(i, x)| *x = i as u32);
+        host.iter_mut().enumerate().for_each(|(i, x)| *x = i as u32);
         queue_alloc.queue().memcpy_h2d(&mut indices, &host);
         indices
     }

@@ -79,7 +79,6 @@ mod test {
         use dev_mempool::cuda::memcpy_d2h;
         use half::f16;
         use rand::Rng;
-        use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 
         let Some(gpu) = Gpu::init() else {
             return;
@@ -165,7 +164,7 @@ mod test {
             .unwrap();
 
         let diff = o_ref
-            .into_par_iter()
+            .into_iter()
             .zip(o_ans)
             .map(|(a, b)| Diff::new(a, b.to_f64()))
             .collect::<Vec<_>>();

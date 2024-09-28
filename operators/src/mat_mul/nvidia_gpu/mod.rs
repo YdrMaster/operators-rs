@@ -1,6 +1,8 @@
 ﻿use super::{args::SchemeLayout, Args, MatMul};
-use crate::nvidia_gpu::{Gpu, Handle};
-use crate::{type_not_support, ByteOf, LaunchError, QueueAlloc, SchemeError};
+use crate::{
+    nvidia_gpu::{Gpu, Handle},
+    type_not_support, ByteOf, LaunchError, QueueAlloc, SchemeError,
+};
 use cublas::cublas;
 use dev_mempool::cuda::AsRaw;
 use digit_layout::types::F16;
@@ -158,11 +160,11 @@ mod test {
     #[test]
     fn test_compute() {
         use super::{super::common_cpu::Operator as RefOp, Gpu, Operator};
-        use crate::common_cpu::{Cpu, ThisThread};
-        use crate::Operator as _;
         use crate::{
+            common_cpu::{Cpu, ThisThread},
             nvidia_gpu::cast_load,
             test_utils::{Diff, ErrorCollector},
+            Operator as _,
         };
         use dev_mempool::cuda::memcpy_d2h;
         use digit_layout::types::{F16, F64};

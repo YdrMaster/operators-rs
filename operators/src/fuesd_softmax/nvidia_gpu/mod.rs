@@ -1,8 +1,10 @@
 ﻿use super::{args::Meta, Args, FusedSoftmax};
-use crate::nvidia_gpu::{Gpu, Handle, ModuleBox};
-use crate::utils::sizeof;
 use crate::{
-    get_static, strides_not_support, type_not_support, ByteOf, LaunchError, QueueAlloc, SchemeError,
+    get_static,
+    nvidia_gpu::{Gpu, Handle, ModuleBox},
+    strides_not_support, type_not_support,
+    utils::sizeof,
+    ByteOf, LaunchError, QueueAlloc, SchemeError,
 };
 use digit_layout::types::F16;
 use std::{
@@ -224,7 +226,6 @@ mod test {
         use dev_mempool::cuda::memcpy_d2h;
         use half::f16;
         use rand::Rng;
-        use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
 
         let Some(gpu) = Gpu::init() else {
             return;
@@ -265,7 +266,7 @@ mod test {
                 .unwrap();
 
             let diff = att_ref
-                .into_par_iter()
+                .into_iter()
                 .zip(att_ans)
                 .map(|(a, b)| Diff::new(a, b.to_f64()))
                 .collect::<Vec<_>>();

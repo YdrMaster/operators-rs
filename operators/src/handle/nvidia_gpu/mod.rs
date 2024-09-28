@@ -214,9 +214,8 @@ where
     U: Send + Copy,
     F: Sync + Fn(T) -> U,
 {
-    use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
     let mut host = stream.ctx().malloc_host::<U>(val.len());
     let host = unsafe { std::slice::from_raw_parts_mut(host.as_mut_ptr().cast(), val.len()) };
-    host.into_par_iter().zip(val).for_each(|(y, x)| *y = f(*x));
+    host.into_iter().zip(val).for_each(|(y, x)| *y = f(*x));
     stream.from_host(host)
 }

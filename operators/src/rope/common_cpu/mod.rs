@@ -197,15 +197,13 @@ where
     P: Position<A::Calculation> + Sync + Copy,
 {
     fn calculate(&self) {
-        use rayon::iter::{IntoParallelIterator, ParallelIterator};
-
         let nt = self.nt as isize;
         let nh = self.nh as isize;
         let dh = self.dh as isize / 2;
 
         for i in 0..nt {
             let p = unsafe { *self.p_base.byte_offset(i * self.sp) };
-            (0..dh).into_par_iter().for_each(|k| {
+            (0..dh).for_each(|k| {
                 for j in 0..nh {
                     let pair = unsafe {
                         &mut *self

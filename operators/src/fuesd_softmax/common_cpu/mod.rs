@@ -1,7 +1,6 @@
 ﻿use super::{args::Meta, Args, FusedSoftmax};
 use crate::{common_cpu::Cpu, get_static, ByteOf, LaunchError, QueueAlloc, SchemeError};
 use half::f16;
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 pub struct Operator;
 
@@ -97,7 +96,7 @@ impl<T> Scheme<T> {
         let att_len = self.att_len as isize;
 
         for j in 0..seq_len {
-            (0..nh).into_par_iter().for_each(|i| {
+            (0..nh).for_each(|i| {
                 let att = unsafe { self.att_base.byte_offset(i * self.sh + j * self.ss) };
                 let causal = att_len - seq_len + j + 1;
                 f(causal, att);

@@ -1,6 +1,8 @@
 ﻿use super::{args::Scheme, Args, Rearrange};
-use crate::nvidia_gpu::{Gpu, Handle, ModuleBox};
-use crate::{rank_not_support, shape_not_support, ByteOf, LaunchError, QueueAlloc, SchemeError};
+use crate::{
+    nvidia_gpu::{Gpu, Handle, ModuleBox},
+    rank_not_support, shape_not_support, ByteOf, LaunchError, QueueAlloc, SchemeError,
+};
 use std::{
     ffi::CString,
     slice::{from_raw_parts, from_raw_parts_mut},

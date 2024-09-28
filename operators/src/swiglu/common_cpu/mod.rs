@@ -2,7 +2,6 @@
 use crate::{common_cpu::Cpu, get_static};
 use crate::{LaunchError, SchemeError};
 use half::f16;
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 pub struct Operator;
 
@@ -98,7 +97,7 @@ unsafe impl<T> Sync for Scheme<T> {}
 impl<T: Copy> Scheme<T> {
     fn loop_(&self, f: impl Sync + Fn(T, T) -> T) {
         for i in 0..self.n as isize {
-            (0..self.d as isize).into_par_iter().for_each(|j| {
+            (0..self.d as isize).for_each(|j| {
                 let gate = unsafe { &mut *self.gate_base.byte_offset(i * self.sgn + j * self.sgd) };
                 let up = unsafe { *self.up_base.byte_offset(i * self.sun + j * self.sud) };
                 *gate = f(*gate, up);

@@ -5,7 +5,6 @@ use crate::{
     get_static, strides_not_support, type_not_support, ByteOf, LaunchError, QueueAlloc, SchemeError,
 };
 use half::f16;
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use std::{cmp::Ordering::Equal, slice::from_raw_parts};
 
 pub struct Operator;
@@ -107,7 +106,6 @@ where
     // sort
     let ptr = ptr as usize;
     let mut logits = (0..len)
-        .into_par_iter()
         .map(|idx| KVPair::new(idx as _, unsafe { (ptr as *const T).add(idx).read() }.f32()))
         .collect::<Vec<_>>();
     logits.sort_unstable();
