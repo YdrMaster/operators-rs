@@ -1,12 +1,13 @@
-﻿use super::{args::Meta, Args, Rope, Seq};
+﻿use super::{args::Meta, fill_pos, Args, Rope, Seq};
 use crate::{common_cpu::Cpu, get_static, LaunchError, QueueAlloc, SchemeError};
+use digit_layout::DigitLayout;
 use half::f16;
-use std::alloc::Layout;
+use std::{alloc::Layout, slice::from_raw_parts_mut};
 
 pub struct Operator;
 
 impl Rope<Cpu> for Operator {
-    fn build_sincos<QA>(_n: usize, queue_alloc: &QA) -> QA::DevMem
+    fn build_sincos<QA>(_dt: DigitLayout, _nctx: usize, _dh: usize, queue_alloc: &QA) -> QA::DevMem
     where
         QA: QueueAlloc<Hardware = Self::Hardware>,
     {
@@ -19,14 +20,8 @@ impl Rope<Cpu> for Operator {
         QA: QueueAlloc<Hardware = Self::Hardware>,
     {
         let mut blob = queue_alloc.alloc(Layout::array::<u32>(nt).unwrap().size());
-        let slice = unsafe { std::slice::from_raw_parts_mut(blob.as_mut_ptr().cast::<u32>(), nt) };
-        let mut i = 0;
-        for seq in iter {
-            for j in 0..seq.len {
-                slice[i] = (seq.pos + j) as _;
-                i += 1;
-            }
-        }
+        let slice = unsafe { from_raw_parts_mut(blob.as_mut_ptr().cast(), nt) };
+        fill_pos(slice, iter);
         blob
     }
 }

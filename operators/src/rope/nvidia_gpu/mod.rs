@@ -1,4 +1,4 @@
-﻿use super::{args::Meta, Args, Rope, Seq};
+﻿use super::{args::Meta, fill_pos, Args, Rope, Seq};
 use crate::{
     get_static,
     nvidia_gpu::{Gpu, Handle, ModuleBox},
@@ -6,7 +6,10 @@ use crate::{
     utils::sizeof,
     LaunchError, QueueAlloc, SchemeError,
 };
-use digit_layout::types::{F16, U32};
+use digit_layout::{
+    types::{F16, U32},
+    DigitLayout,
+};
 use std::{alloc::Layout, ffi::CString, sync::Arc};
 
 pub struct Operator {
@@ -17,7 +20,7 @@ pub struct Operator {
 const NAME: &str = "rope_f16";
 
 impl Rope<Gpu> for Operator {
-    fn build_sincos<QA>(_n: usize, queue_alloc: &QA) -> QA::DevMem
+    fn build_sincos<QA>(_dt: DigitLayout, _nctx: usize, _dh: usize, queue_alloc: &QA) -> QA::DevMem
     where
         QA: QueueAlloc<Hardware = Self::Hardware>,
     {
@@ -31,13 +34,7 @@ impl Rope<Gpu> for Operator {
     {
         let mut blob = queue_alloc.alloc(Layout::array::<u32>(nt).unwrap().size());
         let mut host = vec![0u32; nt];
-        let mut i = 0;
-        for seq in iter {
-            for j in 0..seq.len {
-                host[i] = (seq.pos + j) as _;
-                i += 1;
-            }
-        }
+        fill_pos(&mut host, iter);
         queue_alloc.queue().memcpy_h2d(&mut blob, &host);
         blob
     }
