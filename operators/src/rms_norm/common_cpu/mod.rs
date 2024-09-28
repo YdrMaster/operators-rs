@@ -129,7 +129,6 @@ macro_rules! impl_k {
     ($ty:ty) => {
         fn k(&self, i: isize) -> $ty {
             let sum = (0..self.d as isize)
-                .into_par_iter()
                 .map(|j| unsafe { self.x(i, j) }.powi(2))
                 .sum::<$ty>();
             (sum / (self.d as $ty) + self.epsilon as $ty).sqrt().recip()
