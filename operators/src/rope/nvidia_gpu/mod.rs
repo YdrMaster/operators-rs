@@ -42,14 +42,15 @@ impl Rope<Gpu> for Operator {
 
 impl crate::Operator for Operator {
     type Hardware = Gpu;
+    type TopoNode = Gpu;
     type Args = Args<Gpu>;
 
-    fn new(processor: &Self::Hardware) -> Self {
-        let cc = processor.0.device().compute_capability();
+    fn new(node: &Self::TopoNode) -> Self {
+        let cc = node.0.device().compute_capability();
         Self {
-            _handle: processor.0.clone(),
-            max_threads_block: processor.0.device().block_limit().max_threads,
-            module: processor.0.compile_kernel(NAME, cc, format_code),
+            _handle: node.0.clone(),
+            max_threads_block: node.0.device().block_limit().max_threads,
+            module: node.0.compile_kernel(NAME, cc, format_code),
         }
     }
 

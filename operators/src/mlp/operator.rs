@@ -27,12 +27,13 @@ where
     S: swiglu::Swiglu<H>,
 {
     type Hardware = H;
+    type TopoNode = H;
     type Args = Args<H>;
 
-    fn new(processor: &Self::Hardware) -> Self {
+    fn new(node: &Self::TopoNode) -> Self {
         Self {
-            mat_mul: M::new(processor),
-            swiglu: S::new(processor),
+            mat_mul: M::new(node),
+            swiglu: S::new(node),
             _phantom: PhantomData,
         }
     }

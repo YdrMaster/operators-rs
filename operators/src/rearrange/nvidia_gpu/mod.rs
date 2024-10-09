@@ -23,21 +23,22 @@ impl Rearrange<Gpu> for Operator {}
 
 impl crate::Operator for Operator {
     type Hardware = Gpu;
+    type TopoNode = Gpu;
     type Args = Args<Gpu>;
 
-    fn new(processor: &Self::Hardware) -> Self {
+    fn new(node: &Self::TopoNode) -> Self {
         // 提取和检查设备参数
-        let device = processor.0.device();
+        let device = node.0.device();
         let max_threads_block = device.block_limit().max_threads;
         let warp_size = device.warp_size();
         let cc = device.compute_capability();
         assert_eq!(max_threads_block % warp_size, 0);
         // 生成执行资源
         Self {
-            _handle: processor.0.clone(),
+            _handle: node.0.clone(),
             max_warps_block: max_threads_block / warp_size,
             warp_size,
-            module: processor.0.compile_kernel(NAME, cc, format_code),
+            module: node.0.compile_kernel(NAME, cc, format_code),
         }
     }
 

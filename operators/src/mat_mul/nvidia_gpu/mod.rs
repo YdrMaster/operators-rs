@@ -17,9 +17,10 @@ impl MatMul<Gpu> for Operator {}
 
 impl crate::Operator for Operator {
     type Hardware = Gpu;
+    type TopoNode = Gpu;
     type Args = Args<Gpu>;
 
-    fn new(processor: &Self::Hardware) -> Self {
+    fn new(processor: &Self::TopoNode) -> Self {
         // 保证 cublas Handle 池非空
         processor.0.cublas_init();
         Self {

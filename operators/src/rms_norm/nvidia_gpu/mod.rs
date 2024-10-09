@@ -22,12 +22,13 @@ impl RmsNorm<Gpu> for Operator {}
 
 impl crate::Operator for Operator {
     type Hardware = Gpu;
+    type TopoNode = Gpu;
     type Args = Args<Gpu>;
 
-    fn new(processor: &Self::Hardware) -> Self {
+    fn new(node: &Self::TopoNode) -> Self {
         Self {
-            handle: processor.0.clone(),
-            schemes: processor.0.scheme_cache(SchemeDiversity::Low),
+            handle: node.0.clone(),
+            schemes: node.0.scheme_cache(SchemeDiversity::Low),
         }
     }
 

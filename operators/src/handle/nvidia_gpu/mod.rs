@@ -22,6 +22,41 @@ pub(crate) use module::ModuleBox;
 
 pub struct Gpu(pub(crate) Arc<Handle>);
 
+#[cfg(use_nccl)]
+pub struct NcclNode {
+    gpu: Gpu,
+    nccl: nccl::Communicator,
+}
+
+impl Hardware for Gpu {
+    type Byte = cuda::DevByte;
+    type Queue<'ctx> = cuda::Stream<'ctx>;
+}
+
+#[cfg(use_nccl)]
+impl crate::TopoNode<Gpu> for NcclNode {
+    #[inline]
+    fn processor(&self) -> &Gpu {
+        &self.gpu
+    }
+
+    fn rank(&self) -> usize {
+        self.nccl.rank()
+    }
+
+    fn group_size(&self) -> usize {
+        self.nccl.count()
+    }
+}
+
+impl<'ctx> QueueAlloc for Stream<'ctx> {
+    type Hardware = Gpu;
+    type DevMem = DevMem<'ctx>;
+    fn queue(&self) -> &QueueOf<Self::Hardware> {
+        self
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Config {
     pub low_diversity_cache: usize,
@@ -36,19 +71,6 @@ impl Default for Config {
             medium_diversity_cache: 16,
             high_diversity_cache: 64,
         }
-    }
-}
-
-impl Hardware for Gpu {
-    type Byte = cuda::DevByte;
-    type Queue<'ctx> = cuda::Stream<'ctx>;
-}
-
-impl<'ctx> QueueAlloc for Stream<'ctx> {
-    type Hardware = Gpu;
-    type DevMem = DevMem<'ctx>;
-    fn queue(&self) -> &QueueOf<Self::Hardware> {
-        self
     }
 }
 

@@ -21,14 +21,15 @@ impl Swiglu<Gpu> for Operator {}
 
 impl crate::Operator for Operator {
     type Hardware = Gpu;
+    type TopoNode = Gpu;
     type Args = Args<Gpu>;
 
-    fn new(processor: &Self::Hardware) -> Self {
-        let device = processor.0.device();
+    fn new(node: &Self::TopoNode) -> Self {
+        let device = node.0.device();
         Self {
-            _handle: processor.0.clone(),
+            _handle: node.0.clone(),
             max_threads_block: device.block_limit().max_threads,
-            module: processor
+            module: node
                 .0
                 .compile_kernel(NAME, device.compute_capability(), format_code),
         }

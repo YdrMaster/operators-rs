@@ -22,12 +22,13 @@ impl FusedSoftmax<Gpu> for Operator {}
 
 impl crate::Operator for Operator {
     type Hardware = Gpu;
+    type TopoNode = Gpu;
     type Args = Args<Gpu>;
 
-    fn new(processor: &Self::Hardware) -> Self {
+    fn new(node: &Self::TopoNode) -> Self {
         Self {
-            _handle: processor.0.clone(),
-            scheme: Scheme::new(&processor.0),
+            _handle: node.0.clone(),
+            scheme: Scheme::new(&node.0),
         }
     }
 

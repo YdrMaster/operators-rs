@@ -1,4 +1,4 @@
-﻿use super::{ByteOf, QueueAlloc};
+﻿use crate::{ByteOf, QueueAlloc};
 use std::{
     mem::ManuallyDrop,
     ops::{Deref, DerefMut},

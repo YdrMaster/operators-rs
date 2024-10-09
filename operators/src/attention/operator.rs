@@ -30,13 +30,14 @@ where
     R: rearrange::Rearrange<H>,
 {
     type Hardware = H;
+    type TopoNode = H;
     type Args = Args<H>;
 
-    fn new(processor: &Self::Hardware) -> Self {
+    fn new(node: &Self::TopoNode) -> Self {
         Self {
-            mat_mul: M::new(processor),
-            softmax: S::new(processor),
-            rearrange: R::new(processor),
+            mat_mul: M::new(node),
+            softmax: S::new(node),
+            rearrange: R::new(node),
             _phantom: PhantomData,
         }
     }

@@ -27,12 +27,13 @@ where
     A: attention::Attention<H>,
 {
     type Hardware = H;
+    type TopoNode = H;
     type Args = Args<H>;
 
-    fn new(processor: &Self::Hardware) -> Self {
+    fn new(node: &Self::TopoNode) -> Self {
         Self {
-            rearrange: R::new(processor),
-            attention: A::new(processor),
+            rearrange: R::new(node),
+            attention: A::new(node),
             _phantom: PhantomData,
         }
     }

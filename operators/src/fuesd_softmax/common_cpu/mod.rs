@@ -8,10 +8,11 @@ impl FusedSoftmax<Cpu> for Operator {}
 
 impl crate::Operator for Operator {
     type Hardware = Cpu;
+    type TopoNode = Cpu;
     type Args = Args<Cpu>;
 
     #[inline]
-    fn new(_processor: &Self::Hardware) -> Self {
+    fn new(_node: &Self::TopoNode) -> Self {
         Self
     }
 
