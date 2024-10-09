@@ -6,8 +6,8 @@ pub struct Cpu;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Threads {
-    id: usize,
     rank: usize,
+    group_size: usize,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -25,11 +25,11 @@ impl TopoNode<Cpu> for Threads {
     }
     #[inline]
     fn rank(&self) -> usize {
-        self.id
+        self.rank
     }
     #[inline]
     fn group_size(&self) -> usize {
-        self.rank
+        self.group_size
     }
 }
 

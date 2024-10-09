@@ -3,6 +3,7 @@
 mod common;
 mod handle;
 
+pub mod all_reduce;
 pub mod fuesd_softmax;
 pub mod mat_mul;
 pub mod random_sample;
@@ -143,6 +144,19 @@ macro_rules! op_trait {
                 Args = Args<H>,
             >{$($body)*}
         };
+
+
     }
 
-pub(crate) use op_trait;
+macro_rules! comm_trait {
+        ($name:ident $($body:item)*) => {
+            pub trait $name<H: $crate::Hardware, N: $crate::TopoNode<H>>:
+                $crate::Operator<
+                Hardware = H,
+                TopoNode = N,
+                Args = Args<H>,
+            >{$($body)*}
+        };
+    }
+
+pub(crate) use {comm_trait, op_trait};

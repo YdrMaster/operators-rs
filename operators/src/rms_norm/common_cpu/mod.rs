@@ -1,6 +1,5 @@
 ﻿use super::{args::Meta, Args, RmsNorm};
-use crate::common_cpu::Cpu;
-use crate::{get_static, LaunchError, SchemeError};
+use crate::{common_cpu::Cpu, get_static, ByteOf, LaunchError, QueueAlloc, SchemeError};
 use half::f16;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
@@ -29,11 +28,11 @@ impl crate::Operator for Operator {
     fn launch<QA>(
         &self,
         args: &Self::Args,
-        _workspace: &mut [crate::ByteOf<Self::Hardware>],
+        _workspace: &mut [ByteOf<Self::Hardware>],
         _queue_alloc: &QA,
     ) -> Result<(), LaunchError>
     where
-        QA: crate::QueueAlloc<Hardware = Self::Hardware>,
+        QA: QueueAlloc<Hardware = Self::Hardware>,
     {
         let Meta { dt_w, dt_a, n, d } = args.meta()?;
         let Args {

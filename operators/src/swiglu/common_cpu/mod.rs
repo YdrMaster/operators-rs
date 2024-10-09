@@ -1,6 +1,5 @@
 ﻿use super::{args::Meta, Args, Swiglu};
-use crate::{common_cpu::Cpu, get_static};
-use crate::{LaunchError, SchemeError};
+use crate::{common_cpu::Cpu, get_static, ByteOf, LaunchError, QueueAlloc, SchemeError};
 use half::f16;
 
 pub struct Operator;
@@ -28,11 +27,11 @@ impl crate::Operator for Operator {
     fn launch<QA>(
         &self,
         args: &Self::Args,
-        _workspace: &mut [crate::ByteOf<Self::Hardware>],
+        _workspace: &mut [ByteOf<Self::Hardware>],
         _queue_alloc: &QA,
     ) -> Result<(), LaunchError>
     where
-        QA: crate::QueueAlloc<Hardware = Self::Hardware>,
+        QA: QueueAlloc<Hardware = Self::Hardware>,
     {
         let Meta { dt, n, d } = args.meta()?;
         let Args {

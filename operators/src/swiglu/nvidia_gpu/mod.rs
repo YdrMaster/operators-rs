@@ -4,7 +4,7 @@ use crate::{
     nvidia_gpu::{Gpu, Handle, ModuleBox},
     strides_not_support, type_not_support,
     utils::{gcd, sizeof},
-    LaunchError, SchemeError,
+    ByteOf, LaunchError, QueueAlloc, SchemeError,
 };
 use digit_layout::types::F16;
 use std::{ffi::CString, sync::Arc};
@@ -51,11 +51,11 @@ impl crate::Operator for Operator {
     fn launch<QA>(
         &self,
         args: &Self::Args,
-        _workspace: &mut [crate::ByteOf<Self::Hardware>],
+        _workspace: &mut [ByteOf<Self::Hardware>],
         queue_alloc: &QA,
     ) -> Result<(), LaunchError>
     where
-        QA: crate::QueueAlloc<Hardware = Self::Hardware>,
+        QA: QueueAlloc<Hardware = Self::Hardware>,
     {
         let Meta { dt, n, d } = args.meta()?;
         let Args {

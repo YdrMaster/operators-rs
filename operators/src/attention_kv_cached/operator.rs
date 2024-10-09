@@ -1,7 +1,7 @@
 ﻿use super::{args::Meta, Args, AttnKVCached};
 use crate::{
-    attention, dyn_, get_static, rearrange, shape_mismatch, Hardware, MaybeDyn, TensorLayout,
-    WorkspaceCollector,
+    attention, dyn_, get_static, rearrange, shape_mismatch, ByteOf, Hardware, LaunchError,
+    MaybeDyn, QueueAlloc, TensorLayout, WorkspaceCollector,
 };
 use ndarray_layout::ArrayLayout;
 use std::marker::PhantomData;
@@ -86,11 +86,11 @@ where
     fn launch<QA>(
         &self,
         args: &Self::Args,
-        workspace: &mut [crate::ByteOf<Self::Hardware>],
+        workspace: &mut [ByteOf<Self::Hardware>],
         queue_alloc: &QA,
-    ) -> Result<(), crate::LaunchError>
+    ) -> Result<(), LaunchError>
     where
-        QA: crate::QueueAlloc<Hardware = Self::Hardware>,
+        QA: QueueAlloc<Hardware = Self::Hardware>,
     {
         let Meta {
             dt, nkvh, dh, seq, ..

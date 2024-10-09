@@ -1,6 +1,5 @@
 ﻿use super::{args::Scheme, Args, Rearrange};
-use crate::common_cpu::Cpu;
-use crate::{LaunchError, SchemeError};
+use crate::{common_cpu::Cpu, ByteOf, LaunchError, QueueAlloc, SchemeError};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 pub struct Operator;
@@ -27,11 +26,11 @@ impl crate::Operator for Operator {
     fn launch<QA>(
         &self,
         args: &Self::Args,
-        _workspace: &mut [crate::ByteOf<Self::Hardware>],
+        _workspace: &mut [ByteOf<Self::Hardware>],
         _queue_alloc: &QA,
     ) -> Result<(), LaunchError>
     where
-        QA: crate::QueueAlloc<Hardware = Self::Hardware>,
+        QA: QueueAlloc<Hardware = Self::Hardware>,
     {
         let scheme = Scheme::new(args)?;
         let unit = scheme.unit();

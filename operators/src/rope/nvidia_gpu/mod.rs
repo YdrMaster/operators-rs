@@ -1,10 +1,10 @@
-﻿use super::{args::Meta, fill_pos, Args, Rope, Seq};
+use super::{args::Meta, fill_pos, Args, Rope, Seq};
 use crate::{
     get_static,
     nvidia_gpu::{Gpu, Handle, ModuleBox},
     shape_not_support, strides_not_support, type_not_support,
     utils::sizeof,
-    LaunchError, QueueAlloc, SchemeError,
+    ByteOf, LaunchError, QueueAlloc, SchemeError,
 };
 use digit_layout::{
     types::{F16, U32},
@@ -70,7 +70,7 @@ impl crate::Operator for Operator {
     fn launch<QA>(
         &self,
         args: &Self::Args,
-        _workspace: &mut [crate::ByteOf<Self::Hardware>],
+        _workspace: &mut [ByteOf<Self::Hardware>],
         queue_alloc: &QA,
     ) -> Result<(), LaunchError>
     where

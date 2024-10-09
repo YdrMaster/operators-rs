@@ -1,8 +1,7 @@
-﻿use super::{Args, KVPair, RandomSample};
-use crate::random_sample::args::Meta;
-use crate::{common_cpu::Cpu, random_sample::args::SampleArgs, utils::sizeof};
+﻿use super::{args::Meta, Args, KVPair, RandomSample, SampleArgs};
 use crate::{
-    get_static, strides_not_support, type_not_support, ByteOf, LaunchError, QueueAlloc, SchemeError,
+    common_cpu::Cpu, get_static, strides_not_support, type_not_support, utils::sizeof, ByteOf,
+    LaunchError, QueueAlloc, SchemeError,
 };
 use half::f16;
 use std::{cmp::Ordering::Equal, slice::from_raw_parts};

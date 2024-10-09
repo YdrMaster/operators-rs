@@ -4,11 +4,11 @@ resolver = "2"
 
 [workspace.dependencies]
 ndarray-layout = { git = "https://github.com/YdrMaster/ndarray-layout", rev = "5c6b969" }
-dev-mempool = { git = "https://github.com/YdrMaster/dev-mempool", rev = "72429e2", default-features = false }
+dev-mempool = { git = "https://github.com/YdrMaster/dev-mempool", rev = "1ee39ed", default-features = false }
 
-cublas = { git = "https://github.com/YdrMaster/cuda-driver", rev = "d089ada" }
-nccl = { git = "https://github.com/YdrMaster/cuda-driver", rev = "d089ada" }
-search-cuda-tools = { git = "https://github.com/YdrMaster/cuda-driver", rev = "d089ada" }
+cublas = { git = "https://github.com/YdrMaster/cuda-driver", rev = "ed0c936" }
+nccl = { git = "https://github.com/YdrMaster/cuda-driver", rev = "ed0c936" }
+search-cuda-tools = { git = "https://github.com/YdrMaster/cuda-driver", rev = "ed0c936" }
 
 cndrv = { git = "https://github.com/InfiniTensor/cndrv", rev = "36acd5f" }
 cnnl = { git = "https://github.com/InfiniTensor/cndrv", rev = "36acd5f" }

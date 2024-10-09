@@ -25,7 +25,7 @@ pub struct Gpu(pub(crate) Arc<Handle>);
 #[cfg(use_nccl)]
 pub struct NcclNode {
     gpu: Gpu,
-    nccl: nccl::Communicator,
+    pub(crate) nccl: Arc<nccl::Communicator>,
 }
 
 impl Hardware for Gpu {
