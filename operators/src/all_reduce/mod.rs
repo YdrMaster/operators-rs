@@ -17,3 +17,6 @@ pub enum ReduceOp {
     Max,
     Mean,
 }
+
+mod non_all_reduce;
+pub use non_all_reduce::NonAllReduce;
