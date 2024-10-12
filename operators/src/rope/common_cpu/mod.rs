@@ -1,4 +1,4 @@
-﻿use super::{args::Meta, fill_pos, Args, Rope, Seq};
+use super::{args::Meta, fill_pos, Args, Rope, Seq, SinCosTable};
 use crate::{common_cpu::Cpu, get_static, ByteOf, LaunchError, QueueAlloc, SchemeError};
 use digit_layout::DigitLayout;
 use half::f16;
@@ -7,11 +7,19 @@ use std::{alloc::Layout, slice::from_raw_parts_mut};
 pub struct Operator;
 
 impl Rope<Cpu> for Operator {
-    fn build_sincos<QA>(_dt: DigitLayout, _nctx: usize, _dh: usize, queue_alloc: &QA) -> QA::DevMem
+    fn build_sincos<QA>(
+        _dt: DigitLayout,
+        _nctx: usize,
+        _dh: usize,
+        queue_alloc: &QA,
+    ) -> SinCosTable<QA::DevMem>
     where
         QA: QueueAlloc<Hardware = Self::Hardware>,
     {
-        queue_alloc.alloc(0)
+        SinCosTable {
+            nctx: 0,
+            mem: queue_alloc.alloc(0),
+        }
     }
 
     fn build_pos<I, QA>(nt: usize, iter: I, queue_alloc: &QA) -> QA::DevMem

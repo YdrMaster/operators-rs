@@ -2,7 +2,7 @@
 
 use super::{
     args::{Meta, SampleArgs},
-    Args, RandomSample,
+    Args, Indices, RandomSample,
 };
 use crate::{
     get_static,
@@ -28,7 +28,7 @@ pub struct Operator {
 }
 
 impl RandomSample<Gpu> for Operator {
-    fn build_indices<QA>(n: usize, queue_alloc: &QA) -> QA::DevMem
+    fn build_indices<QA>(n: usize, queue_alloc: &QA) -> Indices<QA::DevMem>
     where
         QA: QueueAlloc<Hardware = Self::Hardware>,
     {
@@ -36,7 +36,7 @@ impl RandomSample<Gpu> for Operator {
         let mut host = vec![0u32; n];
         host.iter_mut().enumerate().for_each(|(i, x)| *x = i as u32);
         queue_alloc.queue().memcpy_h2d(&mut indices, &host);
-        indices
+        Indices { n, mem: indices }
     }
 }
 

@@ -1,4 +1,4 @@
-﻿use super::{args::Meta, Args, KVPair, RandomSample, SampleArgs};
+use super::{args::Meta, Args, Indices, KVPair, RandomSample, SampleArgs};
 use crate::{
     common_cpu::Cpu, get_static, strides_not_support, type_not_support, utils::sizeof, ByteOf,
     LaunchError, QueueAlloc, SchemeError,
@@ -9,11 +9,14 @@ use std::{cmp::Ordering::Equal, slice::from_raw_parts};
 pub struct Operator;
 
 impl RandomSample<Cpu> for Operator {
-    fn build_indices<QA>(_n: usize, queue_alloc: &QA) -> QA::DevMem
+    fn build_indices<QA>(_n: usize, queue_alloc: &QA) -> Indices<QA::DevMem>
     where
         QA: QueueAlloc<Hardware = Self::Hardware>,
     {
-        queue_alloc.alloc(0)
+        Indices {
+            n: 0,
+            mem: queue_alloc.alloc(0),
+        }
     }
 }
 

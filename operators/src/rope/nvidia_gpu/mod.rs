@@ -1,4 +1,4 @@
-use super::{args::Meta, fill_pos, Args, Rope, Seq};
+use super::{args::Meta, fill_pos, Args, Rope, Seq, SinCosTable};
 use crate::{
     get_static,
     nvidia_gpu::{Gpu, Handle, ModuleBox},
@@ -20,11 +20,19 @@ pub struct Operator {
 const NAME: &str = "rope_f16";
 
 impl Rope<Gpu> for Operator {
-    fn build_sincos<QA>(_dt: DigitLayout, _nctx: usize, _dh: usize, queue_alloc: &QA) -> QA::DevMem
+    fn build_sincos<QA>(
+        _dt: DigitLayout,
+        _nctx: usize,
+        _dh: usize,
+        queue_alloc: &QA,
+    ) -> SinCosTable<QA::DevMem>
     where
         QA: QueueAlloc<Hardware = Self::Hardware>,
     {
-        queue_alloc.alloc(0)
+        SinCosTable {
+            nctx: 0,
+            mem: queue_alloc.alloc(0),
+        }
     }
 
     fn build_pos<I, QA>(nt: usize, iter: I, queue_alloc: &QA) -> QA::DevMem
