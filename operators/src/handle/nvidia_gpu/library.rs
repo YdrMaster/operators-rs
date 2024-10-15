@@ -44,7 +44,7 @@ pub(super) fn cache_lib(key: &Key, code: impl FnOnce() -> String) -> Arc<Library
     static CHECKED: Once = Once::new();
     CHECKED.call_once(xmake_check);
 
-    xmake_config(&dir, std::env::var("CUDA_ROOT").unwrap(), arch);
+    xmake_config(&dir, arch);
     xmake_build(&dir);
     xmake_install(&dir);
 
@@ -86,11 +86,13 @@ See [this page](https://xmake.io/#/getting_started?id=installation) to install x
     }
 }
 
-fn xmake_config(dir: impl AsRef<Path>, cuda_root: impl fmt::Display, arch: impl fmt::Display) {
-    let output = Command::new("xmake")
-        .arg("config")
-        .arg("--toolchain=cuda")
-        .arg(format!("--cuda={cuda_root}"))
+fn xmake_config(dir: impl AsRef<Path>, arch: impl fmt::Display) {
+    let mut cmd = Command::new("xmake");
+    cmd.arg("config").arg("--toolchain=cuda");
+    if let Ok(cuda_root) = std::env::var("CUDA_ROOT") {
+        cmd.arg(format!("--cuda={cuda_root}"));
+    }
+    let output = cmd
         .arg(format!("--cuflags={arch}"))
         .arg(format!("--culdflags={arch}"))
         .current_dir(&dir)
@@ -160,11 +162,6 @@ fn read_output(output: &Output) -> String {
         }
     }
     log
-}
-
-#[test]
-fn test_env() {
-    assert!(!std::env!("CUDA_ROOT").is_empty());
 }
 
 #[test]

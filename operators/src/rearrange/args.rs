@@ -204,11 +204,13 @@ impl Scheme {
         self.0[0] as _
     }
 
+    #[allow(unused)]
     #[inline]
     pub fn count(&self) -> usize {
         self.0[1] as _
     }
 
+    #[allow(unused)]
     #[inline]
     pub fn idx_strides(&self) -> &[isize] {
         let ndim = self.ndim();

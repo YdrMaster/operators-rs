@@ -322,7 +322,7 @@ fn test_compute() {
             let stream = ctx.stream();
 
             let logits = stream.from_host(&logits);
-            let indices = Operator::build_indices(n, &stream);
+            let indices = Operator::build_indices(n, &stream).mem;
             let mut kv = stream.malloc::<KVPair>(1);
 
             gpu_op
