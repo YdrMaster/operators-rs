@@ -125,11 +125,11 @@ fn reduce(dt: DigitLayout, op: ReduceOp, len: usize, buf: *mut u8, src: *const u
     }
 }
 
-fn sum<T: AddAssign>(len: usize, buf: *mut u8, src: *const u8) {
-    let dst = unsafe { from_raw_parts_mut(buf.cast::<u32>(), len) };
-    let src = unsafe { from_raw_parts(src.cast::<u32>(), len) };
+fn sum<T: AddAssign + Clone>(len: usize, buf: *mut u8, src: *const u8) {
+    let dst = unsafe { from_raw_parts_mut(buf.cast::<T>(), len) };
+    let src = unsafe { from_raw_parts(src.cast::<T>(), len) };
     for (dst, src) in zip(dst, src) {
-        *dst += *src;
+        *dst += src.clone();
     }
 }
 
