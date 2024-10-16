@@ -1,5 +1,5 @@
 use crate::{Hardware, QueueAlloc, QueueOf, TopoNode};
-use dev_mempool::Blob;
+pub use dev_mempool::Blob;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Cpu;

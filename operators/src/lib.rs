@@ -144,8 +144,6 @@ macro_rules! op_trait {
                 Args = Args<H>,
             >{$($body)*}
         };
-
-
     }
 
 macro_rules! comm_trait {
