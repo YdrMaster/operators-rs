@@ -1,14 +1,12 @@
-use crate::{Hardware, QueueAlloc, QueueOf, TopoNode};
+mod inproc_node;
+
 pub use dev_mempool::Blob;
+pub use inproc_node::InprocNode;
+
+use crate::{Hardware, QueueAlloc, QueueOf};
 
 #[derive(Clone, Copy, Debug)]
 pub struct Cpu;
-
-#[derive(Clone, Copy, Debug)]
-pub struct Threads {
-    rank: usize,
-    group_size: usize,
-}
 
 #[derive(Clone, Copy, Debug)]
 pub struct ThisThread;
@@ -16,21 +14,6 @@ pub struct ThisThread;
 impl Hardware for Cpu {
     type Byte = u8;
     type Queue<'ctx> = ThisThread;
-}
-
-impl TopoNode<Cpu> for Threads {
-    #[inline]
-    fn processor(&self) -> &Cpu {
-        &Cpu
-    }
-    #[inline]
-    fn rank(&self) -> usize {
-        self.rank
-    }
-    #[inline]
-    fn group_size(&self) -> usize {
-        self.group_size
-    }
 }
 
 impl QueueAlloc for ThisThread {

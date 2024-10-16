@@ -3,7 +3,7 @@ members = ["operators"]
 resolver = "2"
 
 [workspace.dependencies]
-ndarray-layout = { git = "https://github.com/YdrMaster/ndarray-layout", rev = "5c6b969" }
+ndarray-layout = { git = "https://github.com/YdrMaster/ndarray-layout", rev = "68ab1db" }
 dev-mempool = { git = "https://github.com/YdrMaster/dev-mempool", rev = "f9cf24f", default-features = false }
 
 cublas = { git = "https://github.com/YdrMaster/cuda-driver", rev = "5a8d0c8" }
