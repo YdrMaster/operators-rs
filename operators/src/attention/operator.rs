@@ -259,15 +259,18 @@ where
             queue_alloc,
         )?;
         // o = rearrange(q)
-        self.rearrange.launch(
-            &rearrange::Args {
-                dst_layout: o_layout.clone(),
-                dst_base: *o_base,
-                src_layout: q_layout.clone(),
-                src_base: q_base,
-            },
-            workspace,
-            queue_alloc,
-        )
+        if q_base != *o_base {
+            self.rearrange.launch(
+                &rearrange::Args {
+                    dst_layout: o_layout.clone(),
+                    dst_base: *o_base,
+                    src_layout: q_layout.clone(),
+                    src_base: q_base,
+                },
+                workspace,
+                queue_alloc,
+            )?
+        }
+        Ok(())
     }
 }
