@@ -51,7 +51,7 @@ impl crate::Operator for Operator {
         }
 
         let Meta { dt, size } = args.meta()?;
-        let Args {
+        let &Args {
             dst_base,
             src_base,
             op,
@@ -59,23 +59,23 @@ impl crate::Operator for Operator {
         } = args;
         let ele = sizeof(dt)?;
 
-        let mut ptr = *src_base;
+        let mut ptr = src_base;
         let mut i = rank;
         let mut stride = 1;
-        let mut peers = Vec::with_capacity(group_size / 2);
+        let mut peers = Vec::with_capacity(group_size - 1);
         while stride < group_size {
             if i % 2 == 0 {
                 let peer = rank + stride;
                 self.0.send(peer, ptr as _);
                 let src = self.0.recv() as *const u8;
-                unsafe { copy_nonoverlapping(src, *dst_base, size * ele) };
-                self.0.send(peer, 0);
+                unsafe { copy_nonoverlapping(src, dst_base, size * ele) };
+                self.0.send(peer, usize::MAX);
                 break;
             } else {
                 let peer = rank - stride;
                 let src = self.0.recv() as *const u8;
-                reduce(dt, *op, size, *dst_base, src);
-                ptr = *dst_base;
+                reduce(dt, op, size, dst_base, src);
+                ptr = dst_base;
 
                 peers.push(peer);
                 i /= 2;
@@ -83,10 +83,10 @@ impl crate::Operator for Operator {
             }
         }
         for &peer in &peers {
-            self.0.send(peer, *dst_base as _);
+            self.0.send(peer, dst_base as _);
         }
         for _ in peers {
-            self.0.recv();
+            assert_eq!(self.0.recv(), usize::MAX);
         }
 
         Ok(())

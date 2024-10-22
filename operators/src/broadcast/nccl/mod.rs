@@ -1,7 +1,6 @@
-﻿use super::{args::Meta, AllReduce, Args, ReduceOp};
+﻿use super::{args::Meta, Args, Broadcast};
 use crate::{
     nvidia_gpu::{Gpu, NcclNode},
-    utils::sizeof,
     ByteOf, LaunchError, QueueAlloc, SchemeError,
 };
 use std::{
@@ -13,7 +12,7 @@ pub struct Operator {
     nccl: Arc<nccl::Communicator>,
 }
 
-impl AllReduce<Gpu, NcclNode> for Operator {}
+impl Broadcast<Gpu, NcclNode> for Operator {}
 
 impl crate::Operator for Operator {
     type Hardware = Gpu;
@@ -43,34 +42,19 @@ impl crate::Operator for Operator {
     where
         QA: QueueAlloc<Hardware = Self::Hardware>,
     {
-        let Meta { dt, size } = args.meta()?;
+        let Meta { size } = args.meta()?;
         let &Args {
             dst_base,
             src_base,
-            op,
+            root,
             ..
         } = args;
-
-        let len = size * sizeof(dt)?;
-        self.nccl.all_reduce(
-            unsafe { from_raw_parts_mut(dst_base, len) },
-            Some(unsafe { from_raw_parts(src_base, len) }),
-            dt,
-            convert_enum(op),
+        self.nccl.broadcast(
+            unsafe { from_raw_parts_mut(dst_base, size) },
+            Some(unsafe { from_raw_parts(src_base, size) }),
+            root as _,
             queue_alloc.queue(),
         );
         Ok(())
-    }
-}
-
-#[inline(always)]
-fn convert_enum(op: ReduceOp) -> nccl::ReduceType {
-    use nccl::ReduceType::*;
-    match op {
-        ReduceOp::Sum => ncclSum,
-        ReduceOp::Prod => ncclProd,
-        ReduceOp::Min => ncclMin,
-        ReduceOp::Max => ncclMax,
-        ReduceOp::Mean => ncclAvg,
     }
 }

@@ -3,7 +3,6 @@
 mod common;
 mod handle;
 
-pub mod all_reduce;
 pub mod fuesd_softmax;
 pub mod mat_mul;
 pub mod random_sample;
@@ -11,6 +10,9 @@ pub mod rearrange;
 pub mod rms_norm;
 pub mod rope;
 pub mod swiglu;
+
+pub mod all_reduce;
+pub mod broadcast;
 
 pub mod attention;
 pub mod attention_kv_cached;
