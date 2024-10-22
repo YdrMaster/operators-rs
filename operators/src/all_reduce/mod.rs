@@ -7,6 +7,7 @@ mod args;
 pub use args::Args;
 
 crate::comm_trait!(AllReduce);
+crate::non_comm!(NonAllReduce impl AllReduce);
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 #[repr(u8)]
@@ -17,6 +18,3 @@ pub enum ReduceOp {
     Max,
     Mean,
 }
-
-mod non_all_reduce;
-pub use non_all_reduce::NonAllReduce;

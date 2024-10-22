@@ -9,6 +9,7 @@ use std::{
     ptr::{null, null_mut},
 };
 
+#[derive(Clone)]
 pub struct Args<H: Hardware> {
     pub dst_layout: TensorLayout,
     pub dst_base: MutPtr<H>,

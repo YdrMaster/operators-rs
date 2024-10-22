@@ -1,6 +1,7 @@
 ﻿use super::{args::Meta, AllReduce, Args, ReduceOp};
 use crate::{
     nvidia_gpu::{Gpu, NcclNode},
+    rearrange,
     utils::sizeof,
     ByteOf, LaunchError, QueueAlloc, SchemeError,
 };
@@ -45,8 +46,9 @@ impl crate::Operator for Operator {
     {
         let Meta { dt, size } = args.meta()?;
         let &Args {
-            dst_base,
-            src_base,
+            pair: rearrange::Args {
+                dst_base, src_base, ..
+            },
             op,
             ..
         } = args;

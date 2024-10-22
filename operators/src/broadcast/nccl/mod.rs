@@ -1,7 +1,7 @@
 ﻿use super::{args::Meta, Args, Broadcast};
 use crate::{
     nvidia_gpu::{Gpu, NcclNode},
-    ByteOf, LaunchError, QueueAlloc, SchemeError,
+    rearrange, ByteOf, LaunchError, QueueAlloc, SchemeError,
 };
 use std::{
     slice::{from_raw_parts, from_raw_parts_mut},
@@ -44,8 +44,9 @@ impl crate::Operator for Operator {
     {
         let Meta { size } = args.meta()?;
         let &Args {
-            dst_base,
-            src_base,
+            pair: rearrange::Args {
+                dst_base, src_base, ..
+            },
             root,
             ..
         } = args;

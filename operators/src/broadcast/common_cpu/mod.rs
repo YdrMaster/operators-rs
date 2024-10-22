@@ -1,10 +1,9 @@
-﻿use std::ptr::{addr_eq, copy, copy_nonoverlapping};
-
-use super::{args::Meta, Args, Broadcast};
+﻿use super::{args::Meta, Args, Broadcast};
 use crate::{
     common_cpu::{Cpu, InprocNode},
-    ByteOf, LaunchError, QueueAlloc, SchemeError, TopoNode,
+    rearrange, ByteOf, LaunchError, QueueAlloc, SchemeError, TopoNode,
 };
+use std::ptr::{addr_eq, copy, copy_nonoverlapping};
 
 pub struct Operator(InprocNode<usize>);
 
@@ -42,12 +41,14 @@ impl crate::Operator for Operator {
 
         let Meta { size } = args.meta()?;
         let &Args {
-            dst_base,
-            src_base,
+            pair: rearrange::Args {
+                dst_base, src_base, ..
+            },
             root,
             ..
         } = args;
 
+        self.0.wait();
         if rank == root {
             for i in 0..group_size {
                 if i != rank {
@@ -64,7 +65,7 @@ impl crate::Operator for Operator {
             unsafe { copy_nonoverlapping(self.0.recv() as _, dst_base, size) }
             self.0.send(root, usize::MAX)
         }
-
+        self.0.notify();
         Ok(())
     }
 }
@@ -82,10 +83,12 @@ fn test_comm() {
                 let op = Operator::new(&node);
                 op.launch(
                     &Args {
-                        dst_layout: TensorLayout::new_contiguous(U32, &[8]),
-                        dst_base: buf.as_mut_ptr().cast(),
-                        src_layout: TensorLayout::new_contiguous(U32, &[8]),
-                        src_base: buf.as_ptr().cast(),
+                        pair: rearrange::Args {
+                            dst_layout: TensorLayout::new_contiguous(U32, &[8]),
+                            dst_base: buf.as_mut_ptr().cast(),
+                            src_layout: TensorLayout::new_contiguous(U32, &[8]),
+                            src_base: buf.as_ptr().cast(),
+                        },
                         root: 1,
                     },
                     &mut [],

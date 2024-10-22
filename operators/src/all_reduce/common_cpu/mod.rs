@@ -1,19 +1,21 @@
 ﻿use super::{args::Meta, AllReduce, Args, ReduceOp};
 use crate::{
+    broadcast::{self, common_cpu::Operator as Broadcast},
     common_cpu::{Cpu, InprocNode},
-    utils::sizeof,
-    ByteOf, LaunchError, QueueAlloc, SchemeError, TopoNode,
+    rearrange, ByteOf, LaunchError, QueueAlloc, SchemeError, TopoNode,
 };
 use digit_layout::DigitLayout;
 use half::{bf16, f16};
 use std::{
     iter::zip,
     ops::AddAssign,
-    ptr::copy_nonoverlapping,
     slice::{from_raw_parts, from_raw_parts_mut},
 };
 
-pub struct Operator(InprocNode<usize>);
+pub struct Operator {
+    node: InprocNode<usize>,
+    broadcast: Broadcast,
+}
 
 impl AllReduce<Cpu, InprocNode<usize>> for Operator {}
 
@@ -24,7 +26,10 @@ impl crate::Operator for Operator {
 
     fn new(node: &Self::TopoNode) -> Self {
         assert!(node.group_size().is_power_of_two());
-        Self(node.clone())
+        Self {
+            node: node.clone(),
+            broadcast: Broadcast::new(node),
+        }
     }
 
     fn scheme(
@@ -38,58 +43,64 @@ impl crate::Operator for Operator {
     fn launch<QA>(
         &self,
         args: &Self::Args,
-        _workspace: &mut [ByteOf<Self::Hardware>],
-        _queue_alloc: &QA,
+        workspace: &mut [ByteOf<Self::Hardware>],
+        queue_alloc: &QA,
     ) -> Result<(), LaunchError>
     where
         QA: QueueAlloc<Hardware = Self::Hardware>,
     {
-        let rank = self.0.rank();
-        let group_size = self.0.group_size();
+        let rank = self.node.rank();
+        let group_size = self.node.group_size();
         if group_size == 1 {
             return Ok(());
         }
 
         let Meta { dt, size } = args.meta()?;
         let &Args {
-            dst_base,
-            src_base,
+            pair: rearrange::Args {
+                dst_base, src_base, ..
+            },
             op,
-            ..
         } = args;
-        let ele = sizeof(dt)?;
 
         let mut ptr = src_base;
         let mut i = rank;
+        let mut root = rank;
         let mut stride = 1;
-        let mut peers = Vec::with_capacity(group_size - 1);
+        self.node.wait();
         while stride < group_size {
             if i % 2 == 0 {
-                let peer = rank + stride;
-                self.0.send(peer, ptr as _);
-                let src = self.0.recv() as *const u8;
-                unsafe { copy_nonoverlapping(src, dst_base, size * ele) };
-                self.0.send(peer, usize::MAX);
+                root += stride;
+                self.node.send(root, ptr as _);
+
+                i /= 2;
+                stride *= 2;
+                while stride < group_size {
+                    if i % 2 == 0 {
+                        root += stride;
+                    }
+                    i /= 2;
+                    stride *= 2;
+                }
+
                 break;
             } else {
-                let peer = rank - stride;
-                let src = self.0.recv() as *const u8;
-                reduce(dt, op, size, dst_base, src);
+                reduce(dt, op, size, dst_base, self.node.recv() as _);
                 ptr = dst_base;
 
-                peers.push(peer);
                 i /= 2;
                 stride *= 2;
             }
         }
-        for &peer in &peers {
-            self.0.send(peer, dst_base as _);
-        }
-        for _ in peers {
-            assert_eq!(self.0.recv(), usize::MAX);
-        }
-
-        Ok(())
+        self.node.notify();
+        self.broadcast.launch(
+            &broadcast::Args {
+                pair: args.pair.clone(),
+                root,
+            },
+            workspace,
+            queue_alloc,
+        )
     }
 }
 
@@ -146,10 +157,12 @@ fn test_comm() {
                 let op = Operator::new(&node);
                 op.launch(
                     &Args {
-                        dst_layout: TensorLayout::new_contiguous(U32, &[8]),
-                        dst_base: buf.as_mut_ptr().cast(),
-                        src_layout: TensorLayout::new_contiguous(U32, &[8]),
-                        src_base: buf.as_ptr().cast(),
+                        pair: rearrange::Args {
+                            dst_layout: TensorLayout::new_contiguous(U32, &[8]),
+                            dst_base: buf.as_mut_ptr().cast(),
+                            src_layout: TensorLayout::new_contiguous(U32, &[8]),
+                            src_base: buf.as_ptr().cast(),
+                        },
                         op: ReduceOp::Sum,
                     },
                     &mut [],

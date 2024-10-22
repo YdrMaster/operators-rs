@@ -7,6 +7,4 @@ mod args;
 pub use args::Args;
 
 crate::comm_trait!(Broadcast);
-
-mod non_operator;
-pub use non_operator::NonBroadcast;
+crate::non_comm!(NonBroadcast impl Broadcast);

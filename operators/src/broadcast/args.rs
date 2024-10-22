@@ -1,16 +1,20 @@
 ﻿use crate::{
-    dyn_not_support, shape_mismatch, strides_not_support,
+    dyn_not_support, rearrange, shape_mismatch, strides_not_support,
     utils::{sizeof, type_distinct},
-    ConstPtr, Hardware, MaybeDyn, MutPtr, SchemeError, TensorLayout,
+    Hardware, MaybeDyn, SchemeError,
 };
 use ndarray_layout::ArrayLayout;
 
 pub struct Args<H: Hardware> {
-    pub dst_layout: TensorLayout,
-    pub dst_base: MutPtr<H>,
-    pub src_layout: TensorLayout,
-    pub src_base: ConstPtr<H>,
+    pub pair: rearrange::Args<H>,
     pub root: usize,
+}
+
+impl<H: Hardware> AsRef<rearrange::Args<H>> for Args<H> {
+    #[inline]
+    fn as_ref(&self) -> &rearrange::Args<H> {
+        &self.pair
+    }
 }
 
 pub(super) struct Meta {
@@ -20,8 +24,12 @@ pub(super) struct Meta {
 impl<H: Hardware> Args<H> {
     pub(super) fn meta(&self) -> Result<Meta, SchemeError> {
         let Self {
-            dst_layout,
-            src_layout,
+            pair:
+                rearrange::Args {
+                    dst_layout,
+                    src_layout,
+                    ..
+                },
             ..
         } = self;
 

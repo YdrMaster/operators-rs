@@ -45,7 +45,8 @@ pub use handle::ascend_card;
 pub extern crate ascendcl;
 
 use dev_mempool::Alloc;
-use std::ops::DerefMut;
+use rearrange::Rearrange;
+use std::{marker::PhantomData, ops::DerefMut, ptr::addr_eq};
 
 /// 算力硬件抽象。
 ///
@@ -138,25 +139,82 @@ pub trait Operator {
 }
 
 macro_rules! op_trait {
-        ($name:ident $($body:item)*) => {
-            pub trait $name<H: $crate::Hardware>:
-                $crate::Operator<
-                Hardware = H,
-                TopoNode = H,
-                Args = Args<H>,
-            >{$($body)*}
-        };
-    }
+    ($name:ident $($body:item)*) => {
+        pub trait $name<H: $crate::Hardware>:
+            $crate::Operator<
+            Hardware = H,
+            TopoNode = H,
+            Args = Args<H>,
+        >{$($body)*}
+    };
+}
 
 macro_rules! comm_trait {
-        ($name:ident $($body:item)*) => {
-            pub trait $name<H: $crate::Hardware, N: $crate::TopoNode<H>>:
-                $crate::Operator<
-                Hardware = H,
-                TopoNode = N,
-                Args = Args<H>,
-            >{$($body)*}
-        };
+    ($name:ident $($body:item)*) => {
+        pub trait $name<H: $crate::Hardware, N: $crate::TopoNode<H>>:
+            $crate::Operator<
+            Hardware = H,
+            TopoNode = N,
+            Args = Args<H>,
+        >{$($body)*}
+    };
+}
+
+macro_rules! non_comm {
+    ($name:ident impl $trait:ident) => {
+        pub type $name<H, R> = crate::NonComm<H, R, Args<H>>;
+        impl<H, R> $trait<H, H> for $name<H, R>
+        where
+            H: crate::Hardware,
+            R: crate::rearrange::Rearrange<H>,
+        {
+        }
+    };
+}
+
+pub(crate) use {comm_trait, non_comm, op_trait};
+
+#[repr(transparent)]
+pub struct NonComm<H, R, A>(R, PhantomData<(H, A)>);
+
+impl<H, R, A> Operator for NonComm<H, R, A>
+where
+    H: Hardware,
+    R: Rearrange<H>,
+    A: AsRef<rearrange::Args<H>>,
+{
+    type Hardware = H;
+    type TopoNode = H;
+    type Args = A;
+
+    #[inline]
+    fn new(node: &Self::TopoNode) -> Self {
+        Self(R::new(node), PhantomData)
     }
 
-pub(crate) use {comm_trait, op_trait};
+    #[inline]
+    fn scheme(
+        &mut self,
+        args: &Self::Args,
+        max_workspace_size: usize,
+    ) -> Result<usize, crate::SchemeError> {
+        self.0.scheme(args.as_ref(), max_workspace_size)
+    }
+
+    #[inline]
+    fn launch<QA>(
+        &self,
+        args: &Self::Args,
+        workspace: &mut [ByteOf<Self::Hardware>],
+        queue_alloc: &QA,
+    ) -> Result<(), crate::LaunchError>
+    where
+        QA: QueueAlloc<Hardware = Self::Hardware>,
+    {
+        let args = args.as_ref();
+        if !addr_eq(args.dst_base, args.src_base) {
+            self.0.launch(args, workspace, queue_alloc)?
+        }
+        Ok(())
+    }
+}
