@@ -8,9 +8,8 @@ use std::sync::{
 
 pub struct InprocNode<T> {
     rank: usize,
-    senders: Arc<[Sender<T>]>,
+    senders: Box<[Sender<T>]>,
     receiver: Arc<Mutex<Receiver<T>>>,
-
     notifier: Arc<Notifier>,
     counter: Arc<AtomicUsize>,
 }
@@ -36,7 +35,7 @@ impl<T> InprocNode<T> {
             senders.push(sender);
             receivers.push(Arc::new(Mutex::new(receiver)));
         }
-        let server: Arc<[Sender<T>]> = senders.into();
+        let senders: Box<[Sender<T>]> = senders.into();
         let notifier = Arc::new(Notifier::new());
 
         receivers
@@ -44,7 +43,7 @@ impl<T> InprocNode<T> {
             .enumerate()
             .map(|(rank, receiver)| InprocNode {
                 rank,
-                senders: server.clone(),
+                senders: senders.clone(),
                 receiver,
                 notifier: notifier.clone(),
                 counter: Arc::new(AtomicUsize::new(0)),
@@ -62,16 +61,11 @@ impl<T> InprocNode<T> {
         self.receiver.lock().unwrap().recv().unwrap()
     }
 
+    #[must_use]
     #[inline]
-    pub(crate) fn wait(&self) {
-        self.notifier
-            .wait(self.counter.load(Relaxed) * self.group_size());
-    }
-
-    #[inline]
-    pub(crate) fn notify(&self) {
-        self.counter.fetch_add(1, Relaxed);
-        self.notifier.notify();
+    pub(crate) fn wait(&self) -> Guard {
+        let count = self.counter.fetch_add(1, Relaxed) * self.group_size();
+        self.notifier.wait(count)
     }
 }
 
@@ -90,6 +84,16 @@ impl<T> TopoNode<Cpu> for InprocNode<T> {
     }
 }
 
+#[repr(transparent)]
+pub struct Guard<'a>(&'a Notifier);
+
+impl Drop for Guard<'_> {
+    #[inline]
+    fn drop(&mut self) {
+        self.0.notify();
+    }
+}
+
 struct Notifier {
     lock: Mutex<usize>,
     cond: Condvar,
@@ -103,11 +107,12 @@ impl Notifier {
         }
     }
 
-    fn wait(&self, count: usize) {
+    fn wait(&self, count: usize) -> Guard {
         let _guard = self
             .cond
             .wait_while(self.lock.lock().unwrap(), |current| *current < count)
             .unwrap();
+        Guard(self)
     }
 
     fn notify(&self) {

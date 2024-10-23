@@ -48,7 +48,7 @@ impl crate::Operator for Operator {
             ..
         } = args;
 
-        self.0.wait();
+        let _guard = self.0.wait();
         if rank == root {
             for i in 0..group_size {
                 if i != rank {
@@ -65,7 +65,6 @@ impl crate::Operator for Operator {
             unsafe { copy_nonoverlapping(self.0.recv() as _, dst_base, size) }
             self.0.send(root, usize::MAX)
         }
-        self.0.notify();
         Ok(())
     }
 }

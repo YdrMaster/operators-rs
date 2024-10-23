@@ -67,7 +67,7 @@ impl crate::Operator for Operator {
         let mut i = rank;
         let mut root = rank;
         let mut stride = 1;
-        self.node.wait();
+        let guard = self.node.wait();
         while stride < group_size {
             if i % 2 == 0 {
                 root += stride;
@@ -92,7 +92,7 @@ impl crate::Operator for Operator {
                 stride *= 2;
             }
         }
-        self.node.notify();
+        drop(guard);
         self.broadcast.launch(
             &broadcast::Args {
                 pair: args.pair.clone(),
