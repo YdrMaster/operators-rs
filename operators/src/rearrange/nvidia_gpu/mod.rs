@@ -60,7 +60,16 @@ impl crate::Operator for Operator {
     where
         QA: QueueAlloc<Hardware = Self::Hardware>,
     {
-        let scheme = Scheme::new(args)?.distribute_unit((0..=5).rev().map(|n| 32 * (1 << n)));
+        let scheme = Scheme::new(args)?;
+        if scheme.ndim() == 0 {
+            let unit = scheme.unit();
+            let dst = unsafe { from_raw_parts_mut(args.dst_base, unit) };
+            let src = unsafe { from_raw_parts(args.src_base, unit) };
+            queue_alloc.queue().memcpy_d2d(dst, src);
+            return Ok(());
+        }
+
+        let scheme = scheme.distribute_unit((0..=5).rev().map(|n| 32 * (1 << n)));
         let unit = scheme.unit();
 
         struct Layout {
@@ -80,12 +89,7 @@ impl crate::Operator for Operator {
             src_rs,
             src_cs,
         } = match scheme.ndim() {
-            0 => {
-                let dst = unsafe { from_raw_parts_mut(args.dst_base, unit) };
-                let src = unsafe { from_raw_parts(args.src_base, unit) };
-                queue_alloc.queue().memcpy_d2d(dst, src);
-                return Ok(());
-            }
+            0 => unreachable!(),
             1 => {
                 let &[dst_cs] = scheme.dst_strides() else {
                     unreachable!()
