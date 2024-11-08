@@ -182,7 +182,7 @@ where
                 gate_layout: swiglu_layout.clone(),
                 gate_base: gate_up.as_mut_ptr(),
                 up_layout: swiglu_layout.clone(),
-                up_base: unsafe { gate_up.as_mut_ptr().byte_add(up_layout.offset()) },
+                up_base: unsafe { gate_up.as_mut_ptr().byte_add(up_layout.offset() as _) },
             },
             workspace,
             queue_alloc,

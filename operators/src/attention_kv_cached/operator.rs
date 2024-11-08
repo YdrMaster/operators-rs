@@ -152,7 +152,7 @@ where
         self.rearrange.launch(
             &rearrange::Args {
                 dst_layout: TensorLayout::new(dt, k_cat.shape(), k_cat.strides()),
-                dst_base: unsafe { k_cache_base.byte_add(k_cat.offset()) },
+                dst_base: unsafe { k_cache_base.byte_add(k_cat.offset() as _) },
                 src_layout: k_layout.clone(),
                 src_base: *k_base,
             },
@@ -162,7 +162,7 @@ where
         self.rearrange.launch(
             &rearrange::Args {
                 dst_layout: TensorLayout::new(dt, v_cat.shape(), v_cat.strides()),
-                dst_base: unsafe { v_cache_base.byte_add(k_cat.offset()) },
+                dst_base: unsafe { v_cache_base.byte_add(k_cat.offset() as _) },
                 src_layout: v_layout.clone(),
                 src_base: *v_base,
             },

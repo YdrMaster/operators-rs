@@ -3,16 +3,9 @@ members = ["operators"]
 resolver = "2"
 
 [workspace.dependencies]
-ndarray-layout = { git = "https://github.com/YdrMaster/ndarray-layout", rev = "68ab1db" }
+ndarray-layout = { git = "https://github.com/YdrMaster/ndarray-layout", rev = "48d36c5" }
 dev-mempool = { git = "https://github.com/YdrMaster/dev-mempool", rev = "6ca21d3", default-features = false }
 
 cublas = { git = "https://github.com/YdrMaster/cuda-driver", rev = "ad8c367" }
 nccl = { git = "https://github.com/YdrMaster/cuda-driver", rev = "ad8c367" }
 search-cuda-tools = { git = "https://github.com/YdrMaster/cuda-driver", rev = "ad8c367" }
-
-cndrv = { git = "https://github.com/InfiniTensor/cndrv", rev = "36acd5f" }
-cnnl = { git = "https://github.com/InfiniTensor/cndrv", rev = "36acd5f" }
-search-neuware-tools = "0.0"
-
-ascendcl = { git = "https://github.com/InfiniTensor/ascendcl", rev = "1e7a696" }
-search-ascend-tools = { git = "https://github.com/InfiniTensor/ascendcl", rev = "1e7a696" }

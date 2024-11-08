@@ -5,11 +5,9 @@ edition = "2021"
 authors = ["YdrMaster <ydrml@hotmail.com>"]
 
 [features]
-default = ["common-cpu", "nvidia-gpu", "cambricon-mlu", "ascend-card"]
+default = ["common-cpu", "nvidia-gpu"]
 common-cpu = ["dev-mempool/common-cpu", "gemm"]
 nvidia-gpu = ["dev-mempool/nvidia-gpu", "cublas", "nccl", "libloading"]
-cambricon-mlu = ["cndrv", "cnnl"]
-ascend-card = ["ascendcl"]
 
 [dependencies]
 dev-mempool.workspace = true
@@ -26,16 +24,9 @@ cublas = { workspace = true, optional = true }
 nccl = { workspace = true, optional = true }
 libloading = { version = "0.8", optional = true }
 
-cndrv = { workspace = true, optional = true }
-cnnl = { workspace = true, optional = true }
-
-ascendcl = { workspace = true, optional = true }
-
 [build-dependencies]
 build-script-cfg = "0.0"
 search-cuda-tools.workspace = true
-search-neuware-tools.workspace = true
-search-ascend-tools.workspace = true
 
 [dev-dependencies]
 dev-mempool = { workspace = true, features = ["common-cpu"] }

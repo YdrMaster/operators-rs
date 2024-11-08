@@ -32,18 +32,6 @@ pub use dev_mempool::cuda;
 #[cfg(use_nccl)]
 pub extern crate nccl;
 
-#[cfg(use_neuware)]
-pub use handle::cambricon_mlu;
-#[cfg(use_neuware)]
-pub extern crate cndrv;
-#[cfg(use_neuware)]
-pub extern crate cnnl;
-
-#[cfg(use_ascend)]
-pub use handle::ascend_card;
-#[cfg(use_ascend)]
-pub extern crate ascendcl;
-
 use dev_mempool::Alloc;
 use rearrange::Rearrange;
 use std::{marker::PhantomData, ops::DerefMut, ptr::addr_eq};
