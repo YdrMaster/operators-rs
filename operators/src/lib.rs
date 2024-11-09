@@ -23,6 +23,11 @@ pub use common::*;
 #[cfg(any(use_cpu, test))]
 pub use handle::common_cpu;
 
+#[cfg(use_cl)]
+pub use handle::opencl;
+#[cfg(use_cl)]
+pub extern crate clrt;
+
 #[cfg(use_cuda)]
 pub use handle::nvidia_gpu;
 #[cfg(use_cuda)]

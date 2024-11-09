@@ -5,8 +5,9 @@ edition = "2021"
 authors = ["YdrMaster <ydrml@hotmail.com>"]
 
 [features]
-default = ["common-cpu", "nvidia-gpu"]
+default = ["common-cpu", "opencl", "nvidia-gpu"]
 common-cpu = ["dev-mempool/common-cpu", "gemm"]
+opencl = ["clrt"]
 nvidia-gpu = ["dev-mempool/nvidia-gpu", "cublas", "nccl", "libloading"]
 
 [dependencies]
@@ -20,12 +21,15 @@ log = "0.4"
 
 gemm = { version = "0.18", optional = true }
 
+clrt = { workspace = true, optional = true }
+
 cublas = { workspace = true, optional = true }
 nccl = { workspace = true, optional = true }
 libloading = { version = "0.8", optional = true }
 
 [build-dependencies]
 build-script-cfg = "0.0"
+search-cl-tools.workspace = true
 search-cuda-tools.workspace = true
 
 [dev-dependencies]

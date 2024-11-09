@@ -6,6 +6,9 @@ resolver = "2"
 ndarray-layout = { git = "https://github.com/YdrMaster/ndarray-layout", rev = "48d36c5" }
 dev-mempool = { git = "https://github.com/YdrMaster/dev-mempool", rev = "6ca21d3", default-features = false }
 
+clrt = { git = "https://github.com/InfiniTensor/clrt", rev = "42bb9e4" }
+search-cl-tools = { git = "https://github.com/InfiniTensor/clrt", rev = "42bb9e4" }
+
 cublas = { git = "https://github.com/YdrMaster/cuda-driver", rev = "ad8c367" }
 nccl = { git = "https://github.com/YdrMaster/cuda-driver", rev = "ad8c367" }
 search-cuda-tools = { git = "https://github.com/YdrMaster/cuda-driver", rev = "ad8c367" }
