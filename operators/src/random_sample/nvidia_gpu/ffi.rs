@@ -1,5 +1,5 @@
 ﻿use crate::{random_sample::SampleArgs, LaunchError};
-use dev_mempool::cuda::{bindings::CUstream, AsRaw, DevByte, Stream};
+use cuda::{bindings::CUstream, AsRaw, DevByte, Stream};
 use libloading::Library;
 
 type WorkspaceFunc = unsafe extern "C" fn(

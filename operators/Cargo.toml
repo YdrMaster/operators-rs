@@ -6,12 +6,11 @@ authors = ["YdrMaster <ydrml@hotmail.com>"]
 
 [features]
 default = ["common-cpu", "opencl", "nvidia-gpu"]
-common-cpu = ["dev-mempool/common-cpu", "gemm"]
+common-cpu = ["gemm"]
 opencl = ["clrt"]
-nvidia-gpu = ["dev-mempool/nvidia-gpu", "cublas", "nccl", "libloading"]
+nvidia-gpu = ["cuda", "cublas", "nccl", "libloading"]
 
 [dependencies]
-dev-mempool.workspace = true
 ndarray-layout.workspace = true
 digit-layout = "0.1"
 rayon = "1.10"
@@ -23,6 +22,7 @@ gemm = { version = "0.18", optional = true }
 
 clrt = { workspace = true, optional = true }
 
+cuda = { workspace = true, optional = true }
 cublas = { workspace = true, optional = true }
 nccl = { workspace = true, optional = true }
 libloading = { version = "0.8", optional = true }
@@ -33,6 +33,5 @@ search-cl-tools.workspace = true
 search-cuda-tools.workspace = true
 
 [dev-dependencies]
-dev-mempool = { workspace = true, features = ["common-cpu"] }
 gemm = "0.18"
 rand = "0.8"

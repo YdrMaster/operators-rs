@@ -85,7 +85,7 @@ impl crate::Operator for Operator {
         let sh = (sh / unit) as i32;
         let ss = (ss / unit) as i32;
         let att_len = att_len as u32;
-        let params = dev_mempool::cuda::params![att_base, 0i32, sh, ss, att_len];
+        let params = cuda::params![att_base, 0i32, sh, ss, att_len];
 
         if att_len <= block_size {
             self.scheme.module.launch(
@@ -224,7 +224,7 @@ mod test {
             nvidia_gpu::cast_load,
             test_utils::{Diff, ErrorCollector},
         };
-        use dev_mempool::cuda::memcpy_d2h;
+        use cuda::memcpy_d2h;
         use half::f16;
         use rand::Rng;
 

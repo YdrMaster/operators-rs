@@ -99,7 +99,7 @@ impl crate::Operator for Operator {
 
         let nsy = (nsy / unit) as i32;
         let nsx = (nsx / unit) as i32;
-        let params = dev_mempool::cuda::params![y_base, nsy, x_base, nsx, w_base, epsilon];
+        let params = cuda::params![y_base, nsy, x_base, nsx, w_base, epsilon];
 
         scheme.module.launch(
             &scheme.name,
@@ -293,7 +293,7 @@ mod test {
             nvidia_gpu::cast_load,
             test_utils::{Diff, ErrorCollector},
         };
-        use dev_mempool::cuda::memcpy_d2h;
+        use cuda::memcpy_d2h;
         use half::f16;
         use rand::Rng;
         use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};

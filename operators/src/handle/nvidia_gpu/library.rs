@@ -166,7 +166,7 @@ fn read_output(output: &Output) -> String {
 
 #[test]
 fn test_compile() {
-    use dev_mempool::cuda::Version;
+    use cuda::Version;
     use libloading::Symbol;
     use std::ffi::{c_char, CStr};
 

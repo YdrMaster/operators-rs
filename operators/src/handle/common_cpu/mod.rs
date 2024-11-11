@@ -1,9 +1,10 @@
+mod blob;
 mod inproc_node;
 
-pub use dev_mempool::Blob;
-pub use inproc_node::InprocNode;
+use crate::{Alloc, Hardware, QueueAlloc, QueueOf};
 
-use crate::{Hardware, QueueAlloc, QueueOf};
+pub use blob::Blob;
+pub use inproc_node::InprocNode;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Cpu;
@@ -14,6 +15,16 @@ pub struct ThisThread;
 impl Hardware for Cpu {
     type Byte = u8;
     type Queue<'ctx> = ThisThread;
+}
+
+impl<T> Alloc<Blob> for T {
+    #[inline]
+    fn alloc(&self, size: usize) -> Blob {
+        Blob::new(size)
+    }
+
+    #[inline]
+    fn free(&self, _mem: Blob) {}
 }
 
 impl QueueAlloc for ThisThread {

@@ -11,7 +11,7 @@ use crate::{
     utils::sizeof,
     ByteOf, LaunchError, QueueAlloc, SchemeDiversity, SchemeError, Workspace,
 };
-use dev_mempool::cuda::{DevByte, Stream};
+use cuda::{DevByte, Stream};
 use digit_layout::DigitLayout;
 use ffi::format_code;
 use libloading::Library;
@@ -246,7 +246,7 @@ fn test_compute() {
         common_cpu::{Cpu, ThisThread},
         Operator as _,
     };
-    use dev_mempool::cuda::memcpy_d2h;
+    use cuda::memcpy_d2h;
     use digit_layout::types as ty;
     use rand::Rng;
     use std::ptr::null;

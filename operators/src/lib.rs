@@ -33,11 +33,10 @@ pub use handle::nvidia_gpu;
 #[cfg(use_cuda)]
 pub extern crate cublas;
 #[cfg(use_cuda)]
-pub use dev_mempool::cuda;
+pub extern crate cuda;
 #[cfg(use_nccl)]
 pub extern crate nccl;
 
-use dev_mempool::Alloc;
 use rearrange::Rearrange;
 use std::{marker::PhantomData, ops::DerefMut, ptr::addr_eq};
 
@@ -78,6 +77,11 @@ pub type QueueOf<'ctx, H> = <H as Hardware>::Queue<'ctx>;
 pub type ArgsOf<O> = <O as Operator>::Args;
 pub(crate) type MutPtr<H> = *mut <H as Hardware>::Byte;
 pub(crate) type ConstPtr<H> = *const <H as Hardware>::Byte;
+
+pub trait Alloc<M> {
+    fn alloc(&self, size: usize) -> M;
+    fn free(&self, mem: M);
+}
 
 /// 绑定到队列的分配器。
 pub trait QueueAlloc: Alloc<Self::DevMem> {

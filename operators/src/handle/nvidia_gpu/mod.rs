@@ -1,9 +1,9 @@
 mod library;
 mod module;
 
-use crate::{Hardware, Pool, QueueAlloc, QueueOf, SchemeDiversity};
+use crate::{Alloc, Hardware, Pool, QueueAlloc, QueueOf, SchemeDiversity};
 use cublas::{Cublas, CublasLtSpore, CublasSpore};
-use dev_mempool::cuda::{
+use cuda::{
     self, AsRaw, Context, ContextResource, ContextSpore, CurrentCtx, DevMem, Device, Stream,
     Version,
 };
@@ -46,6 +46,28 @@ impl crate::TopoNode<Gpu> for NcclNode {
 
     fn group_size(&self) -> usize {
         self.nccl.count()
+    }
+}
+
+impl<'ctx> Alloc<DevMem<'ctx>> for &'ctx CurrentCtx {
+    #[inline]
+    fn alloc(&self, size: usize) -> DevMem<'ctx> {
+        self.malloc::<u8>(size)
+    }
+
+    #[inline]
+    fn free(&self, _mem: DevMem<'ctx>) {}
+}
+
+impl<'ctx> Alloc<DevMem<'ctx>> for Stream<'ctx> {
+    #[inline]
+    fn alloc(&self, size: usize) -> DevMem<'ctx> {
+        self.malloc::<u8>(size)
+    }
+
+    #[inline]
+    fn free(&self, mem: DevMem<'ctx>) {
+        mem.drop_on(self)
     }
 }
 

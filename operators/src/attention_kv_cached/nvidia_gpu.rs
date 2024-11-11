@@ -76,7 +76,7 @@ mod test {
             nvidia_gpu::cast_load,
             test_utils::{Diff, ErrorCollector},
         };
-        use dev_mempool::cuda::memcpy_d2h;
+        use cuda::memcpy_d2h;
         use half::f16;
         use rand::Rng;
 

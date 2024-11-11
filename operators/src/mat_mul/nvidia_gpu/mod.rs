@@ -4,7 +4,7 @@ use crate::{
     type_not_support, ByteOf, LaunchError, QueueAlloc, SchemeError,
 };
 use cublas::cublas;
-use dev_mempool::cuda::AsRaw;
+use cuda::AsRaw;
 use digit_layout::types::F16;
 use half::f16;
 use std::{ffi::c_void, sync::Arc};
@@ -167,7 +167,7 @@ mod test {
             test_utils::{Diff, ErrorCollector},
             Operator as _,
         };
-        use dev_mempool::cuda::memcpy_d2h;
+        use cuda::memcpy_d2h;
         use digit_layout::types::{F16, F64};
         use half::f16;
         use rand::Rng;

@@ -151,7 +151,7 @@ impl crate::Operator for Operator {
         let src_rs = src_rs / unit;
         let src_cs = src_cs / unit;
 
-        let params = dev_mempool::cuda::params![
+        let params = cuda::params![
             args.dst_base,
             dst_rs,
             dst_cs,
@@ -254,7 +254,7 @@ mod test {
     fn test_compute() {
         use super::super::common_cpu::Operator as RefOp;
         use crate::common_cpu::{Cpu, ThisThread};
-        use dev_mempool::cuda::memcpy_d2h;
+        use cuda::memcpy_d2h;
         use ndarray_layout::{ArrayLayout, Endian::BigEndian};
         use rand::Rng;
 
