@@ -12,3 +12,6 @@ cuda = { git = "https://github.com/YdrMaster/cuda-driver", rev = "e2ec203" }
 cublas = { git = "https://github.com/YdrMaster/cuda-driver", rev = "e2ec203" }
 nccl = { git = "https://github.com/YdrMaster/cuda-driver", rev = "e2ec203" }
 search-cuda-tools = { git = "https://github.com/YdrMaster/cuda-driver", rev = "e2ec203" }
+
+ascendcl = { git = "https://github.com/InfiniTensor/ascendcl", rev = "8730259" }
+search-ascend-tools = { git = "https://github.com/InfiniTensor/ascendcl", rev = "8730259" }
