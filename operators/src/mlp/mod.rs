@@ -17,6 +17,7 @@ macro_rules! impl_op {
 
 #[cfg(any(use_cpu, test))]
 pub mod common_cpu;
-
 #[cfg(use_cuda)]
 pub mod nvidia_gpu;
+#[cfg(use_cl)]
+pub mod opencl;
