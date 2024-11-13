@@ -5,8 +5,8 @@ resolver = "2"
 [workspace.dependencies]
 ndarray-layout = { git = "https://github.com/YdrMaster/ndarray-layout", rev = "48d36c5" }
 
-clrt = { git = "https://github.com/InfiniTensor/clrt", rev = "26b7b96" }
-search-cl-tools = { git = "https://github.com/InfiniTensor/clrt", rev = "26b7b96" }
+clrt = { git = "https://github.com/InfiniTensor/clrt", rev = "166aba1" }
+search-cl-tools = { git = "https://github.com/InfiniTensor/clrt", rev = "166aba1" }
 
 cuda = { git = "https://github.com/YdrMaster/cuda-driver", rev = "e2ec203" }
 cublas = { git = "https://github.com/YdrMaster/cuda-driver", rev = "e2ec203" }
