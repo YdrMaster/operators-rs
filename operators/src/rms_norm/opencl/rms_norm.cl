@@ -17,7 +17,7 @@ __kernel void rms_norm_padding(
     int group_id = get_group_id(0);
     int local_size = get_local_size(0);
 
-    //计算输入输出指针 
+    //计算输入输出指针
     int idx_x = group_id * x_stride + local_id;
     int idx_y = group_id * y_stride + local_id;
 
@@ -128,7 +128,7 @@ __kernel void rms_norm_padding_f16(
     int group_id = get_group_id(0);
     int local_size = get_local_size(0);
 
-    //计算输入输出指针  
+    //计算输入输出指针
     int idx_x = group_id * x_stride + local_id;
     int idx_y = group_id * y_stride + local_id;
 
