@@ -40,9 +40,11 @@ impl crate::Operator for Operator {
         let kernel_name = match items_per_thread {
             1 => "rms_norm_padding",
             2..=16 => "rms_norm_folding",
+            // todo!() 添加倍数大于16的处理  --worksize存入operator中，在scheme处理
             _ => {
-                // todo!() 添加倍数大于16的处理  --worksize存入operator中，在scheme处理
-                return Err(shape_not_support("Unsupported items_per_thread configuration").into());
+                return Err(shape_not_support(
+                    "Unsupported items_per_thread configuration",
+                ))
             }
         };
 

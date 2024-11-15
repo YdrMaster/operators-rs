@@ -1,6 +1,6 @@
 use crate::{Alloc, Hardware, Pool, QueueAlloc, QueueOf};
 use clrt::{CommandQueue, Context, Kernel, Program, SvmBlob, SvmByte};
-use std::{collections::HashMap, ffi::CString, sync::RwLock};
+use std::{collections::HashMap, ffi::CString};
 
 #[repr(transparent)]
 pub struct ClDevice(Context);
@@ -55,35 +55,34 @@ impl QueueAlloc for CommandQueue {
 
 pub(crate) struct KernelCache {
     program: Program,
-    kernels: RwLock<HashMap<String, Pool<Kernel>>>,
+    kernels: HashMap<String, Pool<Kernel>>,
 }
 
 impl KernelCache {
     pub fn new(program: Program) -> Self {
+        let kernels = program.kernels();
         Self {
             program,
-            kernels: Default::default(),
+            kernels: kernels
+                .into_iter()
+                .map(|k| {
+                    let name = k.name();
+                    let pool = Pool::new();
+                    pool.push(k);
+                    (name, pool)
+                })
+                .collect(),
         }
     }
 
     pub fn get_kernel(&self, name: &str) -> Option<Kernel> {
-        let kernels = self.kernels.read().unwrap();
-        if let Some(pool) = kernels.get(name) {
-            return pool
-                .pop()
-                .or_else(|| self.program.get_kernel(&CString::new(name).unwrap()));
-        }
-        drop(kernels);
-
-        let kernel = self.program.get_kernel(&CString::new(name).unwrap())?;
-
-        let mut kernels = self.kernels.write().unwrap();
-        kernels.entry(name.into()).or_insert_with(|| Pool::new());
-
-        Some(kernel)
+        self.kernels
+            .get(name)?
+            .pop()
+            .or_else(|| self.program.get_kernel(CString::new(name).unwrap()))
     }
 
     pub fn set_kernel(&self, name: &str, kernel: Kernel) {
-        self.kernels.read().unwrap().get(name).unwrap().push(kernel)
+        self.kernels.get(name).unwrap().push(kernel)
     }
 }
