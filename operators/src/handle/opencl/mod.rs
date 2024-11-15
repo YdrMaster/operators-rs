@@ -15,10 +15,10 @@ impl ClDevice {
         Self(context)
     }
 
-    // #[inline]
-    // pub(crate) fn context(&self) -> &Context {
-    //     &self.0
-    // }
+    #[inline]
+    pub(crate) fn context(&self) -> &Context {
+        &self.0
+    }
 }
 
 impl Alloc<SvmBlob> for Context {
