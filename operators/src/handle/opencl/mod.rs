@@ -1,5 +1,6 @@
-use crate::{Alloc, Hardware, QueueAlloc, QueueOf};
-use clrt::{CommandQueue, Context, SvmBlob, SvmByte};
+use crate::{Alloc, Hardware, Pool, QueueAlloc, QueueOf};
+use clrt::{CommandQueue, Context, Kernel, Program, SvmBlob, SvmByte};
+use std::{collections::HashMap, ffi::CString};
 
 #[repr(transparent)]
 pub struct ClDevice(Context);
@@ -49,5 +50,39 @@ impl QueueAlloc for CommandQueue {
     #[inline]
     fn queue(&self) -> &QueueOf<Self::Hardware> {
         self
+    }
+}
+
+pub(crate) struct KernelCache {
+    program: Program,
+    kernels: HashMap<String, Pool<Kernel>>,
+}
+
+impl KernelCache {
+    pub fn new(program: Program) -> Self {
+        let kernels = program.kernels();
+        Self {
+            program,
+            kernels: kernels
+                .into_iter()
+                .map(|k| {
+                    let name = k.name();
+                    let pool = Pool::new();
+                    pool.push(k);
+                    (name, pool)
+                })
+                .collect(),
+        }
+    }
+
+    pub fn get_kernel(&self, name: &str) -> Option<Kernel> {
+        self.kernels
+            .get(name)?
+            .pop()
+            .or_else(|| self.program.get_kernel(CString::new(name).unwrap()))
+    }
+
+    pub fn set_kernel(&self, name: &str, kernel: Kernel) {
+        self.kernels.get(name).unwrap().push(kernel)
     }
 }
