@@ -1,7 +1,7 @@
 ﻿use super::{args::Meta, Args, Attention};
 use crate::{
-    dyn_, fuesd_softmax, get_static, mat_mul, rearrange, utils::sizeof, ByteOf, Hardware,
-    LaunchError, QueueAlloc, SchemeError, TensorLayout, Workspace, WorkspaceCollector,
+    dyn_, fuesd_softmax, get_static, mat_mul, rearrange, ByteOf, Hardware, LaunchError, QueueAlloc,
+    SchemeError, TensorLayout, Workspace, WorkspaceCollector,
 };
 use ndarray_layout::ArrayLayout;
 use std::marker::PhantomData;
@@ -93,7 +93,7 @@ where
             return Ok(wc.cauculate(max_workspace_size));
         };
 
-        let ele = sizeof(dt)?;
+        let ele = dt.nbytes();
         let att_layout = TensorLayout::new_contiguous(dt, &[nh, seq, att]);
         let q_size = nh * seq * dh * ele;
         let att_size = nh * seq * att * ele;
@@ -168,7 +168,7 @@ where
             unreachable!()
         };
 
-        let ele = sizeof(dt)?;
+        let ele = dt.nbytes();
         get_static! {
             nh      seq    dh
             nh_sq   seq_sq dh_sq

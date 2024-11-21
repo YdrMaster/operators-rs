@@ -1,8 +1,7 @@
 ﻿use super::KVPair;
 use crate::{
-    type_not_support,
-    utils::{rank_error, sizeof},
-    ConstPtr, Hardware, MaybeDyn, MutPtr, SchemeError, TensorLayout,
+    type_not_support, utils::rank_error, ConstPtr, Hardware, MaybeDyn, MutPtr, SchemeError,
+    TensorLayout,
 };
 use digit_layout::{types as ty, DigitLayout};
 use std::ptr::{null, null_mut};
@@ -36,9 +35,9 @@ impl<H: Hardware> Args<H> {
         Args {
             kv_pair: TensorLayout::new(KVPair::<()>::LAYOUT, &[], &[]),
             kv_pair_base: null_mut(),
-            logits: TensorLayout::new(dt, &[n], &[dt.nbytes().unwrap() as _]),
+            logits: TensorLayout::new(dt, &[n], &[dt.nbytes() as _]),
             logits_base: null(),
-            indices: TensorLayout::new(ty::U32, &[n], &[ty::U32.nbytes().unwrap() as _]),
+            indices: TensorLayout::new(ty::U32, &[n], &[ty::U32.nbytes() as _]),
             indices_base: null(),
             config: SampleArgs {
                 temperature: 0.0,
@@ -104,7 +103,7 @@ impl<H: Hardware> Args<H> {
         }
 
         let dt_p = logits.dt();
-        if sizeof(dt_p)? > size_of::<u32>() {
+        if dt_p.nbytes() > size_of::<u32>() {
             return Err(type_not_support("element too large"));
         }
         if indices.dt() != ty::U32 {

@@ -2,9 +2,8 @@
 use crate::{
     get_static,
     nvidia_gpu::{dt_name, Gpu, Handle, ModuleBox},
-    shape_not_support, strides_not_support,
-    utils::sizeof,
-    ByteOf, LaunchError, QueueAlloc, SchemeDiversity, SchemeError,
+    shape_not_support, strides_not_support, ByteOf, LaunchError, QueueAlloc, SchemeDiversity,
+    SchemeError,
 };
 use digit_layout::DigitLayout;
 use lru::LruCache;
@@ -84,8 +83,8 @@ impl crate::Operator for Operator {
             dsw
         }
 
-        let unit = sizeof(dt_a)? as isize;
-        if dsy != unit || dsx != unit || dsw != sizeof(dt_w)? as isize {
+        let unit = dt_a.nbytes() as isize;
+        if dsy != unit || dsx != unit || dsw != dt_w.nbytes() as isize {
             return Err(strides_not_support("").into());
         };
 

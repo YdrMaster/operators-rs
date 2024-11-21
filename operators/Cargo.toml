@@ -13,7 +13,7 @@ ascend = ["ascendcl"]
 
 [dependencies]
 ndarray-layout.workspace = true
-digit-layout = "0.1"
+digit-layout = "0.2"
 rayon = "1.10"
 lru = "0.12"
 half = "2.4"

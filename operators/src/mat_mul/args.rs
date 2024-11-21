@@ -1,7 +1,6 @@
 ﻿use crate::{
     dyn_not_support, rank_not_support, shape_mismatch, shape_not_support, strides_not_support,
-    utils::{sizeof, type_distinct},
-    ConstPtr, Hardware, MaybeDyn, MutPtr, SchemeError, TensorLayout,
+    utils::type_distinct, ConstPtr, Hardware, MaybeDyn, MutPtr, SchemeError, TensorLayout,
 };
 use digit_layout::DigitLayout;
 use std::{
@@ -149,7 +148,7 @@ impl TryFrom<&TensorLayout> for Matrix {
         let [stride @ .., rs, cs] = strides else {
             unreachable!();
         };
-        let unit = sizeof(tensor.dt())? as isize;
+        let unit = tensor.dt().nbytes() as isize;
         let (batch, stride) = match batch {
             [] | [1] => {
                 assert!(matches!(stride, [] | [_]));

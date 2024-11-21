@@ -1,6 +1,5 @@
 ﻿use crate::{
-    dyn_not_support, rearrange, shape_mismatch, strides_not_support,
-    utils::{sizeof, type_distinct},
+    dyn_not_support, rearrange, shape_mismatch, strides_not_support, utils::type_distinct,
     Hardware, MaybeDyn, SchemeError,
 };
 use ndarray_layout::ArrayLayout;
@@ -70,7 +69,7 @@ impl<H: Hardware> Args<H> {
         }
 
         Ok(Meta {
-            size: dst * sizeof(dt)?,
+            size: dst * dt.nbytes(),
         })
     }
 }

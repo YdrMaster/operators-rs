@@ -1,7 +1,6 @@
 ﻿use crate::{
-    rank_mismatch, shape_mismatch, shape_not_support, static_from,
-    utils::{sizeof, type_distinct},
-    ConstPtr, Hardware, MutPtr, SchemeError, TensorLayout,
+    rank_mismatch, shape_mismatch, shape_not_support, static_from, utils::type_distinct, ConstPtr,
+    Hardware, MutPtr, SchemeError, TensorLayout,
 };
 use std::{
     cmp::Ordering,
@@ -106,7 +105,7 @@ impl Scheme {
         }
         dims.sort_unstable();
         // # 合并连续维度
-        let mut unit = sizeof(dst_.dt())? as isize;
+        let mut unit = dst_.dt().nbytes() as isize;
         let mut ndim = dims.len();
         // ## 合并末尾连续维度到 unit
         for dim in dims.iter_mut().rev() {

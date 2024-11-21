@@ -1,7 +1,7 @@
 use super::{args::Meta, Args, Indices, KVPair, RandomSample, SampleArgs};
 use crate::{
-    common_cpu::Cpu, get_static, strides_not_support, type_not_support, utils::sizeof, ByteOf,
-    LaunchError, QueueAlloc, SchemeError,
+    common_cpu::Cpu, get_static, strides_not_support, type_not_support, ByteOf, LaunchError,
+    QueueAlloc, SchemeError,
 };
 use half::f16;
 use std::{cmp::Ordering::Equal, slice::from_raw_parts};
@@ -50,7 +50,7 @@ impl crate::Operator for Operator {
         let &[s] = args.logits.strides() else {
             unreachable!()
         };
-        let unit = sizeof(dt)? as isize;
+        let unit = dt.nbytes() as isize;
         if s.get_static().copied() != Some(unit) {
             return Err(strides_not_support("").into());
         }

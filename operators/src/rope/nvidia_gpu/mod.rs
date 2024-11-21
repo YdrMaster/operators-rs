@@ -2,9 +2,8 @@ use super::{args::Meta, fill_pos, Args, Rope, Seq, SinCosTable};
 use crate::{
     get_static,
     nvidia_gpu::{Gpu, Handle, ModuleBox},
-    shape_not_support, strides_not_support, type_not_support,
-    utils::sizeof,
-    ByteOf, LaunchError, QueueAlloc, SchemeError,
+    shape_not_support, strides_not_support, type_not_support, ByteOf, LaunchError, QueueAlloc,
+    SchemeError,
 };
 use digit_layout::{
     types::{F16, U32},
@@ -116,7 +115,7 @@ impl crate::Operator for Operator {
             sp
         }
 
-        let unit = sizeof(dt_t)? as isize;
+        let unit = dt_t.nbytes() as isize;
         if sd != unit || sp != size_of::<u32>() as isize {
             return Err(strides_not_support("").into());
         };

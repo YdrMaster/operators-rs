@@ -20,9 +20,7 @@ pub(crate) enum SchemeDiversity {
 }
 
 pub mod utils {
-    use super::{
-        rank_not_support, shape_mismatch, type_mismatch, type_not_support, MaybeDyn, SchemeError,
-    };
+    use super::{rank_not_support, shape_mismatch, type_mismatch, MaybeDyn, SchemeError};
     use digit_layout::DigitLayout;
 
     #[cfg(use_cuda)]
@@ -34,12 +32,6 @@ pub mod utils {
             b = rem;
         }
         a
-    }
-
-    #[inline]
-    pub(crate) fn sizeof(dt: DigitLayout) -> Result<usize, SchemeError> {
-        dt.nbytes()
-            .ok_or_else(|| type_not_support(format!("{dt} not supported")))
     }
 
     #[inline]
