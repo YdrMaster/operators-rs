@@ -1,6 +1,9 @@
 use crate::{Alloc, Hardware, Pool, QueueAlloc, QueueOf};
-use clrt::{CommandQueue, Context, Kernel, Program, SvmBlob, SvmByte};
-use std::{collections::HashMap, ffi::CString};
+use clrt::{BuildError, CommandQueue, Context, Kernel, Program, SvmBlob, SvmByte};
+use std::{
+    collections::HashMap,
+    ffi::{CStr, CString},
+};
 
 #[repr(transparent)]
 pub struct ClDevice(Context);
@@ -59,20 +62,28 @@ pub(crate) struct KernelCache {
 }
 
 impl KernelCache {
-    pub fn new(program: Program) -> Self {
-        let kernels = program.kernels();
-        Self {
-            program,
-            kernels: kernels
-                .into_iter()
-                .map(|k| {
-                    let name = k.name();
-                    let pool = Pool::new();
-                    pool.push(k);
-                    (name, pool)
-                })
-                .collect(),
-        }
+    pub fn new(ctx: &Context, src: &str, opts: &CStr) -> Self {
+        let program = match ctx.build_from_source(src, opts) {
+            Ok(program) => program,
+            Err(BuildError::BuildFailed(log)) => {
+                println!("{log}");
+                panic!("Failed to build cl kernels")
+            }
+            Err(BuildError::Others(err)) => {
+                panic!("Failed to build cl kernels with error {err}")
+            }
+        };
+        let kernels = program
+            .kernels()
+            .into_iter()
+            .map(|k| {
+                let name = k.name();
+                let pool = Pool::new();
+                pool.push(k);
+                (name, pool)
+            })
+            .collect();
+        Self { program, kernels }
     }
 
     pub fn get_kernel(&self, name: &str) -> Option<Kernel> {
