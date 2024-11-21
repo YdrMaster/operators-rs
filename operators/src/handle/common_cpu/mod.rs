@@ -1,9 +1,7 @@
-mod blob;
 mod inproc_node;
 
-use crate::{Alloc, Hardware, QueueAlloc, QueueOf};
+use crate::{Alloc, Blob, Hardware, QueueAlloc, QueueOf};
 
-pub use blob::Blob;
 pub use inproc_node::InprocNode;
 
 #[derive(Clone, Copy, Debug)]

@@ -16,7 +16,12 @@ impl Rope<ClDevice> for Operator {
         todo!()
     }
 
-    fn build_pos<I, QA>(_nt: usize, _iter: I, _queue_alloc: &QA) -> QA::DevMem
+    fn build_pos<I, QA>(
+        _dt: digit_layout::DigitLayout,
+        _nt: usize,
+        _iter: I,
+        _queue_alloc: &QA,
+    ) -> QA::DevMem
     where
         I: IntoIterator<Item = Seq>,
         QA: QueueAlloc<Hardware = Self::Hardware>,

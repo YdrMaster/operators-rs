@@ -2,21 +2,21 @@ use super::{args::Meta, fill_pos, Args, Rope, Seq, SinCosTable};
 use crate::{
     get_static,
     nvidia_gpu::{Gpu, Handle, ModuleBox},
-    shape_not_support, strides_not_support, type_not_support, ByteOf, LaunchError, QueueAlloc,
-    SchemeError,
+    shape_not_support, strides_not_support, type_not_support, Blob, ByteOf, LaunchError,
+    QueueAlloc, SchemeError,
 };
-use digit_layout::{
-    types::{F16, U32},
-    DigitLayout,
-};
-use std::{alloc::Layout, ffi::CString, sync::Arc};
+use digit_layout::{types as ty, DigitLayout};
+use std::{ffi::CString, sync::Arc};
 
 pub struct Operator {
     _handle: Arc<Handle>,
     max_threads_block: usize,
     module: Arc<ModuleBox>,
 }
-const NAME: &str = "rope_f16";
+
+const MODULE: &str = "rope";
+const POS_U32: &str = "rope_f16_u32";
+const POS_U64: &str = "rope_f16_u64";
 
 impl Rope<Gpu> for Operator {
     fn build_sincos<QA>(
@@ -34,14 +34,24 @@ impl Rope<Gpu> for Operator {
         }
     }
 
-    fn build_pos<I, QA>(nt: usize, iter: I, queue_alloc: &QA) -> QA::DevMem
+    fn build_pos<I, QA>(
+        dt: digit_layout::DigitLayout,
+        nt: usize,
+        iter: I,
+        queue_alloc: &QA,
+    ) -> QA::DevMem
     where
         I: IntoIterator<Item = Seq>,
         QA: QueueAlloc<Hardware = Self::Hardware>,
     {
-        let mut blob = queue_alloc.alloc(Layout::array::<u32>(nt).unwrap().size());
-        let mut host = vec![0u32; nt];
-        fill_pos(&mut host, iter);
+        let mut host = Blob::new(dt.nbytes() * nt);
+        match dt {
+            ty::U32 => fill_pos(host.as_mut_ptr().cast::<u32>(), nt, iter),
+            ty::U64 => fill_pos(host.as_mut_ptr().cast::<u64>(), nt, iter),
+            _ => todo!(),
+        }
+
+        let mut blob = queue_alloc.alloc(host.len());
         queue_alloc.queue().memcpy_h2d(&mut blob, &host);
         blob
     }
@@ -57,21 +67,16 @@ impl crate::Operator for Operator {
         Self {
             _handle: node.0.clone(),
             max_threads_block: node.0.device().block_limit().max_threads,
-            module: node.0.compile_kernel(NAME, cc, format_code),
+            module: node.0.compile_kernel(MODULE, cc, format_code),
         }
     }
 
     fn scheme(
         &mut self,
-        args: &Self::Args,
+        _args: &Self::Args,
         _max_workspace_size: usize,
     ) -> Result<usize, SchemeError> {
-        let Meta { dt_t, dt_p, .. } = args.meta()?;
-        if dt_t == F16 || dt_p == U32 {
-            Ok(0)
-        } else {
-            Err(type_not_support(""))
-        }
+        Ok(0)
     }
 
     fn launch<QA>(
@@ -87,9 +92,14 @@ impl crate::Operator for Operator {
             dt_t, dt_p, nt, dh, ..
         } = args.meta()?;
 
-        if dt_t != F16 || dt_p != U32 {
+        if dt_t != ty::F16 {
             return Err(type_not_support("").into());
         }
+        let name = match dt_p {
+            ty::U32 => POS_U32,
+            ty::U64 => POS_U64,
+            _ => return Err(type_not_support("").into()),
+        };
 
         let Args {
             t_layout,
@@ -134,7 +144,7 @@ impl crate::Operator for Operator {
         let nh_h = nh / nh_l;
 
         self.module.launch(
-            CString::new(NAME).unwrap(),
+            CString::new(name).unwrap(),
             (nt as _, nh_h as _),
             (nh_l as _, dh as _),
             params.as_ptr(),
@@ -150,11 +160,21 @@ fn format_code() -> String {
     format!(
         r#"{CODE}
 
-extern "C" __global__ void {NAME}(
+extern "C" __global__ void {POS_U32}(
     half2 *__restrict__ t,
     int const stride_token,
     int const stride_head,
     unsigned int const *__restrict__ pos,
+    float theta
+){{
+    padding(t, stride_token, stride_head, pos, theta);
+}}
+
+extern "C" __global__ void {POS_U64}(
+    half2 *__restrict__ t,
+    int const stride_token,
+    int const stride_head,
+    unsigned long long const *__restrict__ pos,
     float theta
 ){{
     padding(t, stride_token, stride_head, pos, theta);
@@ -164,7 +184,7 @@ extern "C" __global__ void {NAME}(
 
 #[cfg(test)]
 mod test {
-    use super::{Args, Gpu, Operator};
+    use super::{Args, Gpu, Operator, POS_U32, POS_U64};
     use crate::{Hardware, Operator as _, TensorLayout};
     use digit_layout::{
         types::{F16, F64, U32},
@@ -213,7 +233,6 @@ mod test {
 
     #[test]
     fn test_compile() {
-        use super::NAME;
         use std::ffi::CString;
 
         let Some(gpu) = Gpu::init() else {
@@ -226,8 +245,12 @@ mod test {
 
         gpu.apply(|ctx| {
             println!(
-                "{NAME}\n{}",
-                op.module.load(CString::new(NAME).unwrap(), ctx).info()
+                "{POS_U32}\n{}",
+                op.module.load(CString::new(POS_U32).unwrap(), ctx).info()
+            );
+            println!(
+                "{POS_U64}\n{}",
+                op.module.load(CString::new(POS_U64).unwrap(), ctx).info()
             );
         })
     }

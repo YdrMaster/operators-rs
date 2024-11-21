@@ -1,9 +1,11 @@
+mod blob;
 mod error;
 mod maybe_dyn;
 mod pool;
 mod tensor;
 mod workspace;
 
+pub use blob::Blob;
 pub use error::{functions::*, LaunchError, LaunchErrorKind, SchemeError, SchemeErrorKind};
 pub use maybe_dyn::{dyn_, DynVal, MaybeDyn};
 pub use pool::Pool;
