@@ -1,5 +1,6 @@
 ﻿use crate::MaybeDyn;
 use digit_layout::DigitLayout;
+use ndarray_layout::ArrayLayout;
 use std::{
     alloc::{alloc, dealloc, Layout},
     ptr::{copy_nonoverlapping, NonNull},
@@ -57,6 +58,11 @@ impl TensorLayout {
             .collect::<Vec<_>>();
         strides.reverse();
         Self::new(dt, shape, &strides)
+    }
+
+    #[inline]
+    pub fn from_arr<const N: usize>(dt: DigitLayout, arr: &ArrayLayout<N>) -> Self {
+        Self::new(dt, arr.shape(), arr.strides())
     }
 
     #[inline]

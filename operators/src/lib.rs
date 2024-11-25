@@ -3,8 +3,12 @@
 mod common;
 mod handle;
 
+pub mod attention;
+pub mod attention_kv_cached;
+pub mod conv;
 pub mod fuesd_softmax;
 pub mod mat_mul;
+pub mod mlp;
 pub mod random_sample;
 pub mod rearrange;
 pub mod rms_norm;
@@ -13,10 +17,6 @@ pub mod swiglu;
 
 pub mod all_reduce;
 pub mod broadcast;
-
-pub mod attention;
-pub mod attention_kv_cached;
-pub mod mlp;
 
 pub use common::*;
 
