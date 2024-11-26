@@ -43,21 +43,12 @@ where
         args: &Self::Args,
         max_workspace_size: usize,
     ) -> Result<usize, SchemeError> {
-        let Args {
-            strides,
-            dilations,
-            pads,
-            ..
-        } = args;
-        let &[hs, ws] = strides;
-        let &[hd, wd] = dilations;
+        let Args { pads, .. } = args;
         let &[0, 0, 0, 0] = pads else {
-            return Err(args_not_support("non-zero padding for im2col is not supported").into());
+            return Err(args_not_support(
+                "non-zero padding for im2col is not supported",
+            ));
         };
-        let d_s = [hs, ws, hd, wd];
-        if d_s.iter().any(|&x| x <= 0) {
-            return Err(args_not_support("negative strides or dilation").into());
-        }
         let Meta {
             dt,
             n,
@@ -117,10 +108,6 @@ where
         let &[0, 0, 0, 0] = pads else {
             return Err(args_not_support("non-zero padding for im2col is not supported").into());
         };
-        let d_s = [hs, ws, hd, wd];
-        if d_s.iter().any(|&x| x <= 0) {
-            return Err(args_not_support("negative strides or dilation").into());
-        }
 
         let Meta {
             dt,
@@ -158,10 +145,10 @@ where
 
         // 计算考虑空洞的 kernel size
 
-        let hkd = (hk - 1) * hd as usize + 1;
-        let wkd = (wk - 1) * wd as usize + 1;
+        let hkd = (hk - 1) * hd + 1;
+        let wkd = (wk - 1) * wd + 1;
 
-        if (h - hkd) % hs as usize != 0 || (w - wkd) % ws as usize != 0 {
+        if (h - hkd) % hs != 0 || (w - wkd) % ws != 0 {
             return Err(strides_not_support("output size not divisible by strides").into());
         }
 
@@ -183,6 +170,7 @@ where
         // x im2col rearrange
         let ele = dt.nbytes();
         let a_shape = [n, c, hk, wk, hy, wy];
+        let [hd, wd, hs, ws] = [hd, wd, hs, ws].map(|x| x as isize);
         let a_strides = [nxs, cxs, hxs * hd, wxs * wd, hxs * hs, wxs * ws];
         let a_dst = Arr6::new_contiguous(&a_shape, BigEndian, ele);
         let a_src = Arr6::new(&a_shape, &a_strides, 0);

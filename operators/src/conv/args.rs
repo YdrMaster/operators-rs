@@ -13,8 +13,8 @@ pub struct Args<H: Hardware> {
     pub w_base: ConstPtr<H>,
     pub b_layout: TensorLayout,
     pub b_base: ConstPtr<H>,
-    pub strides: [isize; 2],
-    pub dilations: [isize; 2],
+    pub strides: [usize; 2],
+    pub dilations: [usize; 2],
     pub pads: [usize; 4],
 }
 
