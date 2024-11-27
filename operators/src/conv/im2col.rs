@@ -163,24 +163,24 @@ where
             return Err(strides_not_support("").into());
         };
         // w 作为矩阵乘输入的布局
-        let Some(b_w) = Arr6::new(&[n, m, c, hk, wk], &[0, mks, cks, hks, wks], 0).merge(2..5)
+        let Some(a_w) = Arr6::new(&[n, m, c, hk, wk], &[0, mks, cks, hks, wks], 0).merge(2..5)
         else {
             return Err(strides_not_support("").into());
         };
         // x im2col rearrange
         let ele = dt.nbytes();
-        let a_shape = [n, c, hk, wk, hy, wy];
+        let b_shape = [n, c, hk, wk, hy, wy];
         let [hd, wd, hs, ws] = [hd, wd, hs, ws].map(|x| x as isize);
-        let a_strides = [nxs, cxs, hxs * hd, wxs * wd, hxs * hs, wxs * ws];
-        let a_dst = Arr6::new_contiguous(&a_shape, BigEndian, ele);
-        let a_src = Arr6::new(&a_shape, &a_strides, 0);
-        let a_x = a_dst.merge_many(&[1..4, 4..6]).unwrap();
+        let b_strides = [nxs, cxs, hxs * hd, wxs * wd, hxs * hs, wxs * ws];
+        let b_dst = Arr6::new_contiguous(&b_shape, BigEndian, ele);
+        let b_src = Arr6::new(&b_shape, &b_strides, 0);
+        let b_x = b_dst.merge_many(&[1..4, 4..6]).unwrap();
 
         let c_y = TensorLayout::from_arr(dt, &c_y);
-        let b_w = TensorLayout::from_arr(dt, &b_w);
-        let a_x = TensorLayout::from_arr(dt, &a_x);
-        let a_dst = TensorLayout::from_arr(dt, &a_dst);
-        let a_src = TensorLayout::from_arr(dt, &a_src);
+        let a_w = TensorLayout::from_arr(dt, &a_w);
+        let b_x = TensorLayout::from_arr(dt, &b_x);
+        let b_dst = TensorLayout::from_arr(dt, &b_dst);
+        let b_src = TensorLayout::from_arr(dt, &b_src);
 
         // b 布局广播
         let b = Arr6::new(&[n, m, hy * wy], &[0, mbs, 0], 0);
@@ -197,15 +197,15 @@ where
         )?;
 
         // 为 im2col 分配工作空间
-        let a_size = a_shape.iter().product::<usize>() * ele;
-        let mut workspace = Workspace::new(queue_alloc, workspace, a_size);
-        let (a_mem, workspace) = workspace.split_at_mut(a_size);
+        let b_size = b_shape.iter().product::<usize>() * ele;
+        let mut workspace = Workspace::new(queue_alloc, workspace, b_size);
+        let (b_mem, workspace) = workspace.split_at_mut(b_size);
         // im2col 变换
         self.rearrange.launch(
             &rearrange::Args {
-                dst_layout: a_dst,
-                dst_base: a_mem.as_mut_ptr(),
-                src_layout: a_src,
+                dst_layout: b_dst,
+                dst_base: b_mem.as_mut_ptr(),
+                src_layout: b_src,
                 src_base: *x_base,
             },
             workspace,
@@ -217,10 +217,10 @@ where
                 c_layout: c_y.clone(),
                 c_base: *y_base,
                 beta: 1.,
-                a_layout: a_x,
-                a_base: a_mem.as_ptr(),
-                b_layout: b_w,
-                b_base: *w_base,
+                a_layout: a_w,
+                a_base: *w_base,
+                b_layout: b_x,
+                b_base: b_mem.as_ptr(),
                 alpha: 1.,
             },
             workspace,
