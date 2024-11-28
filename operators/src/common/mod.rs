@@ -25,7 +25,7 @@ pub mod utils {
     };
     use digit_layout::DigitLayout;
 
-    #[cfg(use_cuda)]
+    #[cfg(any(use_cuda, use_cl))]
     #[inline]
     pub(crate) const fn gcd(mut a: usize, mut b: usize) -> usize {
         while b != 0 {
@@ -115,6 +115,10 @@ pub(crate) mod test_utils {
 
         pub fn summary(self) -> (usize, usize) {
             (self.outliers.len(), self.count)
+        }
+
+        pub fn outliers(&self) -> &[usize] {
+            &self.outliers
         }
     }
 
