@@ -104,14 +104,17 @@ impl crate::Operator for Operator {
             .set_arg(2, x_base)
             .set_arg(3, (nsx / 4) as cl_int)
             .set_arg(4, w_base)
-            .set_arg(5, epsilon)
-            .launch(
-                &global_workoffset,
-                &global_worksize,
-                &local_worksize,
-                _queue_alloc.queue(),
-                None,
-            );
+            .set_arg(5, epsilon);
+        if name == "rms_norm_folding" {
+            kernel.set_arg(6, d as cl_int);
+        }
+        kernel.launch(
+            &global_workoffset,
+            &global_worksize,
+            &local_worksize,
+            _queue_alloc.queue(),
+            None,
+        );
 
         self.0.set_kernel(name, kernel);
         Ok(())
@@ -183,7 +186,7 @@ mod test {
                 let queue = context.queue();
                 let mut cl_op = Operator::new(&ClDevice::new(context.clone()));
 
-                for k in 8..=8 {
+                for k in 10..=10 {
                     let n = 4;
                     let d = 1 << k;
 
@@ -235,6 +238,7 @@ mod test {
                             &queue,
                         )
                         .unwrap();
+                    queue.finish();
                     let cl_time = time.elapsed();
 
                     //CPU
@@ -275,6 +279,7 @@ mod test {
 
                     let (out, count) = ec.summary();
                     assert!(out * 1000 <= count);
+                    // assert!(2 <= 1);
                 }
             }
         }
