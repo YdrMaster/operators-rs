@@ -3,6 +3,7 @@ mod error;
 mod maybe_dyn;
 mod pool;
 mod tensor;
+mod unsigned;
 mod workspace;
 
 pub use blob::Blob;
@@ -10,6 +11,7 @@ pub use error::{functions::*, LaunchError, LaunchErrorKind, SchemeError, SchemeE
 pub use maybe_dyn::{dyn_, DynVal, MaybeDyn};
 pub use pool::Pool;
 pub use tensor::TensorLayout;
+pub use unsigned::Unsigned;
 pub use workspace::Workspace;
 
 pub(crate) use maybe_dyn::{get_static, static_from};

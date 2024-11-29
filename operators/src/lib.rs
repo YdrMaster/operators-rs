@@ -1,8 +1,9 @@
-#![deny(warnings)]
+// #![deny(warnings)]
 
 mod common;
 mod handle;
 
+pub mod add_rows;
 pub mod attention;
 pub mod attention_kv_cached;
 pub mod conv;

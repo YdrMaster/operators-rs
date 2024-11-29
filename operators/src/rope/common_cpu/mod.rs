@@ -1,5 +1,5 @@
 use super::{args::Meta, fill_pos, Args, Rope, Seq, SinCosTable};
-use crate::{common_cpu::Cpu, get_static, ByteOf, LaunchError, QueueAlloc, SchemeError};
+use crate::{common_cpu::Cpu, get_static, ByteOf, LaunchError, QueueAlloc, SchemeError, Unsigned};
 use digit_layout::{types as ty, DigitLayout};
 use half::f16;
 
@@ -187,20 +187,18 @@ trait Position<Calculation> {
 }
 
 macro_rules! impl_position {
-    ($p:ty,$a:ty) => {
-        impl Position<$a> for $p {
+    ($a:ty) => {
+        impl<T: Unsigned> Position<$a> for T {
             #[inline]
             fn freq_sin_cos(self, k: isize, dh: isize, theta: f32) -> ($a, $a) {
-                (self as $a / (theta as $a).powf(k as $a / dh as $a)).sin_cos()
+                (self.val() as $a / (theta as $a).powf(k as $a / dh as $a)).sin_cos()
             }
         }
     };
 }
 
-impl_position!(u32, f32);
-impl_position!(u32, f64);
-impl_position!(u64, f32);
-impl_position!(u64, f64);
+impl_position!(f32);
+impl_position!(f64);
 
 impl<A, P> Scheme<A, P>
 where
