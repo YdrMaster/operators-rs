@@ -8,6 +8,7 @@ pub mod attention;
 pub mod attention_kv_cached;
 pub mod conv;
 pub mod fuesd_softmax;
+pub mod layer_norm;
 pub mod mat_mul;
 pub mod mlp;
 pub mod random_sample;
