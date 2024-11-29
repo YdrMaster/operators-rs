@@ -1,10 +1,11 @@
 #include <cuda_fp16.h>
 
+template<class Tp>
 static __device__ void padding(
     half2 *__restrict__ t,
     int const stride_token,
     int const stride_head,
-    unsigned int const *__restrict__ pos,
+    Tp const *__restrict__ pos,
     float const theta) {
 
     auto const

@@ -1,8 +1,7 @@
 use super::{args::Meta, fill_pos, Args, Rope, Seq, SinCosTable};
-use crate::{common_cpu::Cpu, get_static, ByteOf, LaunchError, QueueAlloc, SchemeError};
-use digit_layout::DigitLayout;
+use crate::{common_cpu::Cpu, get_static, ByteOf, LaunchError, QueueAlloc, SchemeError, Unsigned};
+use digit_layout::{types as ty, DigitLayout};
 use half::f16;
-use std::{alloc::Layout, slice::from_raw_parts_mut};
 
 pub struct Operator;
 
@@ -22,14 +21,22 @@ impl Rope<Cpu> for Operator {
         }
     }
 
-    fn build_pos<I, QA>(nt: usize, iter: I, queue_alloc: &QA) -> QA::DevMem
+    fn build_pos<I, QA>(
+        dt: digit_layout::DigitLayout,
+        nt: usize,
+        iter: I,
+        queue_alloc: &QA,
+    ) -> QA::DevMem
     where
         I: IntoIterator<Item = Seq>,
         QA: QueueAlloc<Hardware = Self::Hardware>,
     {
-        let mut blob = queue_alloc.alloc(Layout::array::<u32>(nt).unwrap().size());
-        let slice = unsafe { from_raw_parts_mut(blob.as_mut_ptr().cast(), nt) };
-        fill_pos(slice, iter);
+        let mut blob = queue_alloc.alloc(dt.nbytes() * nt);
+        match dt {
+            ty::U32 => fill_pos(blob.as_mut_ptr().cast::<u32>(), nt, iter),
+            ty::U64 => fill_pos(blob.as_mut_ptr().cast::<u64>(), nt, iter),
+            _ => todo!(),
+        }
         blob
     }
 }
@@ -180,20 +187,18 @@ trait Position<Calculation> {
 }
 
 macro_rules! impl_position {
-    ($p:ty,$a:ty) => {
-        impl Position<$a> for $p {
+    ($a:ty) => {
+        impl<T: Unsigned> Position<$a> for T {
             #[inline]
             fn freq_sin_cos(self, k: isize, dh: isize, theta: f32) -> ($a, $a) {
-                (self as $a / (theta as $a).powf(k as $a / dh as $a)).sin_cos()
+                (self.val() as $a / (theta as $a).powf(k as $a / dh as $a)).sin_cos()
             }
         }
     };
 }
 
-impl_position!(u32, f32);
-impl_position!(u32, f64);
-impl_position!(u64, f32);
-impl_position!(u64, f64);
+impl_position!(f32);
+impl_position!(f64);
 
 impl<A, P> Scheme<A, P>
 where

@@ -275,11 +275,10 @@ mod test {
         let mut src = vec![0u32; nh * seq * dh];
         rand::thread_rng().fill(&mut src[..]);
 
-        let s_src =
-            ArrayLayout::<3>::new_contiguous(&[nh, seq, dh], BigEndian, dt.nbytes().unwrap());
+        let ele = dt.nbytes();
+        let s_src = ArrayLayout::<3>::new_contiguous(&[nh, seq, dh], BigEndian, ele);
         let s_dst =
-            ArrayLayout::<3>::new_contiguous(&[seq, nh, dh], BigEndian, dt.nbytes().unwrap())
-                .transpose(&[1, 0]);
+            ArrayLayout::<3>::new_contiguous(&[seq, nh, dh], BigEndian, ele).transpose(&[1, 0]);
 
         let dst_ans = gpu.apply(|ctx| {
             let stream = ctx.stream();

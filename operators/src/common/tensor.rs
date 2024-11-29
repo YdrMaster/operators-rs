@@ -1,5 +1,6 @@
 ﻿use crate::MaybeDyn;
 use digit_layout::DigitLayout;
+use ndarray_layout::ArrayLayout;
 use std::{
     alloc::{alloc, dealloc, Layout},
     ptr::{copy_nonoverlapping, NonNull},
@@ -9,7 +10,7 @@ use std::{
 /// | field    | type          |
 /// |:--------:|:-------------:|
 /// | dt       | DigitLayout   |
-/// | ndim     | u32           |
+/// | ndim     | u64           |
 /// | shape    | [usize; ndim] |
 /// | strides  | [isize; ndim] |
 #[repr(transparent)]
@@ -34,7 +35,7 @@ impl TensorLayout {
 
             let cursor: *mut DigitLayout = ptr.cast();
             cursor.write(dt);
-            let cursor: *mut u32 = cursor.add(1).cast();
+            let cursor: *mut u64 = cursor.add(1).cast();
             cursor.write(shape.len() as _);
             let cursor: *mut usize = cursor.add(1).cast();
             copy_nonoverlapping(shape.as_ptr(), cursor, shape.len());
@@ -49,7 +50,7 @@ impl TensorLayout {
         let mut strides = shape
             .iter()
             .rev()
-            .scan(dt.nbytes().unwrap() as isize, |mul, &d| {
+            .scan(dt.nbytes() as isize, |mul, &d| {
                 let stride = *mul;
                 *mul *= d as isize;
                 Some(stride)
@@ -60,6 +61,11 @@ impl TensorLayout {
     }
 
     #[inline]
+    pub fn from_arr<const N: usize>(dt: DigitLayout, arr: &ArrayLayout<N>) -> Self {
+        Self::new(dt, arr.shape(), arr.strides())
+    }
+
+    #[inline]
     pub fn dt(&self) -> DigitLayout {
         let ptr = self.0.cast();
         unsafe { *ptr.as_ref() }
@@ -67,7 +73,7 @@ impl TensorLayout {
 
     #[inline]
     pub fn ndim(&self) -> usize {
-        let ptr = self.0.cast::<u32>().as_ptr();
+        let ptr = self.0.cast::<u64>().as_ptr();
         unsafe { *ptr.add(1) as _ }
     }
 
@@ -75,19 +81,19 @@ impl TensorLayout {
     pub fn shape(&self) -> &[MaybeDyn<usize>] {
         let ptr = self.0.cast::<MaybeDyn<usize>>().as_ptr();
         let len = self.ndim();
-        unsafe { from_raw_parts(ptr.add(1), len) }
+        unsafe { from_raw_parts(ptr.add(2), len) }
     }
 
     #[inline]
     pub fn strides(&self) -> &[MaybeDyn<isize>] {
         let ptr = self.0.cast::<MaybeDyn<isize>>().as_ptr();
         let len = self.ndim();
-        unsafe { from_raw_parts(ptr.add(1 + len), len) }
+        unsafe { from_raw_parts(ptr.add(2 + len), len) }
     }
 
     #[inline(always)]
     fn layout(ndim: usize) -> Layout {
-        Layout::array::<usize>(1 + ndim * 2).unwrap()
+        Layout::array::<usize>(2 + ndim * 2).unwrap()
     }
 }
 

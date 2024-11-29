@@ -1,7 +1,7 @@
 ﻿use super::{args::Meta, Args, Mlp};
 use crate::{
-    dyn_, get_static, mat_mul, swiglu, utils::sizeof, ByteOf, Hardware, LaunchError, QueueAlloc,
-    SchemeError, TensorLayout, Workspace, WorkspaceCollector,
+    dyn_, get_static, mat_mul, swiglu, ByteOf, Hardware, LaunchError, QueueAlloc, SchemeError,
+    TensorLayout, Workspace, WorkspaceCollector,
 };
 use ndarray_layout::{ArrayLayout, Endian::BigEndian};
 use std::marker::PhantomData;
@@ -78,7 +78,7 @@ where
             return Ok(wc.cauculate(max_workspace_size));
         };
 
-        let ele = sizeof(dt)?;
+        let ele = dt.nbytes();
         let gate_up_layout = ArrayLayout::<3>::new_contiguous(&[nt, di * 2], BigEndian, ele);
         let gate_up_size = nt * di * 2 * ele;
         let workspace_size = max_workspace_size.saturating_sub(gate_up_size);
@@ -152,7 +152,7 @@ where
             residual,
         } = args;
 
-        let ele = sizeof(dt)?;
+        let ele = dt.nbytes();
         get_static!(nt di);
 
         let gate_up_size = nt * di * 2 * ele;

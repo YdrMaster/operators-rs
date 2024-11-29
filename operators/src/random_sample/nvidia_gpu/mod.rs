@@ -7,9 +7,7 @@ use super::{
 use crate::{
     get_static,
     nvidia_gpu::{dt_name, Gpu, Handle},
-    strides_not_support,
-    utils::sizeof,
-    ByteOf, LaunchError, QueueAlloc, SchemeDiversity, SchemeError, Workspace,
+    strides_not_support, ByteOf, LaunchError, QueueAlloc, SchemeDiversity, SchemeError, Workspace,
 };
 use cuda::{DevByte, Stream};
 use digit_layout::DigitLayout;
@@ -114,7 +112,7 @@ impl crate::Operator for Operator {
 
         get_static!(n sp si);
 
-        if sizeof(dt)? as isize != sp {
+        if dt.nbytes() as isize != sp {
             return Err(strides_not_support("").into());
         }
         if size_of::<u32>() as isize != si {

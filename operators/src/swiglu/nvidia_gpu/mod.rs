@@ -3,7 +3,7 @@ use crate::{
     get_static,
     nvidia_gpu::{Gpu, Handle, ModuleBox},
     strides_not_support, type_not_support,
-    utils::{gcd, sizeof},
+    utils::gcd,
     ByteOf, LaunchError, QueueAlloc, SchemeError,
 };
 use digit_layout::types::F16;
@@ -81,7 +81,7 @@ impl crate::Operator for Operator {
             sun sud
         }
 
-        let unit = sizeof(dt)? as isize;
+        let unit = dt.nbytes() as isize;
         if sgd != unit || sud != unit {
             return Err(strides_not_support("").into());
         };

@@ -1,10 +1,15 @@
-#![deny(warnings)]
+// #![deny(warnings)]
 
 mod common;
 mod handle;
 
+pub mod add_rows;
+pub mod attention;
+pub mod attention_kv_cached;
+pub mod conv;
 pub mod fuesd_softmax;
 pub mod mat_mul;
+pub mod mlp;
 pub mod random_sample;
 pub mod rearrange;
 pub mod rms_norm;
@@ -13,10 +18,6 @@ pub mod swiglu;
 
 pub mod all_reduce;
 pub mod broadcast;
-
-pub mod attention;
-pub mod attention_kv_cached;
-pub mod mlp;
 
 pub use common::*;
 
@@ -36,6 +37,11 @@ pub extern crate cublas;
 pub extern crate cuda;
 #[cfg(use_nccl)]
 pub extern crate nccl;
+
+#[cfg(use_ascend)]
+pub use handle::ascend;
+#[cfg(use_ascend)]
+pub extern crate ascendcl;
 
 use rearrange::Rearrange;
 use std::{marker::PhantomData, ops::DerefMut, ptr::addr_eq};

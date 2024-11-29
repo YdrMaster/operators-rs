@@ -74,6 +74,7 @@ impl<'ctx> Alloc<DevMem<'ctx>> for Stream<'ctx> {
 impl<'ctx> QueueAlloc for Stream<'ctx> {
     type Hardware = Gpu;
     type DevMem = DevMem<'ctx>;
+    #[inline]
     fn queue(&self) -> &QueueOf<Self::Hardware> {
         self
     }

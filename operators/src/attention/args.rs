@@ -66,16 +66,16 @@ impl<H: Hardware> Args<H> {
             ..
         } = self;
 
-        let &[nh_q, seq_q, dh_q] = self.q_layout.shape() else {
+        let &[nh_q, seq_q, dh_q] = q_layout.shape() else {
             return Err(rank_error("q", 3, q_layout.ndim()));
         };
-        let &[nkvh_k, att_k, dh_k] = self.k_layout.shape() else {
+        let &[nkvh_k, att_k, dh_k] = k_layout.shape() else {
             return Err(rank_error("k", 3, k_layout.ndim()));
         };
-        let &[nkvh_v, att_v, dh_v] = self.v_layout.shape() else {
+        let &[nkvh_v, att_v, dh_v] = v_layout.shape() else {
             return Err(rank_error("v", 3, v_layout.ndim()));
         };
-        let &[nh_o, seq_o, dh_o] = self.o_layout.shape() else {
+        let &[nh_o, seq_o, dh_o] = o_layout.shape() else {
             return Err(rank_error("o", 3, o_layout.ndim()));
         };
 

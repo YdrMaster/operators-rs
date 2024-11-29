@@ -1,13 +1,17 @@
+mod blob;
 mod error;
 mod maybe_dyn;
 mod pool;
 mod tensor;
+mod unsigned;
 mod workspace;
 
+pub use blob::Blob;
 pub use error::{functions::*, LaunchError, LaunchErrorKind, SchemeError, SchemeErrorKind};
 pub use maybe_dyn::{dyn_, DynVal, MaybeDyn};
 pub use pool::Pool;
 pub use tensor::TensorLayout;
+pub use unsigned::Unsigned;
 pub use workspace::Workspace;
 
 pub(crate) use maybe_dyn::{get_static, static_from};
@@ -20,9 +24,7 @@ pub(crate) enum SchemeDiversity {
 }
 
 pub mod utils {
-    use super::{
-        rank_not_support, shape_mismatch, type_mismatch, type_not_support, MaybeDyn, SchemeError,
-    };
+    use super::{rank_not_support, shape_mismatch, type_mismatch, MaybeDyn, SchemeError};
     use digit_layout::DigitLayout;
 
     #[cfg(any(use_cuda, use_cl))]
@@ -34,12 +36,6 @@ pub mod utils {
             b = rem;
         }
         a
-    }
-
-    #[inline]
-    pub(crate) fn sizeof(dt: DigitLayout) -> Result<usize, SchemeError> {
-        dt.nbytes()
-            .ok_or_else(|| type_not_support(format!("{dt} not supported")))
     }
 
     #[inline]

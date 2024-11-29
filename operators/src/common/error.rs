@@ -7,6 +7,7 @@ pub enum SchemeErrorKind {
     ShapeNotSupport,
     ShapeMismatch,
     StridesNotSupport,
+    ArgsNotSupport,
     DynamicNotSupport,
 }
 
@@ -59,7 +60,8 @@ pub(super) mod functions {
     builder!(SchemeError: shape_not_support   ShapeNotSupport  );
     builder!(SchemeError: shape_mismatch      ShapeMismatch    );
     builder!(SchemeError: strides_not_support StridesNotSupport);
+    builder!(SchemeError: args_not_support    ArgsNotSupport   );
     builder!(SchemeError: dyn_not_support     DynamicNotSupport);
 
-    builder!(LaunchError: execution_failed      ExecutionFailed    );
+    builder!(LaunchError: execution_failed    ExecutionFailed  );
 }

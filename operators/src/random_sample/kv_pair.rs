@@ -14,7 +14,7 @@ pub struct KVPair<T = ()> {
 }
 
 impl<T: Copy> KVPair<T> {
-    layout!(LAYOUT = "u32x2");
+    layout!(LAYOUT u(32); 2);
 
     pub fn new(idx: u32, val: T) -> Self {
         const { assert!(size_of::<T>() <= size_of::<u32>()) }
