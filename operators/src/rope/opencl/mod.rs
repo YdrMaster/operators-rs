@@ -3,7 +3,7 @@ use crate::{
     get_static,
     opencl::{ClDevice, KernelCache},
     shape_not_support, strides_not_support, type_not_support,
-    utils::sizeof,
+    // utils::sizeof,
     ByteOf, LaunchError, QueueAlloc, SchemeError,
 };
 use clrt::bindings::cl_int;
@@ -46,7 +46,8 @@ impl Rope<ClDevice> for Operator {
     {
         let mut blob = _queue_alloc.alloc(Layout::array::<u32>(_nt).unwrap().size());
         let mut host = vec![0u32; _nt];
-        fill_pos(&mut host, _iter);
+        // fill_pos(&mut host, _iter);
+        fill_pos(host.as_mut_ptr().cast::<u32>(), _nt, _iter);
         let queue = _queue_alloc.queue();
         let mut map = queue.map_mut(&mut blob, Invalid);
         let ([], mem, []) = (unsafe { map.write_only_slice().align_to_mut::<f32>() }) else {
@@ -65,12 +66,15 @@ impl crate::Operator for Operator {
     type TopoNode = ClDevice;
     type Args = Args<ClDevice>;
 
-    fn new(_node: &Self::TopoNode) -> Self {
-        let options = CString::new("").unwrap();
-        let program = _node
-            .context()
-            .build_from_source(include_str!("rope.cl"), options);
-        Self(KernelCache::new(program))
+    fn new(node: &Self::TopoNode) -> Self {
+        // let options = CString::new("").unwrap();
+        // let program = _node
+        //     .context()
+        //     .build_from_source(include_str!("rope.cl"), options);
+        // Self(KernelCache::new(program))
+        const SRC: &str = include_str!("rope.cl");
+        let opts = CString::new("").unwrap();
+        Self(KernelCache::new(node.context(), SRC, &opts))
     }
 
     fn scheme(
@@ -128,7 +132,8 @@ impl crate::Operator for Operator {
             st sh sd
             sp
         }
-        let unit = sizeof(dt_t)? as isize;
+        // let unit = sizeof(dt_t)? as isize;
+        let unit = dt_t.nbytes() as isize;
         if sd != unit || sp != size_of::<u32>() as isize {
             return Err(strides_not_support("").into());
         };

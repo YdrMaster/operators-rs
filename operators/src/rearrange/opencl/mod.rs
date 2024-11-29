@@ -18,12 +18,15 @@ impl crate::Operator for Operator {
     type TopoNode = ClDevice;
     type Args = Args<ClDevice>;
 
-    fn new(_node: &Self::TopoNode) -> Self {
-        let options = CString::new("").unwrap();
-        let program = _node
-            .context()
-            .build_from_source(include_str!("rearrange.cl"), options);
-        Self(KernelCache::new(program))
+    fn new(node: &Self::TopoNode) -> Self {
+        // let options = CString::new("").unwrap();
+        // let program = _node
+        //     .context()
+        //     .build_from_source(include_str!("rearrange.cl"), options);
+        // Self(KernelCache::new(program))
+        const SRC: &str = include_str!("rearrange.cl");
+        let opts = CString::new("").unwrap();
+        Self(KernelCache::new(node.context(), SRC, &opts))
     }
 
     fn scheme(
@@ -193,7 +196,6 @@ mod test {
         };
         use clrt::{Invalid, Platform};
         use digit_layout::types as ty;
-        use digit_layout::types::F32;
         use ndarray_layout::{ArrayLayout, Endian::BigEndian};
         use rand::Rng;
         use std::{iter::zip, time::Instant};
@@ -217,12 +219,14 @@ mod test {
                 let s_src = ArrayLayout::<3>::new_contiguous(
                     &[nh, seq, dh],
                     BigEndian,
-                    dt.nbytes().unwrap(),
+                    // dt.nbytes().unwrap(),
+                    dt.nbytes(),
                 );
                 let s_dst = ArrayLayout::<3>::new_contiguous(
                     &[seq, nh, dh],
                     BigEndian,
-                    dt.nbytes().unwrap(),
+                    // dt.nbytes().unwrap(),
+                    dt.nbytes(),
                 )
                 .transpose(&[1, 0]);
                 let dt = ty::U32;

@@ -19,12 +19,15 @@ impl crate::Operator for Operator {
     type TopoNode = ClDevice;
     type Args = Args<ClDevice>;
 
-    fn new(_node: &Self::TopoNode) -> Self {
-        let options = CString::new("").unwrap();
-        let program = _node
-            .context()
-            .build_from_source(include_str!("fuesd_softmax.cl"), options);
-        Self(KernelCache::new(program))
+    fn new(node: &Self::TopoNode) -> Self {
+        // let options = CString::new("").unwrap();
+        // let program = _node
+        //     .context()
+        //     .build_from_source(include_str!("fuesd_softmax.cl"), options);
+        // Self(KernelCache::new(program))
+        const SRC: &str = include_str!("fuesd_softmax.cl");
+        let opts = CString::new("").unwrap();
+        Self(KernelCache::new(node.context(), SRC, &opts))
     }
 
     fn scheme(
@@ -174,8 +177,9 @@ mod test {
                 cpu_op.scheme(&dyn_args(ty::F64), 0).unwrap();
                 cl_op.scheme(&dyn_args(ty::F32), 0).unwrap();
 
-                let nh = 3;
+                let nh = 32;
                 for (seq_len, att_len) in [(7, 511)] {
+                // for (seq_len, att_len) in [(1, 1024), (1, 2048), (7, 2048)] {
                     let mut att = vec![0.0f64; nh * seq_len * att_len];
                     rand::thread_rng().fill(&mut att[..]);
                     let mut att_svm = context.malloc::<f32>(nh * seq_len * att_len);
@@ -196,6 +200,7 @@ mod test {
                             &queue,
                         )
                         .unwrap();
+                    queue.finish();
                     let cl_time = time.elapsed();
                     let time = Instant::now();
                     cpu_op
@@ -211,16 +216,16 @@ mod test {
                     let ([], mem, []) = (unsafe { map.align_to::<f32>() }) else {
                         panic!()
                     };
-                    for (index, i) in mem.iter().enumerate() {
-                        print!("{}: {} ", index + 1, i);
-                    }
-                    println!();
-                    println!();
-                    for (index, i) in att.iter().enumerate() {
-                        print!("{}: {} ", index + 1, i);
-                    }
-                    println!();
-                    println!();
+                    // for (index, i) in mem.iter().enumerate() {
+                    //     print!("{}: {} ", index + 1, i);
+                    // }
+                    // println!();
+                    // println!();
+                    // for (index, i) in att.iter().enumerate() {
+                    //     print!("{}: {} ", index + 1, i);
+                    // }
+                    // println!();
+                    // println!();
                     let diff = att
                         .into_par_iter()
                         .zip(mem)
@@ -237,7 +242,7 @@ mod test {
 
                     let (out, count) = ec.summary();
                     assert!(out * 1000 <= count);
-                    // assert!(1 <= 2); //测试性能
+                    // assert!(2 <= 1); //测试性能
                 }
             }
         }

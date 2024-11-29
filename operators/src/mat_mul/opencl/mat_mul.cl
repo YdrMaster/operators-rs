@@ -21,7 +21,7 @@ __kernel void gemv_f32(__global float *A, __global float *B, __global float *C,
     __local float localA[TILE_SIZE][16];
     __local float localB[16];
 
-    if (global_id_x < M) {
+    // if (global_id_x < M) {
 
         float value = 0.0f;
 
@@ -50,7 +50,7 @@ __kernel void gemv_f32(__global float *A, __global float *B, __global float *C,
         float *p = C + batch_id * cs + global_id_x * crs;
         float valueC = *p;
         *p = beta * valueC + alpha * value;
-    }
+    // }
 }
 
 //n<32 -f32

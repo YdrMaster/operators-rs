@@ -15,12 +15,15 @@ impl crate::Operator for Operator {
     type TopoNode = ClDevice;
     type Args = Args<ClDevice>;
 
-    fn new(_node: &Self::TopoNode) -> Self {
-        let options = CString::new("").unwrap();
-        let program = _node
-            .context()
-            .build_from_source(include_str!("mat_mul.cl"), options);
-        Self(KernelCache::new(program))
+    fn new(node: &Self::TopoNode) -> Self {
+        // let options = CString::new("").unwrap();
+        // let program = _node
+        //     .context()
+        //     .build_from_source(include_str!("mat_mul.cl"), options);
+        // Self(KernelCache::new(program))
+        const SRC: &str = include_str!("mat_mul.cl");
+        let opts = CString::new("").unwrap();
+        Self(KernelCache::new(node.context(), SRC, &opts))
     }
 
     fn scheme(

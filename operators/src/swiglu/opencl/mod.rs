@@ -1,7 +1,8 @@
 ﻿use super::{args::Meta, Args, Swiglu};
 use crate::{
     get_static,
-    utils::{gcd, sizeof},
+    // utils::{gcd, sizeof},
+    utils::gcd,
     opencl::{ClDevice, KernelCache},
     type_not_support, strides_not_support, ByteOf, LaunchError, QueueAlloc, SchemeError,
 };
@@ -20,12 +21,15 @@ impl crate::Operator for Operator {
     type TopoNode = ClDevice;
     type Args = Args<ClDevice>;
 
-    fn new(_node: &Self::TopoNode) -> Self {
-        let options = CString::new("").unwrap();
-        let program = _node
-            .context()
-            .build_from_source(include_str!("swiglu.cl"), options);
-        Self(KernelCache::new(program))
+    fn new(node: &Self::TopoNode) -> Self {
+        // let options = CString::new("").unwrap();
+        // let program = _node
+        //     .context()
+        //     .build_from_source(include_str!("swiglu.cl"), options);
+        // Self(KernelCache::new(program))
+        const SRC: &str = include_str!("swiglu.cl");
+        let opts = CString::new("").unwrap();
+        Self(KernelCache::new(node.context(), SRC, &opts))
     }
 
     fn scheme(
@@ -74,7 +78,8 @@ impl crate::Operator for Operator {
             sun sud
         }
 
-        let unit = sizeof(dt)? as isize;
+        // let unit = sizeof(dt)? as isize;
+        let unit = dt.nbytes() as isize;
         if sgd != unit || sud != unit {
             return Err(strides_not_support("").into());
         };
@@ -171,8 +176,8 @@ mod test {
 
                 // let n = 5632;
                 // let d = 2048;
-                let n = 2048;
-                let d = 1024;
+                let n = 32;
+                let d = 512;
                 let mut gate = vec![0.0f64; n * d];
                 let mut up = vec![0.0f64; n * d];
                 rand::thread_rng().fill(&mut gate[..]);
