@@ -8,10 +8,10 @@ ndarray-layout = { git = "https://github.com/YdrMaster/ndarray-layout", rev = "4
 clrt = { git = "https://github.com/InfiniTensor/clrt", rev = "6846d52" }
 search-cl-tools = { git = "https://github.com/InfiniTensor/clrt", rev = "6846d52" }
 
+infini-rt = { git = "https://github.com/InfiniTensor/infini-rt", rev = "7d1d920" }
+search-infini-tools = { git = "https://github.com/InfiniTensor/infini-rt", rev = "7d1d920" }
+
 cuda = { git = "https://github.com/YdrMaster/cuda-driver", rev = "e2ec203" }
 cublas = { git = "https://github.com/YdrMaster/cuda-driver", rev = "e2ec203" }
 nccl = { git = "https://github.com/YdrMaster/cuda-driver", rev = "e2ec203" }
 search-cuda-tools = { git = "https://github.com/YdrMaster/cuda-driver", rev = "e2ec203" }
-
-ascendcl = { git = "https://github.com/InfiniTensor/ascendcl", rev = "bca7489" }
-search-ascend-tools = { git = "https://github.com/InfiniTensor/ascendcl", rev = "bca7489" }

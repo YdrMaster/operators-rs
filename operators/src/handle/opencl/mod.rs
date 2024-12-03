@@ -28,7 +28,7 @@ impl ClDevice {
 impl Alloc<SvmBlob> for Context {
     #[inline]
     fn alloc(&self, size: usize) -> SvmBlob {
-        self.malloc::<usize>(size)
+        self.malloc::<u8>(size)
     }
 
     #[inline]
@@ -38,7 +38,7 @@ impl Alloc<SvmBlob> for Context {
 impl Alloc<SvmBlob> for CommandQueue {
     #[inline]
     fn alloc(&self, size: usize) -> SvmBlob {
-        self.ctx().malloc::<usize>(size)
+        self.ctx().malloc::<u8>(size)
     }
 
     #[inline]

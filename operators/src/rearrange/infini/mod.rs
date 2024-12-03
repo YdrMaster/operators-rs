@@ -1,21 +1,14 @@
-﻿use super::{Args, Indices, RandomSample};
-use crate::{ascend::Npu, ByteOf, LaunchError, QueueAlloc, SchemeError};
+﻿use super::{Args, Rearrange};
+use crate::{infini::Device, ByteOf, LaunchError, QueueAlloc, SchemeError};
 
 pub struct Operator;
 
-impl RandomSample<Npu> for Operator {
-    fn build_indices<QA>(_n: usize, _queue_alloc: &QA) -> Indices<QA::DevMem>
-    where
-        QA: QueueAlloc<Hardware = Self::Hardware>,
-    {
-        todo!()
-    }
-}
+impl Rearrange<Device> for Operator {}
 
 impl crate::Operator for Operator {
-    type Hardware = Npu;
-    type TopoNode = Npu;
-    type Args = Args<Npu>;
+    type Hardware = Device;
+    type TopoNode = Device;
+    type Args = Args<Device>;
 
     fn new(_node: &Self::TopoNode) -> Self {
         todo!()

@@ -1,10 +1,10 @@
 ﻿use super::{Args, Rope, Seq, SinCosTable};
-use crate::{ascend::Npu, ByteOf, LaunchError, QueueAlloc, SchemeError};
+use crate::{infini::Device, ByteOf, LaunchError, QueueAlloc, SchemeError};
 use digit_layout::DigitLayout;
 
 pub struct Operator;
 
-impl Rope<Npu> for Operator {
+impl Rope<Device> for Operator {
     fn build_sincos<QA>(
         _dt: DigitLayout,
         _nctx: usize,
@@ -32,9 +32,9 @@ impl Rope<Npu> for Operator {
 }
 
 impl crate::Operator for Operator {
-    type Hardware = Npu;
-    type TopoNode = Npu;
-    type Args = Args<Npu>;
+    type Hardware = Device;
+    type TopoNode = Device;
+    type Args = Args<Device>;
 
     fn new(_node: &Self::TopoNode) -> Self {
         todo!()

@@ -1,14 +1,14 @@
-﻿use super::{Args, FusedSoftmax};
-use crate::{ascend::Npu, ByteOf, LaunchError, QueueAlloc, SchemeError};
+﻿use super::{AddRows, Args};
+use crate::{infini::Device, ByteOf, LaunchError, QueueAlloc, SchemeError};
 
 pub struct Operator;
 
-impl FusedSoftmax<Npu> for Operator {}
+impl AddRows<Device> for Operator {}
 
 impl crate::Operator for Operator {
-    type Hardware = Npu;
-    type TopoNode = Npu;
-    type Args = Args<Npu>;
+    type Hardware = Device;
+    type TopoNode = Device;
+    type Args = Args<Device>;
 
     fn new(_node: &Self::TopoNode) -> Self {
         todo!()
