@@ -9,7 +9,7 @@ default = ["common-cpu", "opencl", "infini", "nvidia-gpu"]
 common-cpu = ["gemm"]
 opencl = ["clrt"]
 infini = ["infini-rt"]
-nvidia-gpu = ["cuda", "cublas", "nccl", "libloading"]
+nvidia-gpu = ["cuda", "cublas", "nccl", "fslock", "libloading"]
 
 [dependencies]
 ndarray-layout.workspace = true
@@ -29,6 +29,7 @@ infini-rt = { workspace = true, optional = true }
 cuda = { workspace = true, optional = true }
 cublas = { workspace = true, optional = true }
 nccl = { workspace = true, optional = true }
+fslock = { version = "0.2", optional = true }
 libloading = { version = "0.8", optional = true }
 
 [build-dependencies]

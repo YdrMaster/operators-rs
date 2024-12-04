@@ -28,7 +28,7 @@ impl ModuleBox {
         })
     }
 
-    pub fn load<'ctx>(&'ctx self, name: impl AsRef<CStr>, ctx: &'ctx CurrentCtx) -> KernelFn {
+    pub fn load<'ctx>(&'ctx self, name: impl AsRef<CStr>, ctx: &'ctx CurrentCtx) -> KernelFn<'ctx> {
         self.module
             .as_ref()
             .unwrap()

@@ -188,7 +188,7 @@ extern "C" __global__ void {name}(
             let to_divid = d / n_threads_warp;
             let num_warps_block = max_num_warp_block;
             let num_threads_block = n_threads_warp * num_warps_block;
-            let num_items_thread = (to_divid + num_warps_block - 1) / num_warps_block;
+            let num_items_thread = to_divid.div_ceil(num_warps_block);
 
             let name = format!("rms_norm_{ta}_{tw}_folding_{num_threads_block}x{num_items_thread}");
             let module = handle.compile_kernel(&name, cc, || {
