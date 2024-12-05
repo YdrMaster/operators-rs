@@ -1,7 +1,7 @@
 ﻿use super::Key;
 use fslock::LockFile;
 use libloading::Library;
-use log::info;
+use log::{info, warn};
 use std::{
     collections::HashMap,
     env::temp_dir,
@@ -31,17 +31,25 @@ pub(super) fn cache_lib(key: &Key, code: impl FnOnce() -> String) -> Arc<Library
     });
 
     let dir = ROOT.join(format!("{}_{}", key.0, key.1));
+    let lock = dir.join(".lock");
     let src = dir.join("src.cu");
     let lib: PathBuf = if cfg!(windows) {
-        dir.join("bin").join("lib")
+        dir.join("bin").join("lib.dll")
     } else {
         dir.join("lib").join("liblib.so")
     };
 
     fs::create_dir_all(&dir).unwrap();
 
-    let mut lock = LockFile::open(&dir.join(".lock")).unwrap();
-    lock.lock().unwrap();
+    let mut guard = LockFile::open(&lock).unwrap();
+    if !guard.try_lock_with_pid().unwrap() {
+        warn!(
+            "{} is locked by {}",
+            dir.display(),
+            fs::read_to_string(&lock).unwrap(),
+        );
+        guard.lock_with_pid().unwrap();
+    }
 
     let code = code();
     let compile = if fs::read_to_string(&src).map_or(false, |s| s == code) {
@@ -65,7 +73,7 @@ pub(super) fn cache_lib(key: &Key, code: impl FnOnce() -> String) -> Arc<Library
         xmake_install(&dir);
     }
     let lib = unsafe { Library::new(lib) };
-    lock.unlock().unwrap();
+    guard.unlock().unwrap();
 
     let lib = Arc::new(lib.unwrap());
     cache.write().unwrap().insert(key.clone(), lib.clone());
