@@ -1,6 +1,11 @@
 use crate::{Alloc, Hardware, QueueAlloc, QueueOf};
-pub(crate) use infini_rt::Device;
 use infini_rt::{DevBlob, DevByte, Stream};
+use std::sync::Arc;
+
+pub struct Device {
+    pub(crate) device: infini_rt::Device,
+    pub(crate) handle: Arc<infini_op::Handle>,
+}
 
 impl Hardware for Device {
     type Byte = DevByte;
@@ -10,7 +15,7 @@ impl Hardware for Device {
 impl Alloc<DevBlob> for Device {
     #[inline]
     fn alloc(&self, size: usize) -> DevBlob {
-        self.malloc::<u8>(size)
+        self.device.malloc::<u8>(size)
     }
 
     #[inline]

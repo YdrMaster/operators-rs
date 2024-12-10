@@ -8,7 +8,7 @@ authors = ["YdrMaster <ydrml@hotmail.com>"]
 default = ["common-cpu", "opencl", "infini", "nvidia-gpu"]
 common-cpu = ["gemm"]
 opencl = ["clrt"]
-infini = ["infini-rt", "infini-op-sys"]
+infini = ["infini-rt", "infini-op"]
 nvidia-gpu = ["cuda", "cublas", "nccl", "fslock", "libloading"]
 
 [dependencies]
@@ -25,7 +25,7 @@ gemm = { version = "0.18", optional = true }
 clrt = { workspace = true, optional = true }
 
 infini-rt = { workspace = true, optional = true }
-infini-op-sys = { workspace = true, optional = true }
+infini-op = { workspace = true, optional = true }
 
 cuda = { workspace = true, optional = true }
 cublas = { workspace = true, optional = true }
