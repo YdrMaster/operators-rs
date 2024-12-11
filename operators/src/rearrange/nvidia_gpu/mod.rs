@@ -196,7 +196,6 @@ extern "C" __global__ void {NAME}(
 
 #[cfg(test)]
 mod test {
-
     use super::{Args, Gpu, Operator};
     use crate::{ConstPtr, Hardware, MutPtr, Operator as _, TensorLayout};
     use digit_layout::{types as ty, DigitLayout};
