@@ -12,8 +12,8 @@ infini = ["infini-rt", "infini-op"]
 nvidia-gpu = ["cuda", "cublas", "nccl", "fslock", "libloading"]
 
 [dependencies]
-ndarray-layout.workspace = true
 digit-layout = "0.2"
+ndarray-layout = "0.0"
 rayon = "1.10"
 lru = "0.12"
 num-traits = "0.2"
