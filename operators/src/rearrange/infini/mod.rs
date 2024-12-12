@@ -4,9 +4,7 @@ use digit_layout::types;
 use infini_op::{infiniop, AsRaw, Handle};
 use std::{ptr::null_mut, sync::Arc};
 
-pub struct Operator {
-    handle: Arc<Handle>,
-}
+pub struct Operator(Arc<Handle>);
 
 impl Rearrange<Device> for Operator {}
 
@@ -17,9 +15,7 @@ impl crate::Operator for Operator {
 
     #[inline]
     fn new(node: &Self::TopoNode) -> Self {
-        Self {
-            handle: node.handle.clone(),
-        }
+        Self(node.handle().clone())
     }
 
     #[inline]
@@ -66,7 +62,7 @@ impl crate::Operator for Operator {
 
         let mut ptr = null_mut();
         infiniop!(infiniopCreateRearrangeDescriptor(
-            self.handle.as_raw(),
+            self.0.as_raw(),
             &mut ptr,
             dst.as_raw(),
             src.as_raw(),
@@ -121,30 +117,20 @@ mod test {
         use crate::common_cpu::{Cpu, ThisThread};
         use ndarray_layout::{ArrayLayout, Endian::BigEndian};
         use rand::Rng;
-        use std::sync::Arc;
 
         let dt = ty::U32;
+        let nh = 32;
+        let seq = 7;
+        let dh = 128;
 
         infini_rt::init(infini_rt::DEVICE_CPU);
-        let dev = Device {
-            device: infini_rt::Device {
-                ty: infini_rt::DEVICE_CPU,
-                id: 0,
-            },
-            handle: Arc::new(infini_op::Handle::new(
-                infini_op::bindings::Device::DevCpu,
-                0,
-            )),
-        };
+        let dev = Device::cpu();
 
         let mut cpu_op = RefOp::new(&Cpu);
         let mut gpu_op = Operator::new(&dev);
         cpu_op.scheme(&dyn_args(dt), 0).unwrap();
         gpu_op.scheme(&dyn_args(dt), 0).unwrap();
 
-        let nh = 32;
-        let seq = 7;
-        let dh = 128;
         let mut src = vec![0u32; nh * seq * dh];
         rand::thread_rng().fill(&mut src[..]);
 
@@ -153,7 +139,7 @@ mod test {
         let s_dst =
             ArrayLayout::<3>::new_contiguous(&[seq, nh, dh], BigEndian, ele).transpose(&[1, 0]);
 
-        let stream = dev.device.stream();
+        let stream = dev.stream();
         let src = stream.from_host(&src);
         let mut dst = stream.malloc::<u8>(src.len());
         gpu_op
@@ -171,7 +157,7 @@ mod test {
             )
             .unwrap();
         let mut host = vec![0u32; nh * seq * dh];
-        dev.device.memcpy_d2h(&mut host, &dst);
+        dev.memcpy_d2h(&mut host, &dst);
         let dst_ans = host;
 
         let mut dst_ref = vec![0u32; seq * nh * dh];
