@@ -35,17 +35,13 @@ impl crate::Operator for Operator {
         }
     }
 
+    #[inline]
     fn scheme(
         &mut self,
-        args: &Self::Args,
+        _args: &Self::Args,
         _max_workspace_size: usize,
     ) -> Result<usize, SchemeError> {
-        let Meta { dt, .. } = args.meta()?;
-        if dt == F16 {
-            Ok(0)
-        } else {
-            Err(type_not_support(""))
-        }
+        Ok(0)
     }
 
     fn launch<QA>(
@@ -64,10 +60,10 @@ impl crate::Operator for Operator {
             up_layout,
             up_base,
         } = args;
-        let &[sgn, sgd] = gate_layout.strides() else {
+        let &[gns, gds] = gate_layout.strides() else {
             unreachable!()
         };
-        let &[sun, sud] = up_layout.strides() else {
+        let &[uns, uds] = up_layout.strides() else {
             unreachable!()
         };
 
@@ -76,18 +72,18 @@ impl crate::Operator for Operator {
         }
 
         get_static! {
-              n   d
-            sgn sgd
-            sun sud
+             n   d
+            gns gds
+            uns uds
         }
 
         let unit = dt.nbytes() as isize;
-        if sgd != unit || sud != unit {
+        if gds != unit || uds != unit {
             return Err(strides_not_support("").into());
         };
 
-        let sg = (sgn / unit) as i32;
-        let su = (sun / unit) as i32;
+        let sg = (gns / unit) as i32;
+        let su = (uns / unit) as i32;
         let params = cuda::params![gate_base, sg, up_base, su];
         let block = gcd(self.max_threads_block, d);
 
@@ -118,6 +114,7 @@ extern "C" __global__ void {NAME}(
 }}"#
     )
 }
+
 #[cfg(test)]
 mod test {
     use super::{Args, Gpu, Operator};

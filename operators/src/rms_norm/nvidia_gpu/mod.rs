@@ -66,25 +66,25 @@ impl crate::Operator for Operator {
             w_base,
             epsilon,
         } = args;
-        let &[nsy, dsy] = y_layout.strides() else {
+        let &[yns, yds] = y_layout.strides() else {
             unreachable!()
         };
-        let &[nsx, dsx] = x_layout.strides() else {
+        let &[xns, xds] = x_layout.strides() else {
             unreachable!()
         };
-        let &[dsw] = w_layout.strides() else {
+        let &[wds] = w_layout.strides() else {
             unreachable!()
         };
 
         get_static! {
-            n   d
-            nsy dsy
-            nsx dsx
-            dsw
+             n   d
+            yns yds
+            xns xds
+                wds
         }
 
         let unit = dt_a.nbytes() as isize;
-        if dsy != unit || dsx != unit || dsw != dt_w.nbytes() as isize {
+        if yds != unit || xds != unit || wds != dt_w.nbytes() as isize {
             return Err(strides_not_support("").into());
         };
 
@@ -96,8 +96,8 @@ impl crate::Operator for Operator {
             .try_get_or_insert(key, || Scheme::new(&self.handle, key))?
             .clone();
 
-        let nsy = (nsy / unit) as i32;
-        let nsx = (nsx / unit) as i32;
+        let nsy = (yns / unit) as i32;
+        let nsx = (xns / unit) as i32;
         let params = cuda::params![y_base, nsy, x_base, nsx, w_base, epsilon];
 
         scheme.module.launch(

@@ -1,8 +1,5 @@
 ﻿use super::{args::Meta, Args, RmsNorm};
-use crate::{
-    get_static, infini::Device, strides_not_support, ByteOf, LaunchError, QueueAlloc, SchemeError,
-    Workspace,
-};
+use crate::{get_static, infini::Device, ByteOf, LaunchError, QueueAlloc, SchemeError, Workspace};
 use infini_op::{infiniop, AsRaw, Descriptor};
 
 pub struct Operator(Device);
@@ -14,10 +11,12 @@ impl crate::Operator for Operator {
     type TopoNode = Device;
     type Args = Args<Device>;
 
+    #[inline]
     fn new(node: &Self::TopoNode) -> Self {
         Self(node.clone())
     }
 
+    #[inline]
     fn scheme(
         &mut self,
         _args: &Self::Args,
@@ -45,31 +44,26 @@ impl crate::Operator for Operator {
             w_base,
             epsilon,
         } = args;
-        let &[nsy, dsy] = y_layout.strides() else {
+        let &[yns, yds] = y_layout.strides() else {
             unreachable!()
         };
-        let &[nsx, dsx] = x_layout.strides() else {
+        let &[xns, xds] = x_layout.strides() else {
             unreachable!()
         };
-        let &[dsw] = w_layout.strides() else {
+        let &[wds] = w_layout.strides() else {
             unreachable!()
         };
 
         get_static! {
-            n   d
-            nsy dsy
-            nsx dsx
-                dsw
+             n   d
+            yns yds
+            xns xds
+                wds
         }
 
-        let unit = dt_a.nbytes() as isize;
-        if dsy != unit || dsx != unit || dsw != dt_w.nbytes() as isize {
-            return Err(strides_not_support("").into());
-        };
-
-        let y = infini_op::Tensor::new(dt_a, [n, d], [nsy, dsy]);
-        let x = infini_op::Tensor::new(dt_a, [n, d], [nsx, dsx]);
-        let w = infini_op::Tensor::new(dt_w, [d], [dsw]);
+        let y = infini_op::Tensor::new(dt_a, [n, d], [yns, yds]);
+        let x = infini_op::Tensor::new(dt_a, [n, d], [xns, xds]);
+        let w = infini_op::Tensor::new(dt_w, [d], [wds]);
 
         let descriptor = Descriptor::new(
             |ptr| {
@@ -164,13 +158,13 @@ mod test {
         let dev = Device::cpu();
 
         let mut cpu_op = RefOp::new(&Cpu);
-        let mut gpu_op = Operator::new(&dev);
+        let mut dev_op = Operator::new(&dev);
 
         for k in 8..=13 {
             let n = 4;
             let d = 1 << k;
             cpu_op.scheme(&dyn_args(F64, F64, d), 0).unwrap();
-            gpu_op.scheme(&dyn_args(F32, F16, d), 0).unwrap();
+            dev_op.scheme(&dyn_args(F32, F16, d), 0).unwrap();
 
             let mut x = vec![0.0f64; n * d];
             let mut w = vec![0.0f64; d];
@@ -184,7 +178,7 @@ mod test {
                 let mut y = stream.malloc::<f16>(n * d);
                 let x = cast_load(&x, f16::from_f64, &stream);
                 let w = cast_load(&w, |x| x as f32, &stream);
-                gpu_op
+                dev_op
                     .launch(
                         &args(
                             F32,

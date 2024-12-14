@@ -120,9 +120,9 @@ mod test {
         let dev = Device::cpu();
 
         let mut cpu_op = RefOp::new(&Cpu);
-        let mut gpu_op = Operator::new(&dev);
+        let mut dev_op = Operator::new(&dev);
         cpu_op.scheme(&dyn_args(dt), 0).unwrap();
-        gpu_op.scheme(&dyn_args(dt), 0).unwrap();
+        dev_op.scheme(&dyn_args(dt), 0).unwrap();
 
         let mut src = vec![0u32; nh * seq * dh];
         rand::thread_rng().fill(&mut src[..]);
@@ -135,7 +135,7 @@ mod test {
         let stream = dev.stream();
         let src = stream.from_host(&src);
         let mut dst = stream.malloc::<u8>(src.len());
-        gpu_op
+        dev_op
             .launch(
                 &args(
                     dt,
