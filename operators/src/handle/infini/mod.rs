@@ -4,6 +4,7 @@ use infini_rt::{
 };
 use std::{ops::Deref, sync::Arc};
 
+#[derive(Clone)]
 pub struct Device {
     device: infini_rt::Device,
     handle: Arc<infini_op::Handle>,
@@ -95,4 +96,20 @@ impl QueueAlloc for Stream {
     fn queue(&self) -> &QueueOf<Self::Hardware> {
         self
     }
+}
+
+/// 并行转换类型并异步拷贝到显存。
+#[cfg(test)]
+pub(crate) fn cast_load<'ctx, T, U, F>(val: &[T], f: F, stream: &Stream) -> DevBlob
+where
+    T: Sync + Copy,
+    U: Send + Copy,
+    F: Sync + Fn(T) -> U,
+{
+    let mut host = stream.get_device().malloc_host::<U>(val.len());
+    let host = unsafe { std::slice::from_raw_parts_mut(host.as_mut_ptr().cast(), val.len()) };
+    host.into_iter().zip(val).for_each(|(y, x)| *y = f(*x));
+    let ans = stream.from_host(host);
+    stream.synchronize();
+    ans
 }

@@ -1,8 +1,8 @@
 ﻿use super::{args::Scheme, Args, Rearrange};
 use crate::{infini::Device, ByteOf, LaunchError, QueueAlloc, SchemeError};
 use digit_layout::types;
-use infini_op::{infiniop, AsRaw, Handle};
-use std::{ptr::null_mut, sync::Arc};
+use infini_op::{infiniop, AsRaw, Descriptor, Handle};
+use std::sync::Arc;
 
 pub struct Operator(Arc<Handle>);
 
@@ -39,41 +39,34 @@ impl crate::Operator for Operator {
         use std::iter::once;
 
         let scheme = Scheme::new(args)?;
-        let shape: Vec<_> = scheme
-            .shape()
-            .map(|x| x as _)
-            .chain(once(scheme.unit() as _))
-            .collect();
-        let dst_strides: Vec<_> = scheme
-            .dst_strides()
-            .iter()
-            .map(|&x| x as _)
-            .chain(once(1))
-            .collect();
-        let src_strides: Vec<_> = scheme
-            .src_strides()
-            .iter()
-            .map(|&x| x as _)
-            .chain(once(1))
-            .collect();
+        let dst = infini_op::Tensor::new(
+            types::U8,
+            scheme.shape().chain(once(scheme.unit())),
+            scheme.dst_strides().iter().cloned().chain(once(1)),
+        );
+        let src = infini_op::Tensor::new(
+            types::U8,
+            scheme.shape().chain(once(scheme.unit())),
+            scheme.src_strides().iter().cloned().chain(once(1)),
+        );
 
-        let dst = infini_op::Tensor::new(types::U8, &shape, &dst_strides);
-        let src = infini_op::Tensor::new(types::U8, &shape, &src_strides);
-
-        let mut ptr = null_mut();
-        infiniop!(infiniopCreateRearrangeDescriptor(
-            self.0.as_raw(),
-            &mut ptr,
-            dst.as_raw(),
-            src.as_raw(),
-        ));
+        let descriptor = Descriptor::new(
+            |ptr| {
+                infiniop!(infiniopCreateRearrangeDescriptor(
+                    self.0.as_raw(),
+                    ptr,
+                    dst.as_raw(),
+                    src.as_raw(),
+                ))
+            },
+            infini_op::bindings::infiniopDestroyRearrangeDescriptor,
+        );
         infiniop!(infiniopRearrange(
-            ptr,
+            descriptor.as_raw(),
             args.dst_base.cast(),
             args.src_base.cast(),
-            queue_alloc.queue().as_void_ptr()
+            queue_alloc.queue().as_void_ptr(),
         ));
-        infiniop!(infiniopDestroyRearrangeDescriptor(ptr));
         Ok(())
     }
 }
