@@ -1,8 +1,9 @@
 ﻿use super::{args::Meta, Args, Swiglu};
 use crate::{get_static, infini::Device, ByteOf, LaunchError, QueueAlloc, SchemeError};
-use infini_op::{infiniop, AsRaw, Descriptor};
+use infini_op::{infiniop, AsRaw, Descriptor, Handle};
+use std::sync::Arc;
 
-pub struct Operator(Device);
+pub struct Operator(Arc<Handle>);
 
 impl Swiglu<Device> for Operator {}
 
@@ -13,7 +14,7 @@ impl crate::Operator for Operator {
 
     #[inline]
     fn new(node: &Self::TopoNode) -> Self {
-        Self(node.clone())
+        Self(node.handle().clone())
     }
 
     #[inline]
@@ -60,7 +61,7 @@ impl crate::Operator for Operator {
         let descriptor = Descriptor::new(
             |ptr| {
                 infiniop!(infiniopCreateSwiGLUDescriptor(
-                    self.0.handle().as_raw(),
+                    self.0.as_raw(),
                     ptr,
                     gate.as_raw(),
                     up.as_raw(),
