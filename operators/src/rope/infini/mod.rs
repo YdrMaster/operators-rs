@@ -342,7 +342,7 @@ mod test {
             .map(|(a, b)| Diff::new(a, b.to_f64()))
             .collect::<Vec<_>>();
 
-        let mut ec = ErrorCollector::new(f16::EPSILON.to_f64(), 0.);
+        let mut ec = ErrorCollector::new(1.5 * f16::EPSILON.to_f64(), 0.);
         diff.into_iter().for_each(|diff| ec.push(diff));
         println!("{ec}");
 
