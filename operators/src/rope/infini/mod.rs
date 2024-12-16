@@ -9,7 +9,7 @@ pub struct Operator(Device);
 
 impl Rope<Device> for Operator {
     fn build_sincos<QA>(
-        _dt: DigitLayout,
+        dt: DigitLayout,
         nctx: usize,
         dh: usize,
         queue_alloc: &QA,
@@ -17,18 +17,31 @@ impl Rope<Device> for Operator {
     where
         QA: QueueAlloc<Hardware = Self::Hardware>,
     {
-        let sin_cos_table: Vec<f32> = generate_sin_cos_tables(2 * nctx, dh, &1e4);
-        let mut table = queue_alloc.alloc(sin_cos_table.len() * 4);
-        queue_alloc.queue().memcpy_h2d(&mut table, &sin_cos_table);
-        SinCosTable { nctx, mem: table }
+        fn generate_sin_cos_tables(max_seq_len: usize, dh: usize, theta: f32) -> Vec<[f32; 2]> {
+            let len = max_seq_len * dh;
+            let mut ans = vec![[0.; 2]; len];
+            let (sin, cos) = ans.split_at_mut(len / 2);
+
+            let half_dh = dh / 2;
+            for i in 0..max_seq_len {
+                for j in 0..half_dh {
+                    let k = i * half_dh + j;
+                    let (sin_, cos_) = (i as f32 / theta.powf(j as f32 / half_dh as f32)).sin_cos();
+                    sin[k] = [sin_, sin_];
+                    cos[k] = [cos_, cos_];
+                }
+            }
+            ans
+        }
+
+        assert_eq!(dt, ty::F32);
+        let host = generate_sin_cos_tables(nctx, dh, 1e4);
+        let mut mem = queue_alloc.alloc(size_of_val(host.as_slice()));
+        queue_alloc.queue().memcpy_h2d(&mut mem, &host);
+        SinCosTable { nctx, mem }
     }
 
-    fn build_pos<I, QA>(
-        dt: digit_layout::DigitLayout,
-        nt: usize,
-        iter: I,
-        queue_alloc: &QA,
-    ) -> QA::DevMem
+    fn build_pos<I, QA>(dt: DigitLayout, nt: usize, iter: I, queue_alloc: &QA) -> QA::DevMem
     where
         I: IntoIterator<Item = Seq>,
         QA: QueueAlloc<Hardware = Self::Hardware>,
@@ -51,10 +64,12 @@ impl crate::Operator for Operator {
     type TopoNode = Device;
     type Args = Args<Device>;
 
+    #[inline]
     fn new(node: &Self::TopoNode) -> Self {
         Self(node.clone())
     }
 
+    #[inline]
     fn scheme(
         &mut self,
         _args: &Self::Args,
@@ -79,6 +94,7 @@ impl crate::Operator for Operator {
             p_layout,
             p_base,
             sin_layout,
+            cos_layout,
             ..
         } = args;
 
@@ -94,17 +110,22 @@ impl crate::Operator for Operator {
         let &[sns, sds] = sin_layout.strides() else {
             unreachable!()
         };
+        let &[snc, sdc] = cos_layout.strides() else {
+            unreachable!()
+        };
 
         get_static! {
             nctx nh dh
             ncs nhs dhs
-            ps sns sds
+            ps
+            sns sds
+            snc sdc
         }
 
         let t = infini_op::Tensor::new(dt_t, [nctx, nh, dh], [ncs, nhs, dhs]);
         let p = infini_op::Tensor::new(dt_p, [nctx], [ps]);
-        let sin = infini_op::Tensor::new(sin_layout.dt(), [2 * nctx, dh], [sns, sds]);
-        let cos = infini_op::Tensor::new(sin_layout.dt(), [2 * nctx, dh], [sns, sds]);
+        let sin = infini_op::Tensor::new(sin_layout.dt(), [nctx, dh], [sns, sds]);
+        let cos = infini_op::Tensor::new(cos_layout.dt(), [nctx, dh], [snc, sdc]);
 
         let descriptor = Descriptor::new(
             |ptr| {
@@ -140,55 +161,12 @@ impl crate::Operator for Operator {
     }
 }
 
-pub fn generate_sin_cos_tables(max_seq_len: usize, dim: usize, theta: &f32) -> Vec<f32> {
-    let mut sin_cos_table = vec![0.0f32; dim * max_seq_len * 2];
-
-    let half_dh = dim / 2;
-    for i in 0..max_seq_len {
-        for j in 0..half_dh {
-            let _sin = (i as f32 / theta.powf(j as f32 / half_dh as f32)).sin();
-            let _cos = (i as f32 / theta.powf(j as f32 / half_dh as f32)).cos();
-            sin_cos_table[i * dim + 2 * j] = _sin;
-            sin_cos_table[i * dim + 2 * j + 1] = _sin;
-            sin_cos_table[dim * max_seq_len + i * dim + 2 * j] = _cos;
-            sin_cos_table[dim * max_seq_len + i * dim + 2 * j + 1] = _cos;
-        }
-    }
-    sin_cos_table
-}
-
 #[cfg(test)]
 mod test {
-    use std::ptr::null;
-
     use super::{Args, Device, Operator};
-    use crate::{Hardware, Operator as _, TensorLayout};
-    use digit_layout::{
-        types::{F16, F32, F64, U32, U64},
-        DigitLayout,
-    };
-
-    fn generate_sin_cos_tables(
-        max_seq_len: usize,
-        dim: usize,
-        theta: &f32,
-    ) -> (Vec<f32>, Vec<f32>) {
-        let mut sin_table = vec![0.0f32; dim * max_seq_len];
-        let mut cos_table = vec![0.0f32; dim * max_seq_len];
-
-        let half_dh = dim / 2;
-        for i in 0..max_seq_len {
-            for j in 0..half_dh {
-                let _sin = (i as f32 / theta.powf(j as f32 / half_dh as f32)).sin();
-                let _cos = (i as f32 / theta.powf(j as f32 / half_dh as f32)).cos();
-                sin_table[i * dim + 2 * j] = _sin;
-                sin_table[i * dim + 2 * j + 1] = _sin;
-                cos_table[i * dim + 2 * j] = _cos;
-                cos_table[i * dim + 2 * j + 1] = _cos;
-            }
-        }
-        (sin_table, cos_table)
-    }
+    use crate::{rope::Rope, Hardware, Operator as _, TensorLayout};
+    use digit_layout::{types as ty, DigitLayout};
+    use std::ptr::null;
 
     fn dyn_args<H: Hardware>(dt_t: DigitLayout, dt_p: DigitLayout) -> Args<H> {
         use crate::dyn_;
@@ -198,29 +176,9 @@ mod test {
             t_base: null_mut(),
             p_layout: TensorLayout::new_dyn(dt_p, &[dyn_()], &[dyn_()]),
             p_base: null(),
-            sin_layout: TensorLayout::new_dyn(dt_t, &[dyn_(); 2], &[dyn_(); 2]),
+            sin_layout: TensorLayout::new_dyn(ty::F32, &[dyn_(); 2], &[dyn_(); 2]),
             sin_base: null(),
-            cos_layout: TensorLayout::new_dyn(dt_t, &[dyn_(); 2], &[dyn_(); 2]),
-            cos_base: null(),
-            theta: 0.,
-        }
-    }
-
-    fn dyn_args_dev<H: Hardware>(
-        dt_t: DigitLayout,
-        dt_p: DigitLayout,
-        dt_sc: DigitLayout,
-    ) -> Args<H> {
-        use crate::dyn_;
-        use std::ptr::{null, null_mut};
-        Args {
-            t_layout: TensorLayout::new_dyn(dt_t, &[dyn_(); 3], &[dyn_(); 3]),
-            t_base: null_mut(),
-            p_layout: TensorLayout::new_dyn(dt_p, &[dyn_()], &[dyn_()]),
-            p_base: null(),
-            sin_layout: TensorLayout::new_dyn(dt_sc, &[dyn_(); 2], &[dyn_(); 2]),
-            sin_base: null(),
-            cos_layout: TensorLayout::new_dyn(dt_sc, &[dyn_(); 2], &[dyn_(); 2]),
+            cos_layout: TensorLayout::new_dyn(ty::F32, &[dyn_(); 2], &[dyn_(); 2]),
             cos_base: null(),
             theta: 0.,
         }
@@ -229,7 +187,6 @@ mod test {
     fn args<H: Hardware>(
         dt_t: DigitLayout,
         dt_p: DigitLayout,
-        dt_sc: DigitLayout,
         nt: usize,
         nh: usize,
         dh: usize,
@@ -244,9 +201,9 @@ mod test {
             t_base,
             p_layout: TensorLayout::new_contiguous(dt_p, &[nt]),
             p_base,
-            sin_layout: TensorLayout::new_contiguous(dt_sc, &[2 * nt, dh]),
+            sin_layout: TensorLayout::new_contiguous(ty::F32, &[2 * nt, dh]),
             sin_base,
-            cos_layout: TensorLayout::new_contiguous(dt_sc, &[2 * nt, dh]),
+            cos_layout: TensorLayout::new_contiguous(ty::F32, &[2 * nt, dh]),
             cos_base,
             theta,
         }
@@ -270,8 +227,8 @@ mod test {
         let mut cpu_op = RefOp::new(&Cpu);
         let mut dev_op = Operator::new(&dev);
 
-        cpu_op.scheme(&dyn_args(F64, U32), 0).unwrap();
-        dev_op.scheme(&dyn_args_dev(F16, U64, F32), 0).unwrap();
+        cpu_op.scheme(&dyn_args(ty::F64, ty::U32), 0).unwrap();
+        dev_op.scheme(&dyn_args(ty::F16, ty::U64), 0).unwrap();
 
         const NT: usize = 7;
         let nh = 32;
@@ -279,22 +236,21 @@ mod test {
 
         let mut t = vec![0.0f64; NT * nh * dh];
         rand::thread_rng().fill(&mut t[..]);
-        let p: [u64; NT] = [0, 1, 2, 3, 7, 8, 1];
+        let p: [u32; NT] = [0, 1, 2, 3, 7, 8, 1];
+        let nctx = *p.iter().max().unwrap() as usize + 1;
 
         let t_ans = {
             let stream = dev.stream();
             let mut t = cast_load(&t, f16::from_f64, &stream);
             let p = cast_load(&p, |x| x as u64, &stream);
-            let (sin_table, cos_table) = generate_sin_cos_tables(2 * NT, dh, &1e4);
-            let sin = cast_load(&sin_table, |x| x as f32, &stream);
-            let cos = cast_load(&cos_table, |x| x as f32, &stream);
+            let sincos = Operator::build_sincos(ty::F32, nctx, dh, &stream);
+            let (sin, cos) = sincos.mem.split_at(sincos.mem.len() / 2);
 
             dev_op
                 .launch(
                     &args(
-                        digit_layout::types::F16,
-                        digit_layout::types::U64,
-                        digit_layout::types::F32,
+                        ty::F16,
+                        ty::U64,
                         NT,
                         nh,
                         dh,
@@ -315,14 +271,12 @@ mod test {
             host
         };
 
-        let p: [u32; NT] = [0, 1, 2, 3, 7, 8, 1];
         let mut t_ref = t;
         cpu_op
             .launch(
                 &args(
-                    F64,
-                    U32,
-                    F32,
+                    ty::F64,
+                    ty::U32,
                     NT,
                     nh,
                     dh,
