@@ -38,6 +38,7 @@ impl Rope<Device> for Operator {
         let host = generate_sin_cos_tables(nctx, dh, 1e4);
         let mut mem = queue_alloc.alloc(size_of_val(host.as_slice()));
         queue_alloc.queue().memcpy_h2d(&mut mem, &host);
+        queue_alloc.queue().synchronize();
         SinCosTable { nctx, mem }
     }
 
@@ -55,6 +56,7 @@ impl Rope<Device> for Operator {
 
         let mut blob = queue_alloc.alloc(host.len());
         queue_alloc.queue().memcpy_h2d(&mut blob, &host);
+        queue_alloc.queue().synchronize();
         blob
     }
 }
