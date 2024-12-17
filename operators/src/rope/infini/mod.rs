@@ -196,14 +196,23 @@ mod test {
         sin_base: *const H::Byte,
         cos_base: *const H::Byte,
     ) -> Args<H> {
+        use ndarray_layout::{ArrayLayout, Endian::BigEndian};
         Args {
-            t_layout: TensorLayout::new_contiguous(dt_t, &[nt, nh, dh]),
+            t_layout: TensorLayout::from_arr(
+                dt_t,
+                &ArrayLayout::<3>::new_contiguous(&[nt, nh, dh], BigEndian, dt_t.nbytes()).slice(
+                    1,
+                    4,
+                    1,
+                    nh - 8,
+                ),
+            ),
             t_base,
             p_layout: TensorLayout::new_contiguous(dt_p, &[nt]),
             p_base,
-            sin_layout: TensorLayout::new_contiguous(ty::F32, &[2 * nt, dh]),
+            sin_layout: TensorLayout::new_contiguous(ty::F32, &[nt, dh]),
             sin_base,
-            cos_layout: TensorLayout::new_contiguous(ty::F32, &[2 * nt, dh]),
+            cos_layout: TensorLayout::new_contiguous(ty::F32, &[nt, dh]),
             cos_base,
             theta,
         }
