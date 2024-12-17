@@ -104,9 +104,6 @@ impl crate::Operator for Operator {
             (ty::F64, ty::U64) => calculate!(f64, u64),
             (_, _) => todo!(),
         }
-
-        calculate!(f16, u32);
-
         Ok(())
     }
 }
