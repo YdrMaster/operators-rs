@@ -132,26 +132,28 @@ mod test {
         let s_dst =
             ArrayLayout::<3>::new_contiguous(&[seq, nh, dh], BigEndian, ele).transpose(&[1, 0]);
 
-        let stream = dev.stream();
-        let src = stream.from_host(&src);
-        let mut dst = stream.malloc::<u8>(src.len());
-        dev_op
-            .launch(
-                &args(
-                    dt,
-                    &[nh, seq, dh],
-                    s_src.strides(),
-                    s_dst.strides(),
-                    src.as_ptr().cast(),
-                    dst.as_mut_ptr().cast(),
-                ),
-                &mut [],
-                &stream,
-            )
-            .unwrap();
-        let mut host = vec![0u32; nh * seq * dh];
-        dev.memcpy_d2h(&mut host, &dst);
-        let dst_ans = host;
+        let dst_ans = {
+            let stream = dev.stream();
+            let src = stream.from_host(&src);
+            let mut dst = stream.malloc::<u8>(src.len());
+            dev_op
+                .launch(
+                    &args(
+                        dt,
+                        &[nh, seq, dh],
+                        s_src.strides(),
+                        s_dst.strides(),
+                        src.as_ptr().cast(),
+                        dst.as_mut_ptr().cast(),
+                    ),
+                    &mut [],
+                    &stream,
+                )
+                .unwrap();
+            let mut host = vec![0u32; nh * seq * dh];
+            dev.memcpy_d2h(&mut host, &dst);
+            host
+        };
 
         let mut dst_ref = vec![0u32; seq * nh * dh];
         cpu_op
