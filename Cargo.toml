@@ -6,10 +6,10 @@ resolver = "2"
 clrt = { git = "https://github.com/InfiniTensor/clrt", rev = "6846d52" }
 search-cl-tools = { git = "https://github.com/InfiniTensor/clrt", rev = "6846d52" }
 
-infini-rt = { git = "https://github.com/InfiniTensor/infini-toolkit", rev = "85f27c3" }
-infini-op = { git = "https://github.com/InfiniTensor/infini-toolkit", rev = "85f27c3" }
-infini-ccl = { git = "https://github.com/InfiniTensor/infini-toolkit", rev = "85f27c3" }
-search-infini-tools = { git = "https://github.com/InfiniTensor/infini-toolkit", rev = "85f27c3" }
+infini-rt = { git = "https://github.com/InfiniTensor/infini-toolkit", rev = "f40bcb5" }
+infini-op = { git = "https://github.com/InfiniTensor/infini-toolkit", rev = "f40bcb5" }
+infini-ccl = { git = "https://github.com/InfiniTensor/infini-toolkit", rev = "f40bcb5" }
+search-infini-tools = { git = "https://github.com/InfiniTensor/infini-toolkit", rev = "f40bcb5" }
 
 cuda = { git = "https://github.com/YdrMaster/cuda-driver", rev = "5b9dbd9" }
 cublas = { git = "https://github.com/YdrMaster/cuda-driver", rev = "5b9dbd9" }
