@@ -4,6 +4,9 @@ use infini_rt::{
 };
 use std::{ops::Deref, sync::Arc};
 
+mod ccl;
+pub use ccl::InfiniNode;
+
 #[derive(Clone)]
 pub struct Device {
     device: infini_rt::Device,
