@@ -88,6 +88,9 @@ impl crate::Operator for Operator {
             b_base.cast(),
             queue_alloc.queue().as_void_ptr(),
         ));
+        if self.0.device_type() == infini_rt::DeviceType::DEVICE_ASCEND {
+            queue_alloc.queue().synchronize();
+        }
         Ok(())
     }
 }

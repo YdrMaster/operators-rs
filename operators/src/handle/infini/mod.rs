@@ -1,6 +1,7 @@
 use crate::{Alloc, Hardware, QueueAlloc, QueueOf};
 use infini_rt::{
-    DevBlob, DevByte, Stream, DEVICE_ASCEND, DEVICE_CAMBRICON, DEVICE_CPU, DEVICE_NVIDIA,
+    DevBlob, DevByte, DeviceType, Stream, DEVICE_ASCEND, DEVICE_CAMBRICON, DEVICE_CPU,
+    DEVICE_NVIDIA,
 };
 use std::{ops::Deref, sync::Arc};
 
@@ -49,6 +50,11 @@ impl Device {
                 id as _,
             )),
         }
+    }
+
+    #[inline]
+    pub(crate) fn device_type(&self) -> DeviceType {
+        self.device.ty
     }
 
     #[inline]
