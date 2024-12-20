@@ -118,8 +118,6 @@ impl crate::Operator for Operator {
 
         let mut kernel = self.0.get_kernel(name).unwrap();
         let queue = _queue_alloc.queue();
-        use std::time::Instant;
-        let time = Instant::now();
         kernel
             .set_arg(0, a)
             .set_arg(1, b)
@@ -147,11 +145,6 @@ impl crate::Operator for Operator {
                 queue,
                 None,
             );
-        // let clll_time = time.elapsed();
-        // println!("clll_time: {clll_time:?}");
-        queue.finish();
-        let clll_time = time.elapsed();
-        println!("clll_time: {clll_time:?}");
         self.0.set_kernel(name, kernel);
         Ok(())
     }

@@ -6,10 +6,7 @@ use crate::{
 use clrt::bindings::cl_int;
 use clrt::Invalid;
 use clrt::SvmByte;
-use std::{
-    ffi::CString,
-    ptr::copy_nonoverlapping,
-};
+use std::{ffi::CString, ptr::copy_nonoverlapping};
 
 pub struct Operator(KernelCache);
 
@@ -145,7 +142,6 @@ impl crate::Operator for Operator {
         let src_cs = src_cs / unit;
         let items = 32;
 
-        queue_alloc.queue().finish();
         kernel
             .set_arg(0, args.dst_base)
             .set_arg(1, dst_rs as cl_int)
@@ -162,7 +158,6 @@ impl crate::Operator for Operator {
                 queue_alloc.queue(),
                 None,
             );
-        queue_alloc.queue().finish();
 
         self.0.set_kernel(name, kernel);
         Ok(())
@@ -260,7 +255,6 @@ mod test {
                     dt.nbytes(),
                 )
                 .transpose(&[1, 0]);
-                
 
                 let dt = ty::U32;
                 cpu_op.scheme(&dyn_args(dt), 0).unwrap();
@@ -278,7 +272,7 @@ mod test {
                     *dst = *src as _;
                 }
                 queue.unmap(map);
-               
+
                 let time = Instant::now();
                 cl_op
                     .launch(

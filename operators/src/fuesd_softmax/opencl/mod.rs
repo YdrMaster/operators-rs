@@ -221,7 +221,7 @@ mod test {
                     let ([], mem, []) = (unsafe { map.align_to::<f32>() }) else {
                         panic!()
                     };
-                    
+
                     let diff = att
                         .into_par_iter()
                         .zip(mem)
