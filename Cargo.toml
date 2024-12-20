@@ -3,15 +3,15 @@ members = ["operators"]
 resolver = "2"
 
 [workspace.dependencies]
-clrt = { git = "https://github.com/InfiniTensor/clrt", rev = "6846d52" }
-search-cl-tools = { git = "https://github.com/InfiniTensor/clrt", rev = "6846d52" }
+clrt = { git = "https://github.com/InfiniTensor/clrt", rev = "9b6289d" }
+search-cl-tools = { git = "https://github.com/InfiniTensor/clrt", rev = "9b6289d" }
 
 infini-rt = { git = "https://github.com/InfiniTensor/infini-toolkit", rev = "f40bcb5" }
 infini-op = { git = "https://github.com/InfiniTensor/infini-toolkit", rev = "f40bcb5" }
 infini-ccl = { git = "https://github.com/InfiniTensor/infini-toolkit", rev = "f40bcb5" }
 search-infini-tools = { git = "https://github.com/InfiniTensor/infini-toolkit", rev = "f40bcb5" }
 
-cuda = { git = "https://github.com/YdrMaster/cuda-driver", rev = "5b9dbd9" }
-cublas = { git = "https://github.com/YdrMaster/cuda-driver", rev = "5b9dbd9" }
-nccl = { git = "https://github.com/YdrMaster/cuda-driver", rev = "5b9dbd9" }
-search-cuda-tools = { git = "https://github.com/YdrMaster/cuda-driver", rev = "5b9dbd9" }
+cuda = { git = "https://github.com/YdrMaster/cuda-driver", rev = "041badf" }
+cublas = { git = "https://github.com/YdrMaster/cuda-driver", rev = "041badf" }
+nccl = { git = "https://github.com/YdrMaster/cuda-driver", rev = "041badf" }
+search-cuda-tools = { git = "https://github.com/YdrMaster/cuda-driver", rev = "041badf" }
