@@ -325,7 +325,7 @@ mod test {
                 assert_eq!(y_ans, dst_ref);
                 queue.unmap(map);
                 println!("cl: {cl_time:?} / cpu: {cpu_time:?}");
-                assert!(2 <= 1);
+                // assert!(2 <= 1);
             }
         }
     }

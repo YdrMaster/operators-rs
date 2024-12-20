@@ -268,7 +268,7 @@ mod test {
 
                     let (out, count) = ec.summary();
                     assert!(out * 1000 <= count);
-                    assert!(2 <= 1);
+                    // assert!(2 <= 1);
                 }
             }
         }

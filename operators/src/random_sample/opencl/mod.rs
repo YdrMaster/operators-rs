@@ -86,7 +86,6 @@ impl crate::Operator for Operator {
                 queue,
                 None,
             );
-        queue.finish();
 
         self.0.set_kernel(name, kernel);
         let name = "argmax_step2";
@@ -107,7 +106,6 @@ impl crate::Operator for Operator {
                 queue,
                 None,
             );
-        queue.finish();
         self.0.set_kernel(name, kernel);
 
         Ok(())
@@ -205,7 +203,7 @@ fn test_compute() {
             let ([], y_ans, []) = (unsafe { map.align_to::<KVPair>() }) else {
                 panic!()
             };
-            // assert_eq!(y_ans[0].idx(), kv_ref.idx());
+            assert_eq!(y_ans[0].idx(), kv_ref.idx());
             queue.unmap(map);
         }
     }
