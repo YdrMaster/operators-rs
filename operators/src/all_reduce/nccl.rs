@@ -1,9 +1,7 @@
 ﻿use super::{args::Meta, AllReduce, Args, ReduceOp};
 use crate::{
     nvidia_gpu::{Gpu, NcclNode},
-    rearrange,
-    utils::sizeof,
-    ByteOf, LaunchError, QueueAlloc, SchemeError,
+    rearrange, ByteOf, LaunchError, QueueAlloc, SchemeError,
 };
 use std::{
     slice::{from_raw_parts, from_raw_parts_mut},
@@ -53,7 +51,7 @@ impl crate::Operator for Operator {
             ..
         } = args;
 
-        let len = size * sizeof(dt)?;
+        let len = dt.nbytes() * size;
         self.nccl.all_reduce(
             unsafe { from_raw_parts_mut(dst_base, len) },
             Some(unsafe { from_raw_parts(src_base, len) }),

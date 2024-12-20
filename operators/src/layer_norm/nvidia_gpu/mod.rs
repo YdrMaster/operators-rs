@@ -1,14 +1,14 @@
-﻿use super::{AddRows, Args};
-use crate::{ascend::Npu, ByteOf, LaunchError, QueueAlloc, SchemeError};
+﻿use super::{Args, LayerNorm};
+use crate::{nvidia_gpu::Gpu, ByteOf, LaunchError, QueueAlloc, SchemeError};
 
 pub struct Operator;
 
-impl AddRows<Npu> for Operator {}
+impl LayerNorm<Gpu> for Operator {}
 
 impl crate::Operator for Operator {
-    type Hardware = Npu;
-    type TopoNode = Npu;
-    type Args = Args<Npu>;
+    type Hardware = Gpu;
+    type TopoNode = Gpu;
+    type Args = Args<Gpu>;
 
     fn new(_node: &Self::TopoNode) -> Self {
         todo!()

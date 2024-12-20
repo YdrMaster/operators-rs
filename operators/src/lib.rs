@@ -8,6 +8,7 @@ pub mod attention;
 pub mod attention_kv_cached;
 pub mod conv;
 pub mod fuesd_softmax;
+pub mod layer_norm;
 pub mod mat_mul;
 pub mod mlp;
 pub mod random_sample;
@@ -29,6 +30,11 @@ pub use handle::opencl;
 #[cfg(use_cl)]
 pub extern crate clrt;
 
+#[cfg(use_infini)]
+pub use handle::infini;
+#[cfg(use_infini)]
+pub extern crate infini_rt;
+
 #[cfg(use_cuda)]
 pub use handle::nvidia_gpu;
 #[cfg(use_cuda)]
@@ -37,11 +43,6 @@ pub extern crate cublas;
 pub extern crate cuda;
 #[cfg(use_nccl)]
 pub extern crate nccl;
-
-#[cfg(use_ascend)]
-pub use handle::ascend;
-#[cfg(use_ascend)]
-pub extern crate ascendcl;
 
 use rearrange::Rearrange;
 use std::{marker::PhantomData, ops::DerefMut, ptr::addr_eq};

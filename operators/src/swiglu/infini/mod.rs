@@ -1,38 +1,20 @@
 ﻿use super::{args::Meta, Args, Swiglu};
-use crate::{
-    get_static,
-    nvidia_gpu::{Gpu, Handle, ModuleBox},
-    strides_not_support, type_not_support,
-    utils::gcd,
-    ByteOf, LaunchError, QueueAlloc, SchemeError,
-};
-use digit_layout::types::F16;
-use std::{ffi::CString, sync::Arc};
+use crate::{get_static, infini::Device, ByteOf, LaunchError, QueueAlloc, SchemeError};
+use infini_op::{infiniop, AsRaw, Descriptor, Handle};
+use std::sync::Arc;
 
-pub struct Operator {
-    _handle: Arc<Handle>,
-    max_threads_block: usize,
-    module: Arc<ModuleBox>,
-}
+pub struct Operator(Arc<Handle>);
 
-const NAME: &str = "swiglu_f16";
-
-impl Swiglu<Gpu> for Operator {}
+impl Swiglu<Device> for Operator {}
 
 impl crate::Operator for Operator {
-    type Hardware = Gpu;
-    type TopoNode = Gpu;
-    type Args = Args<Gpu>;
+    type Hardware = Device;
+    type TopoNode = Device;
+    type Args = Args<Device>;
 
+    #[inline]
     fn new(node: &Self::TopoNode) -> Self {
-        let device = node.0.device();
-        Self {
-            _handle: node.0.clone(),
-            max_threads_block: device.block_limit().max_threads,
-            module: node
-                .0
-                .compile_kernel(NAME, device.compute_capability(), format_code),
-        }
+        Self(node.handle().clone())
     }
 
     #[inline]
@@ -67,57 +49,41 @@ impl crate::Operator for Operator {
             unreachable!()
         };
 
-        if dt != F16 {
-            return Err(type_not_support("").into());
-        }
-
         get_static! {
              n   d
             gns gds
             uns uds
         }
 
-        let unit = dt.nbytes() as isize;
-        if gds != unit || uds != unit {
-            return Err(strides_not_support("").into());
-        };
+        let gate = infini_op::Tensor::new(dt, [n, d], [gns, gds]);
+        let up = infini_op::Tensor::new(dt, [n, d], [uns, uds]);
 
-        let sg = (gns / unit) as i32;
-        let su = (uns / unit) as i32;
-        let params = cuda::params![gate_base, sg, up_base, su];
-        let block = gcd(self.max_threads_block, d);
-
-        self.module.launch(
-            CString::new(NAME).unwrap(),
-            (n as _, (d / block) as _),
-            block as u32,
-            params.as_ptr(),
-            0,
-            queue_alloc.queue(),
+        let descriptor = Descriptor::new(
+            |ptr| {
+                infiniop!(infiniopCreateSwiGLUDescriptor(
+                    self.0.as_raw(),
+                    ptr,
+                    gate.as_raw(),
+                    up.as_raw(),
+                    gate.as_raw(),
+                ))
+            },
+            infini_op::bindings::infiniopDestroySwiGLUDescriptor,
         );
+        infiniop!(infiniopSwiGLU(
+            descriptor.as_raw(),
+            gate_base.cast(),
+            up_base.cast(),
+            gate_base.cast(),
+            queue_alloc.queue().as_void_ptr(),
+        ));
         Ok(())
     }
 }
 
-fn format_code() -> String {
-    const CODE: &str = include_str!("swiglu.cuh");
-    format!(
-        r#"{CODE}
-
-extern "C" __global__ void {NAME}(
-    half *__restrict__ gate,
-    int const stride_gate,
-    half const *__restrict__ up,
-    int const stride_up
-){{
-    swiglu(gate, stride_gate, up, stride_up);
-}}"#
-    )
-}
-
 #[cfg(test)]
 mod test {
-    use super::{Args, Gpu, Operator};
+    use super::{Args, Device, Operator};
     use crate::{dyn_, Hardware, Operator as _, TensorLayout};
     use digit_layout::{
         types::{F16, F64},
@@ -152,49 +118,26 @@ mod test {
     }
 
     #[test]
-    fn test_compile() {
-        use super::NAME;
-        use std::ffi::CString;
-
-        let Some(gpu) = Gpu::init() else {
-            return;
-        };
-        println!("{}", gpu.0.device().info());
-
-        let mut op = Operator::new(&gpu);
-        op.scheme(&dyn_args(F16), 0).unwrap();
-
-        gpu.apply(|ctx| {
-            println!(
-                "{NAME}\n{}",
-                op.module.load(CString::new(NAME).unwrap(), ctx).info()
-            );
-        })
-    }
-
-    #[test]
     fn test_compute() {
         use super::super::common_cpu::Operator as RefOp;
         use crate::{
             common_cpu::{Cpu, ThisThread},
-            nvidia_gpu::cast_load,
+            infini::cast_load,
             test_utils::{Diff, ErrorCollector},
         };
-        use cuda::memcpy_d2h;
         use half::f16;
         use rand::Rng;
 
-        let Some(gpu) = Gpu::init() else {
-            return;
-        };
-
-        let mut cpu_op = RefOp::new(&Cpu);
-        let mut gpu_op = Operator::new(&gpu);
-        cpu_op.scheme(&dyn_args(F64), 0).unwrap();
-        gpu_op.scheme(&dyn_args(F16), 0).unwrap();
-
         let n = 5632;
         let d = 2048;
+
+        infini_rt::init(infini_rt::DEVICE_CPU);
+        let dev = Device::cpu();
+
+        let mut cpu_op = RefOp::new(&Cpu);
+        let mut dev_op = Operator::new(&dev);
+        cpu_op.scheme(&dyn_args(F64), 0).unwrap();
+        dev_op.scheme(&dyn_args(F16), 0).unwrap();
 
         let mut gate = vec![0.0f64; n * d];
         let mut up = vec![0.0f64; n * d];
@@ -202,11 +145,11 @@ mod test {
         rand::thread_rng().fill(&mut up[..]);
         let up = up;
 
-        let gate_ans = gpu.apply(|ctx| {
-            let stream = ctx.stream();
+        let gate_ans = {
+            let stream = dev.stream();
             let mut gate = cast_load(&gate, f16::from_f64, &stream);
             let up = cast_load(&up, f16::from_f64, &stream);
-            gpu_op
+            dev_op
                 .launch(
                     &args(F16, n, d, gate.as_mut_ptr().cast(), up.as_ptr().cast()),
                     &mut [],
@@ -214,9 +157,9 @@ mod test {
                 )
                 .unwrap();
             let mut host = vec![f16::ZERO; n * d];
-            memcpy_d2h(&mut host, &gate);
+            dev.memcpy_d2h(&mut host, &gate);
             host
-        });
+        };
 
         let mut gate_ref = gate;
         cpu_op

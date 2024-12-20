@@ -1,14 +1,14 @@
-﻿use super::{Args, RmsNorm};
-use crate::{ascend::Npu, ByteOf, LaunchError, QueueAlloc, SchemeError};
+﻿use super::{Args, LayerNorm};
+use crate::{opencl::ClDevice, ByteOf, LaunchError, QueueAlloc, SchemeError};
 
 pub struct Operator;
 
-impl RmsNorm<Npu> for Operator {}
+impl LayerNorm<ClDevice> for Operator {}
 
 impl crate::Operator for Operator {
-    type Hardware = Npu;
-    type TopoNode = Npu;
-    type Args = Args<Npu>;
+    type Hardware = ClDevice;
+    type TopoNode = ClDevice;
+    type Args = Args<ClDevice>;
 
     fn new(_node: &Self::TopoNode) -> Self {
         todo!()

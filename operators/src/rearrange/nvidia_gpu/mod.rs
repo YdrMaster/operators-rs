@@ -142,8 +142,8 @@ impl crate::Operator for Operator {
         }
 
         let warps = self.max_warps_block as u32;
-        let grid = (r, (c + warps - 1) / warps);
-        let block = ((c + grid.1 - 1) / grid.1, self.warp_size as u32);
+        let grid = (r, c.div_ceil(warps));
+        let block = (c.div_ceil(grid.1), self.warp_size as u32);
 
         let unit = unit as i32;
         let dst_rs = dst_rs / unit;
@@ -196,7 +196,6 @@ extern "C" __global__ void {NAME}(
 
 #[cfg(test)]
 mod test {
-
     use super::{Args, Gpu, Operator};
     use crate::{ConstPtr, Hardware, MutPtr, Operator as _, TensorLayout};
     use digit_layout::{types as ty, DigitLayout};

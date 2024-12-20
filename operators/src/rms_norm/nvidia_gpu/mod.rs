@@ -66,25 +66,25 @@ impl crate::Operator for Operator {
             w_base,
             epsilon,
         } = args;
-        let &[nsy, dsy] = y_layout.strides() else {
+        let &[yns, yds] = y_layout.strides() else {
             unreachable!()
         };
-        let &[nsx, dsx] = x_layout.strides() else {
+        let &[xns, xds] = x_layout.strides() else {
             unreachable!()
         };
-        let &[dsw] = w_layout.strides() else {
+        let &[wds] = w_layout.strides() else {
             unreachable!()
         };
 
         get_static! {
-            n   d
-            nsy dsy
-            nsx dsx
-            dsw
+             n   d
+            yns yds
+            xns xds
+                wds
         }
 
         let unit = dt_a.nbytes() as isize;
-        if dsy != unit || dsx != unit || dsw != dt_w.nbytes() as isize {
+        if yds != unit || xds != unit || wds != dt_w.nbytes() as isize {
             return Err(strides_not_support("").into());
         };
 
@@ -96,8 +96,8 @@ impl crate::Operator for Operator {
             .try_get_or_insert(key, || Scheme::new(&self.handle, key))?
             .clone();
 
-        let nsy = (nsy / unit) as i32;
-        let nsx = (nsx / unit) as i32;
+        let nsy = (yns / unit) as i32;
+        let nsx = (xns / unit) as i32;
         let params = cuda::params![y_base, nsy, x_base, nsx, w_base, epsilon];
 
         scheme.module.launch(
@@ -188,7 +188,7 @@ extern "C" __global__ void {name}(
             let to_divid = d / n_threads_warp;
             let num_warps_block = max_num_warp_block;
             let num_threads_block = n_threads_warp * num_warps_block;
-            let num_items_thread = (to_divid + num_warps_block - 1) / num_warps_block;
+            let num_items_thread = to_divid.div_ceil(num_warps_block);
 
             let name = format!("rms_norm_{ta}_{tw}_folding_{num_threads_block}x{num_items_thread}");
             let module = handle.compile_kernel(&name, cc, || {

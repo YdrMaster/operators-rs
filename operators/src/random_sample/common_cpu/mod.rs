@@ -4,6 +4,7 @@ use crate::{
     QueueAlloc, SchemeError,
 };
 use half::f16;
+use num_traits::Float;
 use std::{cmp::Ordering::Equal, slice::from_raw_parts};
 
 pub struct Operator;
@@ -102,14 +103,23 @@ fn argmax<T: PartialOrd + Copy>(ptr: *const u8, len: usize) -> KVPair<T> {
     KVPair::new(key as _, *val)
 }
 
-fn random<T>(ptr: *const u8, len: usize, t: f32, top_p: f32, top_k: usize, seed: f32) -> KVPair<T>
-where
-    T: BetweenF32 + Copy,
-{
+fn random<T: Float>(
+    ptr: *const u8,
+    len: usize,
+    t: f32,
+    top_p: f32,
+    top_k: usize,
+    seed: f32,
+) -> KVPair<T> {
     // sort
     let ptr = ptr as usize;
     let mut logits = (0..len)
-        .map(|idx| KVPair::new(idx as _, unsafe { (ptr as *const T).add(idx).read() }.f32()))
+        .map(|idx| {
+            KVPair::new(
+                idx as _,
+                unsafe { &*(ptr as *const T).add(idx) }.to_f32().unwrap(),
+            )
+        })
         .collect::<Vec<_>>();
     logits.sort_unstable();
     let max = logits[0].val();
@@ -125,32 +135,5 @@ where
     let plimit = seed * f32::min(pk, pp);
     // sample
     let ans = *logits.iter().find(|p| p.val() >= plimit).unwrap();
-    KVPair::new(ans.idx() as _, T::cast(ans.val()))
-}
-
-trait BetweenF32 {
-    fn cast(f: f32) -> Self;
-    fn f32(self) -> f32;
-}
-
-impl BetweenF32 for f32 {
-    #[inline]
-    fn cast(f: f32) -> Self {
-        f
-    }
-    #[inline]
-    fn f32(self) -> f32 {
-        self
-    }
-}
-
-impl BetweenF32 for half::f16 {
-    #[inline]
-    fn cast(f: f32) -> Self {
-        Self::from_f32(f)
-    }
-    #[inline]
-    fn f32(self) -> f32 {
-        Self::to_f32(self)
-    }
+    KVPair::new(ans.idx() as _, T::from(ans.val()).unwrap())
 }

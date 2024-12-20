@@ -15,10 +15,10 @@ macro_rules! im2col {
     };
 }
 
-#[cfg(use_ascend)]
-pub mod ascend;
 #[cfg(any(use_cpu, test))]
 pub mod common_cpu;
+#[cfg(use_infini)]
+pub mod infini;
 #[cfg(use_cuda)]
 pub mod nvidia_gpu;
 #[cfg(use_cl)]

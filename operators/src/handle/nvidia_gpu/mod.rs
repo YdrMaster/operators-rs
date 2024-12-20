@@ -1,5 +1,7 @@
 mod library;
 mod module;
+#[cfg(use_nccl)]
+mod nccl;
 
 use crate::{Alloc, Hardware, Pool, QueueAlloc, QueueOf, SchemeDiversity};
 use cublas::{Cublas, CublasLtSpore, CublasSpore};
@@ -20,33 +22,14 @@ use std::{
 pub(crate) use library::{EXPORT, EXPORT_H};
 pub(crate) use module::ModuleBox;
 
-pub struct Gpu(pub(crate) Arc<Handle>);
-
 #[cfg(use_nccl)]
-pub struct NcclNode {
-    gpu: Gpu,
-    pub(crate) nccl: Arc<nccl::Communicator>,
-}
+pub use nccl::NcclNode;
+
+pub struct Gpu(pub(crate) Arc<Handle>);
 
 impl Hardware for Gpu {
     type Byte = cuda::DevByte;
     type Queue<'ctx> = cuda::Stream<'ctx>;
-}
-
-#[cfg(use_nccl)]
-impl crate::TopoNode<Gpu> for NcclNode {
-    #[inline]
-    fn processor(&self) -> &Gpu {
-        &self.gpu
-    }
-
-    fn rank(&self) -> usize {
-        self.nccl.rank()
-    }
-
-    fn group_size(&self) -> usize {
-        self.nccl.count()
-    }
 }
 
 impl<'ctx> Alloc<DevMem<'ctx>> for &'ctx CurrentCtx {

@@ -1,6 +1,7 @@
 ﻿use super::Key;
+use fslock::LockFile;
 use libloading::Library;
-use log::info;
+use log::{info, warn};
 use std::{
     collections::HashMap,
     env::temp_dir,
@@ -8,7 +9,7 @@ use std::{
     io::ErrorKind::NotFound,
     path::{Path, PathBuf},
     process::{Command, Output, Stdio},
-    sync::{Arc, Once, OnceLock, RwLock},
+    sync::{Arc, LazyLock, Once, OnceLock, RwLock},
 };
 
 pub(crate) const EXPORT_H: &str = "#include \"../export.h\"";
@@ -22,38 +23,59 @@ pub(super) fn cache_lib(key: &Key, code: impl FnOnce() -> String) -> Arc<Library
         return lib.clone();
     }
 
-    static DIR: OnceLock<PathBuf> = OnceLock::new();
-    let dir = DIR
-        .get_or_init(|| {
-            let root = temp_dir().join(format!("InfiniLM{:08x}", std::process::id()));
-            fs::create_dir_all(&root).unwrap();
-            fs::write(root.join("export.h"), include_str!("cxx/export.h")).unwrap();
-            root
-        })
-        .join(format!("{}_{}", key.0, key.1));
+    static ROOT: LazyLock<PathBuf> = LazyLock::new(|| {
+        let root = temp_dir().join("operators-rs-nv-libs");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("export.h"), include_str!("cxx/export.h")).unwrap();
+        root
+    });
 
-    fs::create_dir_all(&dir).unwrap();
-    fs::write(dir.join("xmake.lua"), include_str!("cxx/xmake.lua")).unwrap();
-    fs::write(dir.join("src.cu"), code()).unwrap();
-
-    let arch = format!(
-        "-gencode arch=compute_{ver},code=sm_{ver}",
-        ver = key.1.to_arch_string()
-    );
-
-    static CHECKED: Once = Once::new();
-    CHECKED.call_once(xmake_check);
-
-    xmake_config(&dir, arch);
-    xmake_build(&dir);
-    xmake_install(&dir);
-
-    let lib_path: PathBuf = if cfg!(windows) {
-        dir.join("bin").join("lib")
+    let dir = ROOT.join(format!("{}_{}", key.0, key.1));
+    let lock = dir.join(".lock");
+    let src = dir.join("src.cu");
+    let lib: PathBuf = if cfg!(windows) {
+        dir.join("bin").join("lib.dll")
     } else {
         dir.join("lib").join("liblib.so")
     };
-    let lib = Arc::new(unsafe { Library::new(lib_path) }.unwrap());
+
+    fs::create_dir_all(&dir).unwrap();
+
+    let mut guard = LockFile::open(&lock).unwrap();
+    if !guard.try_lock_with_pid().unwrap() {
+        warn!(
+            "{} is locked by {}",
+            dir.display(),
+            fs::read_to_string(&lock).unwrap(),
+        );
+        guard.lock_with_pid().unwrap();
+    }
+
+    let code = code();
+    let compile = if fs::read_to_string(&src).map_or(false, |s| s == code) {
+        !lib.exists()
+    } else {
+        fs::write(dir.join("xmake.lua"), include_str!("cxx/xmake.lua")).unwrap();
+        fs::write(src, code).unwrap();
+        true
+    };
+    if compile {
+        let arch = format!(
+            "-gencode arch=compute_{ver},code=sm_{ver}",
+            ver = key.1.to_arch_string()
+        );
+
+        static CHECKED: Once = Once::new();
+        CHECKED.call_once(xmake_check);
+
+        xmake_config(&dir, arch);
+        xmake_build(&dir);
+        xmake_install(&dir);
+    }
+    let lib = unsafe { Library::new(lib) };
+    guard.unlock().unwrap();
+
+    let lib = Arc::new(lib.unwrap());
     cache.write().unwrap().insert(key.clone(), lib.clone());
     lib
 }

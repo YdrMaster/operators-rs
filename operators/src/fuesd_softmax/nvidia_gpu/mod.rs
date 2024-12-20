@@ -95,7 +95,7 @@ impl crate::Operator for Operator {
                 queue.queue(),
             );
         } else {
-            let num_items_thread = (att_len + block_size - 1) / block_size;
+            let num_items_thread = att_len.div_ceil(block_size);
             let smem = (num_items_thread * block_size) as usize;
             self.scheme.module.launch(
                 &self.scheme.folding,

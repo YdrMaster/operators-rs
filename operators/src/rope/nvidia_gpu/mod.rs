@@ -126,7 +126,7 @@ impl crate::Operator for Operator {
         }
 
         let unit = dt_t.nbytes() as isize;
-        if sd != unit || sp != size_of::<u32>() as isize {
+        if sd != unit || sp != dt_p.nbytes() as isize {
             return Err(strides_not_support("").into());
         };
 
