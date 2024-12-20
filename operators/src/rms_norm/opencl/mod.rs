@@ -6,12 +6,11 @@ use crate::{
 };
 use clrt::bindings::cl_int;
 use std::ffi::CString;
-
 pub struct Operator(KernelCache);
 
 impl RmsNorm<ClDevice> for Operator {}
 
-const MAX_THREADS_PER_BLOCK: usize = 512;
+const MAX_THREADS_PER_BLOCK: usize = 1024;
 
 impl crate::Operator for Operator {
     type Hardware = ClDevice;
@@ -37,7 +36,7 @@ impl crate::Operator for Operator {
         let items_per_thread = d.div_ceil(MAX_THREADS_PER_BLOCK);
         let kernel_name = match items_per_thread {
             1 => "rms_norm_padding",
-            2..=16 => "rms_norm_folding",
+            2..=16 => "rms_norm_foldingV2",
             // todo!() 添加倍数大于16的处理  --worksize存入operator中，在scheme处理
             _ => {
                 return Err(shape_not_support(
@@ -80,21 +79,12 @@ impl crate::Operator for Operator {
             n nsy nsx d
         }
 
-        let items_per_thread = d.div_ceil(MAX_THREADS_PER_BLOCK);
-        let (name, local_worksize_y) = match items_per_thread {
-            1 => ("rms_norm_padding", d),
-            2..=16 => ("rms_norm_folding", MAX_THREADS_PER_BLOCK),
-            _ => {
-                // todo!() 添加倍数大于16的处理  --worksize存入operator中，在scheme处理
-                return Err(shape_not_support("Unsupported items_per_thread configuration").into());
-            }
-        };
-
+        let name = "rms_norm_fortest";
         let global_workoffset = [0];
-        let global_worksize = [(n * d) as usize];
-        let local_worksize = [local_worksize_y];
-
+        let global_worksize = [n as usize];
+        let local_worksize = [n as usize];
         let mut kernel = self.0.get_kernel(name).unwrap();
+        _queue_alloc.queue().finish();
 
         kernel
             .set_arg(0, y_base)
@@ -103,7 +93,7 @@ impl crate::Operator for Operator {
             .set_arg(3, (nsx / 4) as cl_int)
             .set_arg(4, w_base)
             .set_arg(5, epsilon);
-        if name == "rms_norm_folding" {
+        if name == "rms_norm_fortest" {
             kernel.set_arg(6, d as cl_int);
         }
         kernel.launch(
@@ -113,6 +103,7 @@ impl crate::Operator for Operator {
             _queue_alloc.queue(),
             None,
         );
+        _queue_alloc.queue().finish();
 
         self.0.set_kernel(name, kernel);
         Ok(())
@@ -184,8 +175,8 @@ mod test {
                 let queue = context.queue();
                 let mut cl_op = Operator::new(&ClDevice::new(context.clone()));
 
-                for k in 10..=10 {
-                    let n = 4;
+                for k in 11..=11 {
+                    let n = 5;
                     let d = 1 << k;
 
                     cpu_op.scheme(&dyn_args(ty::F64, ty::F64, d), 0).unwrap();
@@ -277,7 +268,7 @@ mod test {
 
                     let (out, count) = ec.summary();
                     assert!(out * 1000 <= count);
-                    // assert!(2 <= 1);
+                    assert!(2 <= 1);
                 }
             }
         }

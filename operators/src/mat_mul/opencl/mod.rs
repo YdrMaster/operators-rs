@@ -5,10 +5,11 @@ use crate::{
 };
 use clrt::bindings::cl_int;
 use std::ffi::CString;
-
 pub struct Operator(KernelCache);
 
 impl MatMul<ClDevice> for Operator {}
+
+const MAX_THREADS_PER_BLOCK: usize = 512;
 
 impl crate::Operator for Operator {
     type Hardware = ClDevice;
@@ -16,11 +17,6 @@ impl crate::Operator for Operator {
     type Args = Args<ClDevice>;
 
     fn new(node: &Self::TopoNode) -> Self {
-        // let options = CString::new("").unwrap();
-        // let program = _node
-        //     .context()
-        //     .build_from_source(include_str!("mat_mul.cl"), options);
-        // Self(KernelCache::new(program))
         const SRC: &str = include_str!("mat_mul.cl");
         let opts = CString::new("").unwrap();
         Self(KernelCache::new(node.context(), SRC, &opts))
@@ -80,26 +76,40 @@ impl crate::Operator for Operator {
         let mut name = "";
         let mut global_worksize = [1, 1];
         let mut local_worksize = [1, 1];
-        if n == 1
-        {
-            name = "gemv_f32";
-            global_worksize = [m as usize, n * batch as usize];
-            local_worksize = [32 as usize, 1 as usize];
+
+        if n == 1 {
+            if m % 32 == 0 {
+                name = "gemv_f32";
+                global_worksize = [m as usize, n * batch as usize];
+                local_worksize = [32 as usize, 1 as usize];
+            } else {
+                name = "gemv_f32v2";
+                global_worksize = [m as usize, n * k * batch as usize];
+                local_worksize = [1 as usize, k as usize];
+            }
         }
-        else if n < 32
-        {
+        //fortest
+        else if n != 1 {
+            let mn = m * n;
+            let items_per_thread = mn.div_ceil(MAX_THREADS_PER_BLOCK);
+            let local_worksize_y = match items_per_thread {
+                1 => mn,
+                _ => MAX_THREADS_PER_BLOCK, //todo!()修改
+            };
+            name = "general_gemm_f32";
+            global_worksize = [batch as usize, mn as usize];
+            local_worksize = [1 as usize, local_worksize_y as usize];
+        }
+        //fortest
+        else if n < 32 {
             name = "gemm_m_f32";
             global_worksize = [m as usize, n * batch as usize];
             local_worksize = [32 as usize, n as usize];
-        }
-        else if (n % 32) ==0
-        {
+        } else if (n % 32) == 0 {
             name = "gemm_l_f32";
             global_worksize = [m as usize, n * batch as usize];
             local_worksize = [32 as usize, 32 as usize];
-        }
-        else
-        {
+        } else {
             let nn = (n + 31) / 32 * 32;
             name = "gemm_f32";
             global_worksize = [m * batch as usize, nn as usize];
@@ -107,6 +117,9 @@ impl crate::Operator for Operator {
         }
 
         let mut kernel = self.0.get_kernel(name).unwrap();
+        let queue = _queue_alloc.queue();
+        use std::time::Instant;
+        let time = Instant::now();
         kernel
             .set_arg(0, a)
             .set_arg(1, b)
@@ -125,15 +138,20 @@ impl crate::Operator for Operator {
             .set_arg(14, n as cl_int)
             .set_arg(15, k as cl_int)
             .set_arg(16, alpha)
-            .set_arg(17, beta)
+            .set_arg(17, beta) //;
             .launch(
                 &global_workoffset,
                 &global_worksize,
                 &local_worksize,
-                _queue_alloc.queue(),
+                // _queue_alloc.queue(),
+                queue,
                 None,
             );
-
+        // let clll_time = time.elapsed();
+        // println!("clll_time: {clll_time:?}");
+        queue.finish();
+        let clll_time = time.elapsed();
+        println!("clll_time: {clll_time:?}");
         self.0.set_kernel(name, kernel);
         Ok(())
     }
@@ -190,6 +208,7 @@ mod test {
             for device in platform.devices() {
                 println!("device: {}", device.name());
 
+                // let time0 = Instant::now();
                 let context = device.context();
                 let queue = context.queue();
                 let cl_op = Operator::new(&ClDevice::new(context.clone()));
@@ -197,127 +216,131 @@ mod test {
                 let batch = 4;
                 // let k = 2048;
                 // let n = 5632;
-                let k =64;
-                let n =64;
-                for m in [1] {
-                // for m in [1, 7, 64, 255, 1024] {
-                    let mut a = vec![0.0f64; batch * m * k];
-                    let mut b = vec![0.0f64; batch * k * n];
-                    let mut c = vec![0.0f64; batch * m * n];
-                    rand::thread_rng().fill(&mut a[..]);
-                    rand::thread_rng().fill(&mut b[..]);
-                    rand::thread_rng().fill(&mut c[..]);
-                    let a = a;
-                    let b = b;
-                    for (index, i) in a.iter().enumerate() {
-                        print!("{}: {} ", index + 1, i);
+                let k = 9;
+                let n = 64; //m
+                for m in [8] {
+                    // for m in [1, 7, 64, 255, 1024] {
+                    for i in 0..1 {
+                        let mut a = vec![0.0f64; batch * m * k];
+                        let mut b = vec![0.0f64; batch * k * n];
+                        let mut c = vec![0.0f64; batch * m * n];
+
+                        rand::thread_rng().fill(&mut a[..]);
+                        rand::thread_rng().fill(&mut b[..]);
+                        rand::thread_rng().fill(&mut c[..]);
+
+                        let a = a;
+                        let b = b;
+                        let mut a_svm = context.malloc::<f32>(batch * m * k);
+                        let mut b_svm = context.malloc::<f32>(batch * k * n);
+
+                        let mut map = queue.map_mut(&mut a_svm, Invalid);
+                        let ([], mem, []) =
+                            (unsafe { map.write_only_slice().align_to_mut::<f32>() })
+                        else {
+                            panic!()
+                        };
+                        for (dst, src) in zip(mem, &a) {
+                            *dst = *src as _;
+                        }
+                        queue.unmap(map);
+
+                        let mut map = queue.map_mut(&mut b_svm, Invalid);
+                        let ([], mem, []) =
+                            (unsafe { map.write_only_slice().align_to_mut::<f32>() })
+                        else {
+                            panic!()
+                        };
+                        for (dst, src) in zip(mem, &b) {
+                            *dst = *src as _;
+                        }
+                        queue.unmap(map);
+
+                        let mut c_svm = context.malloc::<f32>(batch * m * n);
+                        let mut map = queue.map_mut(&mut c_svm, Invalid);
+                        let ([], mem, []) =
+                            (unsafe { map.write_only_slice().align_to_mut::<f32>() })
+                        else {
+                            panic!()
+                        };
+                        for (dst, src) in zip(mem, &c) {
+                            *dst = *src as _;
+                        }
+                        queue.unmap(map);
+
+                        let map = queue.map(&mut c_svm);
+                        let ([], y_ans, []) = (unsafe { map.align_to::<f32>() }) else {
+                            panic!()
+                        };
+                        queue.unmap(map);
+
+                        let time = Instant::now();
+                        cl_op
+                            .launch(
+                                &args(
+                                    F32,
+                                    batch,
+                                    m,
+                                    n,
+                                    k,
+                                    c_svm.as_mut_ptr().cast(),
+                                    a_svm.as_ptr().cast(),
+                                    b_svm.as_ptr().cast(),
+                                ),
+                                &mut [],
+                                &queue,
+                            )
+                            .unwrap();
+                        queue.finish();
+
+                        let cl_time = time.elapsed();
+
+                        let time = Instant::now();
+                        let mut c_ref = c;
+                        cpu_op
+                            .launch(
+                                &args(
+                                    F64,
+                                    batch,
+                                    m,
+                                    n,
+                                    k,
+                                    c_ref.as_mut_ptr().cast(),
+                                    a.as_ptr().cast(),
+                                    b.as_ptr().cast(),
+                                ),
+                                &mut [],
+                                &ThisThread,
+                            )
+                            .unwrap();
+                        let cpu_time = time.elapsed();
+
+                        let map = queue.map(&mut c_svm);
+                        let ([], y_ans, []) = (unsafe { map.align_to::<f32>() }) else {
+                            panic!()
+                        };
+                        let diff = c_ref
+                            .into_par_iter()
+                            .zip(y_ans)
+                            .map(|(a, b)| Diff::new(a, *b as _))
+                            .collect::<Vec<_>>();
+                        // queue.unmap(map);
+
+                        let mut ec = ErrorCollector::new(f32::EPSILON as f64, 5e-3);
+                        diff.into_iter().for_each(|diff| ec.push(diff));
+                        let ee = ec.outliers();
+                        // // let time1 = time0.elapsed();
+                        // println!("ee: {ee:?}");
+                        println!("{ec}");
+                        println!("cl: {cl_time:?} / cpu: {cpu_time:?}");
+                        // println!("time1: {time1:?}");
+                        // println!("time3: {time3:?}");
+
+                        let (out, count) = ec.summary();
+                        queue.unmap(map);
+                        assert!(out * 1000 <= count);
                     }
-                    println!();
-                    println!();
-                    let mut a_svm = context.malloc::<f32>(batch * m * k);
-                    let mut b_svm = context.malloc::<f32>(batch * k * n);
-
-                    let mut map = queue.map_mut(&mut a_svm, Invalid);
-                    let ([], mem, []) = (unsafe { map.write_only_slice().align_to_mut::<f32>() })
-                    else {
-                        panic!()
-                    };
-                    for (dst, src) in zip(mem, &a) {
-                        *dst = *src as _;
-                    }
-                    queue.unmap(map);
-
-                    let mut map = queue.map_mut(&mut b_svm, Invalid);
-                    let ([], mem, []) = (unsafe { map.write_only_slice().align_to_mut::<f32>() })
-                    else {
-                        panic!()
-                    };
-                    for (dst, src) in zip(mem, &b) {
-                        *dst = *src as _;
-                    }
-                    queue.unmap(map);
-
-                    let mut c_svm = context.malloc::<f32>(batch * m * n);
-                    let mut map = queue.map_mut(&mut c_svm, Invalid);
-                    let ([], mem, []) = (unsafe { map.write_only_slice().align_to_mut::<f32>() })
-                    else {
-                        panic!()
-                    };
-                    for (dst, src) in zip(mem, &c) {
-                        *dst = *src as _;
-                    }
-                    queue.unmap(map);
-                    let time = Instant::now();
-                    cl_op
-                        .launch(
-                            &args(
-                                F32,
-                                batch,
-                                m,
-                                n,
-                                k,
-                                c_svm.as_mut_ptr().cast(),
-                                a_svm.as_ptr().cast(),
-                                b_svm.as_ptr().cast(),
-                            ),
-                            &mut [],
-                            &queue,
-                        )
-                        .unwrap();
-                    queue.finish();
-                    let cl_time = time.elapsed();
-
-                    let time = Instant::now();
-                    let mut c_ref = c;
-                    cpu_op
-                        .launch(
-                            &args(
-                                F64,
-                                batch,
-                                m,
-                                n,
-                                k,
-                                c_ref.as_mut_ptr().cast(),
-                                a.as_ptr().cast(),
-                                b.as_ptr().cast(),
-                            ),
-                            &mut [],
-                            &ThisThread,
-                        )
-                        .unwrap();
-                    let cpu_time = time.elapsed();
-
-                    let map = queue.map(&mut c_svm);
-                    let ([], y_ans, []) = (unsafe { map.align_to::<f32>() }) else {
-                        panic!()
-                    };
-                    // for (index, i) in y_ans.iter().enumerate() {
-                    //     print!("{}: {} ", index + 1, i);
-                    // }
-                    // println!();
-                    // println!();
-                    // for (index, i) in c_ref.iter().enumerate() {
-                    //     print!("{}: {} ", index + 1, i);
-                    // }
-                    // println!();
-                    // println!();
-                    let diff = c_ref
-                        .into_par_iter()
-                        .zip(y_ans)
-                        .map(|(a, b)| Diff::new(a, *b as _))
-                        .collect::<Vec<_>>();
-                    queue.unmap(map);
-
-                    let mut ec = ErrorCollector::new(f32::EPSILON as f64, 5e-3);
-                    diff.into_iter().for_each(|diff| ec.push(diff));
-                    let ee = ec.outliers();
-                    println!("ee: {ee:?}");
-                    println!("{ec}");
-                    println!("cl: {cl_time:?} / cpu: {cpu_time:?}");
-
-                    let (out, count) = ec.summary();
-                    assert!(out * 1000 <= count);
-                    // assert!(2 <= 1);
+                    assert!(2 <= 1);
                 }
             }
         }

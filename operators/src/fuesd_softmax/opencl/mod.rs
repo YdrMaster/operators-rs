@@ -20,11 +20,6 @@ impl crate::Operator for Operator {
     type Args = Args<ClDevice>;
 
     fn new(node: &Self::TopoNode) -> Self {
-        // let options = CString::new("").unwrap();
-        // let program = _node
-        //     .context()
-        //     .build_from_source(include_str!("fuesd_softmax.cl"), options);
-        // Self(KernelCache::new(program))
         const SRC: &str = include_str!("fuesd_softmax.cl");
         let opts = CString::new("").unwrap();
         Self(KernelCache::new(node.context(), SRC, &opts))
@@ -99,10 +94,11 @@ impl crate::Operator for Operator {
                 return Err(shape_not_support("Unsupported items_per_thread configuration").into());
             }
         };
+        let localsize = (local_worksize_y as usize).next_power_of_two();
 
         let global_workoffset = [0];
-        let global_worksize = [(nh * seq_len * local_worksize_y) as usize];
-        let local_worksize = [local_worksize_y];
+        let global_worksize = [(nh * seq_len * localsize) as usize];
+        let local_worksize = [localsize];
 
         let mut kernel = self.0.get_kernel(name).unwrap();
 
@@ -178,8 +174,9 @@ mod test {
                 cl_op.scheme(&dyn_args(ty::F32), 0).unwrap();
 
                 let nh = 32;
-                for (seq_len, att_len) in [(7, 511)] {
-                // for (seq_len, att_len) in [(1, 1024), (1, 2048), (7, 2048)] {
+                // for (seq_len, att_len) in [(5, 5),(1, 11),(1, 12),(1, 19),(1, 20)] {
+                for (seq_len, att_len) in [(1, 13)] {
+                    // for (seq_len, att_len) in [(1, 1024), (1, 2048), (7, 2048)] {
                     let mut att = vec![0.0f64; nh * seq_len * att_len];
                     rand::thread_rng().fill(&mut att[..]);
                     let mut att_svm = context.malloc::<f32>(nh * seq_len * att_len);
@@ -192,7 +189,14 @@ mod test {
                         *dst = *src as _;
                     }
                     queue.unmap(map);
+                    let map = queue.map(&mut att_svm);
+                    let ([], mem, []) = (unsafe { map.align_to::<f32>() }) else {
+                        panic!()
+                    };
+                    queue.unmap(map);
+
                     let time = Instant::now();
+                    // for i in 0..100 {
                     cl_op
                         .launch(
                             &args(ty::F32, nh, seq_len, att_len, att_svm.as_mut_ptr().cast()),
@@ -201,6 +205,7 @@ mod test {
                         )
                         .unwrap();
                     queue.finish();
+                    // }
                     let cl_time = time.elapsed();
                     let time = Instant::now();
                     cpu_op
@@ -216,16 +221,7 @@ mod test {
                     let ([], mem, []) = (unsafe { map.align_to::<f32>() }) else {
                         panic!()
                     };
-                    // for (index, i) in mem.iter().enumerate() {
-                    //     print!("{}: {} ", index + 1, i);
-                    // }
-                    // println!();
-                    // println!();
-                    // for (index, i) in att.iter().enumerate() {
-                    //     print!("{}: {} ", index + 1, i);
-                    // }
-                    // println!();
-                    // println!();
+                    
                     let diff = att
                         .into_par_iter()
                         .zip(mem)
@@ -235,14 +231,14 @@ mod test {
 
                     let mut ec = ErrorCollector::new(f32::EPSILON as f64, 1e-3);
                     diff.into_iter().for_each(|diff| ec.push(diff));
-                    println!("{ec}");
+                    // println!("{ec}");
                     println!("cl: {cl_time:?} / cpu: {cpu_time:?}");
                     // let ee = ec.outliers();
                     // println!("ee: {ee:?}");
 
                     let (out, count) = ec.summary();
                     assert!(out * 1000 <= count);
-                    // assert!(2 <= 1); //测试性能
+                    assert!(2 <= 1); //测试性能
                 }
             }
         }

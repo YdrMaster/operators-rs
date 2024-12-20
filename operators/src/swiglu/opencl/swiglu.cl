@@ -4,15 +4,15 @@ __kernel void swiglu(
     __global float *gate,
     const int stride_gate,
     __global float *up,
-    const int strid_up){
+    const int strid_up) {
 
     //计算线程和块索引
     int global_id_x = get_global_id(0);
     int global_id_y = get_global_id(1);
 
     //计算索引
-    int i = global_id_x * stride_gate +global_id_y;
-    int j = global_id_x * strid_up +global_id_y;
+    int i = global_id_x * stride_gate + global_id_y;
+    int j = global_id_x * strid_up + global_id_y;
 
     //取值
     float x = gate[i];

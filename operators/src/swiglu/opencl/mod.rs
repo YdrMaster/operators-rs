@@ -1,13 +1,13 @@
 ﻿use super::{args::Meta, Args, Swiglu};
 use crate::{
     get_static,
-    // utils::{gcd, sizeof},
-    utils::gcd,
     opencl::{ClDevice, KernelCache},
-    type_not_support, strides_not_support, ByteOf, LaunchError, QueueAlloc, SchemeError,
+    strides_not_support, type_not_support,
+    utils::gcd,
+    ByteOf, LaunchError, QueueAlloc, SchemeError,
 };
-use digit_layout::types::F32;
 use clrt::bindings::cl_int;
+use digit_layout::types::F32;
 use std::ffi::CString;
 
 pub struct Operator(KernelCache);
@@ -22,11 +22,6 @@ impl crate::Operator for Operator {
     type Args = Args<ClDevice>;
 
     fn new(node: &Self::TopoNode) -> Self {
-        // let options = CString::new("").unwrap();
-        // let program = _node
-        //     .context()
-        //     .build_from_source(include_str!("swiglu.cl"), options);
-        // Self(KernelCache::new(program))
         const SRC: &str = include_str!("swiglu.cl");
         let opts = CString::new("").unwrap();
         Self(KernelCache::new(node.context(), SRC, &opts))
@@ -78,14 +73,13 @@ impl crate::Operator for Operator {
             sun sud
         }
 
-        // let unit = sizeof(dt)? as isize;
         let unit = dt.nbytes() as isize;
         if sgd != unit || sud != unit {
             return Err(strides_not_support("").into());
         };
 
         let sg = (sgn / unit) as i32;
-        let su = (sun / unit) as i32;
+        let su: i32 = (sun / unit) as i32;
 
         let name = "swiglu";
         let local_worksize_y = gcd(MAX_THREADS_PER_BLOCK, d);
@@ -112,7 +106,6 @@ impl crate::Operator for Operator {
         Ok(())
     }
 }
-
 
 #[cfg(test)]
 mod test {
@@ -162,7 +155,6 @@ mod test {
         use rand::Rng;
         use std::{iter::zip, time::Instant};
 
-
         let mut cpu_op = RefOp::new(&Cpu);
         for platform in Platform::all() {
             for device in platform.devices() {
@@ -176,12 +168,12 @@ mod test {
 
                 // let n = 5632;
                 // let d = 2048;
-                let n = 32;
-                let d = 512;
+                let n = 1;
+                let d = 5632;
                 let mut gate = vec![0.0f64; n * d];
                 let mut up = vec![0.0f64; n * d];
                 rand::thread_rng().fill(&mut gate[..]);
-                rand::thread_rng().fill(&mut up[..]); 
+                rand::thread_rng().fill(&mut up[..]);
                 let up = up;
 
                 let mut gate_svm = context.malloc::<f32>(n * d);
@@ -205,7 +197,7 @@ mod test {
                     *dst = *src as _;
                 }
                 queue.unmap(map);
-                
+
                 let time = Instant::now();
                 cl_op
                     .launch(
@@ -249,8 +241,7 @@ mod test {
                 println!("cl: {cl_time:?} / cpu: {cpu_time:?}");
                 let (out, count) = ec.summary();
                 assert!(out * 1000 <= count);
-                // assert!(2 <= 1);
-
+                assert!(2 <= 1);
             }
         }
     }

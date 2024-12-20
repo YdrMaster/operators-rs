@@ -1,10 +1,10 @@
 #define CL_TARGET_OPENCL_VERSION 200
 #pragma OPENCL EXTENSION cl_khr_fp16 : enable
 __kernel void rearrange(
-    __global float *dst,
+    __global unsigned int *dst,
     unsigned int rsa,
     unsigned int csa,
-    __global float *src,
+    __global unsigned int *src,
     unsigned int rsb,
     unsigned int csb,
     unsigned int ncols,
@@ -24,3 +24,25 @@ __kernel void rearrange(
         dst[i] = src[j];
     }
 }
+
+// __kernel void rearrange_fortest(
+//     __global unsigned int *dst,
+//     unsigned int rsa,
+//     unsigned int csa,
+//     __global unsigned int *src,
+//     unsigned int rsb,
+//     unsigned int csb,
+//     unsigned int r,
+//     unsigned int c,
+//     unsigned int items) {
+
+//     for (int m = 0; m < r; m++) {
+//         for (int n = 0; n < c; n++) {
+//             for (int p = 0; p < items; p++) {
+//                 int i = (m * rsa + n * csa) * items + p;
+//                 int j = (m * rsb + n * csb) * items + p;
+//                 dst[i] = src[j];
+//             }
+//         }
+//     }
+// }

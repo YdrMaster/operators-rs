@@ -9,12 +9,16 @@ __kernel void softmax_padding(
 
     int local_id = get_local_id(0);
     int group_id = get_group_id(0);
-    int global_id = get_global_id(0);
+    int global_id = group_id * att_len + local_id;
     int local_size = get_local_size(0);
 
     __local float localA[BLOCK_SIZE];
     float max_val, sum_val;
-    float thread_data = (att_len + group_id % seq_len >= local_id + seq_len) ? att[global_id] : -FLT_MAX;
+    float thread_data;
+    if (local_id < att_len)
+        thread_data = (att_len + (group_id % seq_len) >= local_id + seq_len) ? att[global_id] : -FLT_MAX;
+    else
+        thread_data = -FLT_MAX;
 
     localA[local_id] = thread_data;
     barrier(CLK_LOCAL_MEM_FENCE);
@@ -32,6 +36,9 @@ __kernel void softmax_padding(
     max_val = localA[0];
     barrier(CLK_LOCAL_MEM_FENCE);
     thread_data = exp(thread_data - max_val);
+
+    if (local_id >= att_len)
+        thread_data = 0;
     localA[local_id] = thread_data;
     barrier(CLK_LOCAL_MEM_FENCE);
 
@@ -47,8 +54,14 @@ __kernel void softmax_padding(
 
     sum_val = localA[0];
     thread_data = thread_data / sum_val;
-    att[global_id] = thread_data;
+    if (local_id < att_len) {
+        att[global_id] = thread_data;
+    }
 }
+//here
+
+
+//1
 
 __kernel void softmax_folding(
     __global float *att,
@@ -114,6 +127,7 @@ __kernel void softmax_folding(
     }
 
     sum_val = localA[0];
+
     for (int i = 0; i < items; i++) {
         thread_data[i] = thread_data[i] / sum_val;
         att[global_id * items + i] = thread_data[i];

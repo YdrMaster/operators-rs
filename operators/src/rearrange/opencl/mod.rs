@@ -4,9 +4,11 @@ use crate::{
     rank_not_support, ByteOf, LaunchError, QueueAlloc, SchemeError,
 };
 use clrt::bindings::cl_int;
+use clrt::Invalid;
+use clrt::SvmByte;
 use std::{
     ffi::CString,
-    slice::{from_raw_parts, from_raw_parts_mut},
+    ptr::copy_nonoverlapping,
 };
 
 pub struct Operator(KernelCache);
@@ -19,11 +21,6 @@ impl crate::Operator for Operator {
     type Args = Args<ClDevice>;
 
     fn new(node: &Self::TopoNode) -> Self {
-        // let options = CString::new("").unwrap();
-        // let program = _node
-        //     .context()
-        //     .build_from_source(include_str!("rearrange.cl"), options);
-        // Self(KernelCache::new(program))
         const SRC: &str = include_str!("rearrange.cl");
         let opts = CString::new("").unwrap();
         Self(KernelCache::new(node.context(), SRC, &opts))
@@ -52,13 +49,30 @@ impl crate::Operator for Operator {
         let scheme = Scheme::new(args)?;
         if scheme.ndim() == 0 {
             let unit = scheme.unit();
-            let _dst = unsafe { from_raw_parts_mut(args.dst_base, unit) };
-            let _src = unsafe { from_raw_parts(args.src_base, unit) };
-            // queue_alloc.queue().memcpy_d2d(dst, src);
-            //todo queue添加d2d接口函数
+            //todo:写一个直接拷贝的内核，长度为unit
+            let queue = queue_alloc.queue();
+            let ss: &[SvmByte] = unsafe { std::slice::from_raw_parts(args.src_base, unit / 4) };
+            let mut dd: &mut [SvmByte] =
+                unsafe { std::slice::from_raw_parts_mut(args.dst_base, unit / 4) };
+
+            let mut map_d = queue.map_mut(&mut dd, Invalid);
+            let ([], d_ans, []) = (unsafe { map_d.write_only_slice().align_to_mut::<u32>() })
+            else {
+                panic!()
+            };
+
+            let map_s = queue.map(ss);
+            let ([], s_ans, []) = (unsafe { map_s.align_to::<u32>() }) else {
+                panic!()
+            };
+            unsafe {
+                copy_nonoverlapping(s_ans.as_ptr(), d_ans.as_mut_ptr(), unit / 4);
+            }
+            queue.unmap(map_s);
+            queue.unmap(map_d);
+
             return Ok(());
         }
-        let scheme = scheme.distribute_unit((0..=5).rev().map(|n| 32 * (1 << n)));
         let unit = scheme.unit();
 
         struct Layout {
@@ -131,6 +145,7 @@ impl crate::Operator for Operator {
         let src_cs = src_cs / unit;
         let items = 32;
 
+        queue_alloc.queue().finish();
         kernel
             .set_arg(0, args.dst_base)
             .set_arg(1, dst_rs as cl_int)
@@ -147,6 +162,7 @@ impl crate::Operator for Operator {
                 queue_alloc.queue(),
                 None,
             );
+        queue_alloc.queue().finish();
 
         self.0.set_kernel(name, kernel);
         Ok(())
@@ -211,9 +227,12 @@ mod test {
                 let queue = context.queue();
                 let mut cl_op = Operator::new(&ClDevice::new(context.clone()));
 
-                let nh = 32;
-                let seq = 7;
-                let dh = 128;
+                // let nh = 32;
+                let nh = 5;
+                // let seq = 7;
+                let seq = 32;
+                // let dh = 128;
+                let dh = 64;
                 let mut src = vec![0u32; nh * seq * dh];
                 rand::thread_rng().fill(&mut src[..]);
                 let s_src = ArrayLayout::<3>::new_contiguous(
@@ -222,6 +241,18 @@ mod test {
                     // dt.nbytes().unwrap(),
                     dt.nbytes(),
                 );
+                // let s_src = ArrayLayout::<3>::new(
+                //     &[nh, seq, dh],
+                //     &[0, (4 * dh) as isize, 4],
+                //     // dt.nbytes().unwrap(),
+                //     0,
+                // );
+                // let s_src = ArrayLayout::<3>::new(
+                //     &[nh, seq, dh],
+                //     &[(40 * dh) as isize, (4 * dh) as isize, 4],
+                //     // dt.nbytes().unwrap(),
+                //     0,
+                // );
                 let s_dst = ArrayLayout::<3>::new_contiguous(
                     &[seq, nh, dh],
                     BigEndian,
@@ -229,11 +260,13 @@ mod test {
                     dt.nbytes(),
                 )
                 .transpose(&[1, 0]);
+                
+
                 let dt = ty::U32;
                 cpu_op.scheme(&dyn_args(dt), 0).unwrap();
                 cl_op.scheme(&dyn_args(dt), 0).unwrap();
 
-                let mut s_svm = context.malloc::<u32>(nh * seq * dh);
+                let mut s_svm = context.malloc::<u32>(nh * seq * dh * 2);
                 let mut d_svm = context.malloc::<u32>(nh * seq * dh);
 
                 let mut map = queue.map_mut(&mut s_svm, Invalid);
@@ -245,6 +278,7 @@ mod test {
                     *dst = *src as _;
                 }
                 queue.unmap(map);
+               
                 let time = Instant::now();
                 cl_op
                     .launch(
@@ -297,7 +331,7 @@ mod test {
                 assert_eq!(y_ans, dst_ref);
                 queue.unmap(map);
                 println!("cl: {cl_time:?} / cpu: {cpu_time:?}");
-                // assert!(2 <= 1);
+                assert!(2 <= 1);
             }
         }
     }

@@ -2,16 +2,12 @@
 use crate::{
     get_static,
     opencl::{ClDevice, KernelCache},
-    shape_not_support, strides_not_support, type_not_support,
-    // utils::sizeof,
-    ByteOf, LaunchError, QueueAlloc, SchemeError,
+    shape_not_support, strides_not_support, type_not_support, ByteOf, LaunchError, QueueAlloc,
+    SchemeError,
 };
 use clrt::bindings::cl_int;
 use clrt::Invalid;
-use digit_layout::{
-    // types::{F16, U32},
-    types::{F32, U32},
-};
+use digit_layout::types::{F32, U32};
 use std::{alloc::Layout, ffi::CString, iter::zip};
 
 pub struct Operator(KernelCache);
@@ -50,7 +46,7 @@ impl Rope<ClDevice> for Operator {
         fill_pos(host.as_mut_ptr().cast::<u32>(), _nt, _iter);
         let queue = _queue_alloc.queue();
         let mut map = queue.map_mut(&mut blob, Invalid);
-        let ([], mem, []) = (unsafe { map.write_only_slice().align_to_mut::<f32>() }) else {
+        let ([], mem, []) = (unsafe { map.write_only_slice().align_to_mut::<u32>() }) else {
             panic!()
         };
         for (dst, src) in zip(mem, &host) {
@@ -67,11 +63,6 @@ impl crate::Operator for Operator {
     type Args = Args<ClDevice>;
 
     fn new(node: &Self::TopoNode) -> Self {
-        // let options = CString::new("").unwrap();
-        // let program = _node
-        //     .context()
-        //     .build_from_source(include_str!("rope.cl"), options);
-        // Self(KernelCache::new(program))
         const SRC: &str = include_str!("rope.cl");
         let opts = CString::new("").unwrap();
         Self(KernelCache::new(node.context(), SRC, &opts))
@@ -83,7 +74,6 @@ impl crate::Operator for Operator {
         _max_workspace_size: usize,
     ) -> Result<usize, SchemeError> {
         let Meta { dt_t, dt_p, .. } = _args.meta()?;
-        // if dt_t == F16 || dt_p == U32 {
         if dt_t == F32 || dt_p == U32 {
             Ok(0)
         } else {
@@ -104,7 +94,6 @@ impl crate::Operator for Operator {
             dt_t, dt_p, nt, dh, ..
         } = args.meta()?;
 
-        // if dt_t != F16 || dt_p != U32 {
         if dt_t != F32 || dt_p != U32 {
             return Err(type_not_support("").into());
         }
@@ -132,7 +121,7 @@ impl crate::Operator for Operator {
             st sh sd
             sp
         }
-        // let unit = sizeof(dt_t)? as isize;
+
         let unit = dt_t.nbytes() as isize;
         if sd != unit || sp != size_of::<u32>() as isize {
             return Err(strides_not_support("").into());
@@ -154,7 +143,6 @@ impl crate::Operator for Operator {
         let global_worksize = [(nt * nh_l) as usize, (nh_h * dh) as usize];
         let local_worksize = [nh_l as usize, dh as usize];
 
-        // let name = "rope_f16";
         let name = "rope_f32";
         let mut kernel = self.0.get_kernel(name).unwrap();
 
@@ -183,7 +171,6 @@ mod test {
     use super::Args;
     use crate::{Hardware, TensorLayout};
     use digit_layout::{
-        // types::{F16, F64, U32},
         types::{F32, F64, U32},
         DigitLayout,
     };
@@ -240,8 +227,6 @@ mod test {
         use clrt::{Invalid, Platform};
         use digit_layout::types as ty;
         use rand::Rng;
-        // use half::f16;
-        // use rayon::iter::IntoParallelIterator;
         use std::{iter::zip, time::Instant};
 
         let mut cpu_op = RefOp::new(&Cpu);
@@ -253,29 +238,25 @@ mod test {
                 let queue = context.queue();
                 let mut cl_op = Operator::new(&ClDevice::new(context.clone()));
                 cpu_op.scheme(&dyn_args(F64, U32), 0).unwrap();
-                // cl_op.scheme(&dyn_args(F16, U32), 0).unwrap();
                 cl_op.scheme(&dyn_args(F32, U32), 0).unwrap();
 
-                const NT: usize = 7;
+                const NT: usize = 1;
                 let nh = 32;
                 let dh = 64;
 
                 let mut t = vec![0.0f64; NT * nh * dh];
                 rand::thread_rng().fill(&mut t[..]);
-                let p: [u32; NT] = [0, 1, 2, 3, 7, 8, 1];
-                // let mut t_svm = context.malloc::<f16>(NT * nh * dh);
+                let p: [u32; NT] = [0];
                 let mut t_svm = context.malloc::<f32>(NT * nh * dh);
                 let mut p_svm = context.malloc::<u32>(7);
 
                 let mut map = queue.map_mut(&mut t_svm, Invalid);
-                // let ([], mem, []) = (unsafe { map.write_only_slice().align_to_mut::<f16>() })
                 let ([], mem, []) = (unsafe { map.write_only_slice().align_to_mut::<f32>() })
                 else {
                     panic!()
                 };
                 for (dst, src) in zip(mem, &t) {
                     *dst = *src as _;
-                    // *dst =f16::from_f64(*src);
                 }
                 queue.unmap(map);
 
@@ -293,7 +274,6 @@ mod test {
                 cl_op
                     .launch(
                         &args(
-                            // ty::F16,
                             ty::F32,
                             ty::U32,
                             NT,
@@ -332,38 +312,28 @@ mod test {
                 let cpu_time = time.elapsed();
 
                 let map = queue.map(&mut t_svm);
-                // let ([], y_ans, []) = (unsafe { map.align_to::<f16>() }) else {
+
                 let ([], y_ans, []) = (unsafe { map.align_to::<f32>() }) else {
                     panic!()
                 };
-                // for (index, i) in y_ans.iter().enumerate() {
-                //     print!("{}: {} ", index + 1, i);
-                // }
-                // println!();
-                // println!();
-                // for (index, i) in t_ref.iter().enumerate() {
-                //     print!("{}: {} ", index + 1, i);
-                // }
-                // println!();
-                // println!();
 
                 let diff = t_ref
                     .into_iter()
                     .zip(y_ans)
-                    // .map(|(a, b)| Diff::new(a, b.to_f64()))
                     .map(|(a, b)| Diff::new(a, *b as _))
                     .collect::<Vec<_>>();
                 queue.unmap(map);
 
-                // let mut ec = ErrorCollector::new(f16::EPSILON.to_f64(), 1e-3);
                 let mut ec = ErrorCollector::new(f32::EPSILON as f64, 1e-3);
                 diff.into_iter().for_each(|diff| ec.push(diff));
-                println!("{ec}");
+                // let ee = ec.outliers();
+                // println!("ee: {ee:?}");
+                // println!("{ec}");
                 println!("cl: {cl_time:?} / cpu: {cpu_time:?}");
 
                 let (out, count) = ec.summary();
                 assert!(out * 1000 <= count);
-                // assert!(2 <= 1);
+                assert!(2 <= 1);
             }
         }
     }

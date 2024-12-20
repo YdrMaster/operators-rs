@@ -11,7 +11,6 @@ __kernel void rope_f32(
     //索引
     int nh_l = get_local_size(0);
     int dh = get_local_size(1);
-
     int it = get_group_id(0);
     int ih_h = get_group_id(1);
     int ih_l = get_local_id(0);
@@ -33,16 +32,16 @@ __kernel void rope_f32(
 }
 
 __kernel void rope_f16(
-    __global half2 *t,             
-    unsigned int stride_token,      
-    unsigned int stride_head,       
+    __global half2 *t,
+    unsigned int stride_token,
+    unsigned int stride_head,
     __global const unsigned int *pos,
-    const float theta) {          
+    const float theta) {
 
 
     int nh_l = get_local_size(0);
-    int dh = get_local_size(1); 
-    int it = get_group_id(0);  
+    int dh = get_local_size(1);
+    int it = get_group_id(0);
     int ih_h = get_group_id(1);
     int ih_l = get_local_id(0);
     int ih = ih_h * nh_l + ih_l;
@@ -50,9 +49,9 @@ __kernel void rope_f16(
 
 
     half2 *t2 = t + it * stride_token + ih * stride_head + i;
+
     float2 data = vload_half2(0, (__global half *) t2);
     float angle = (float) (pos[it]) / pow(theta, (float) i / (float) dh);
-
     float sin_val = native_sin(angle);
     float cos_val = native_cos(angle);
 
