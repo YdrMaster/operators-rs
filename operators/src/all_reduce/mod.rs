@@ -1,5 +1,7 @@
 ﻿#[cfg(any(use_cpu, test))]
 pub mod common_cpu;
+#[cfg(use_infini)]
+pub mod infini;
 #[cfg(use_nccl)]
 pub mod nccl;
 
