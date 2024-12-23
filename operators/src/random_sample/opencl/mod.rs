@@ -91,7 +91,7 @@ impl crate::Operator for Operator {
         let name = "argmax_step2";
         let len = n / MAX_THREADS_PER_BLOCK;
         let global_workoffset = [0];
-        let global_worksize = [256 as usize];
+        let global_worksize = [256];
         let local_worksize = [256];
         let mut kernel = self.0.get_kernel(name).unwrap();
 

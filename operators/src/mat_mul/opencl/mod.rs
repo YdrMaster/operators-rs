@@ -73,19 +73,19 @@ impl crate::Operator for Operator {
         let (rhs_cs, rhs_rs) = if b_trans { (1, b_ld) } else { (b_ld, 1) };
 
         let global_workoffset = [0, 0];
-        let mut name = "";
-        let mut global_worksize = [1, 1];
-        let mut local_worksize = [1, 1];
+        let name;
+        let global_worksize;
+        let local_worksize;
 
         if n == 1 {
             if m % 32 == 0 {
                 name = "gemv_f32";
-                global_worksize = [m as usize, n * batch as usize];
-                local_worksize = [32 as usize, 1 as usize];
+                global_worksize = [m, n * batch];
+                local_worksize = [32, 1];
             } else {
                 name = "gemv_f32v2";
-                global_worksize = [m as usize, n * k * batch as usize];
-                local_worksize = [1 as usize, k as usize];
+                global_worksize = [m, n * k * batch];
+                local_worksize = [1, k];
             }
         }
         //fortest
@@ -97,23 +97,23 @@ impl crate::Operator for Operator {
                 _ => MAX_THREADS_PER_BLOCK, //todo!()修改
             };
             name = "general_gemm_f32";
-            global_worksize = [batch as usize, mn as usize];
-            local_worksize = [1 as usize, local_worksize_y as usize];
+            global_worksize = [batch, mn];
+            local_worksize = [1, local_worksize_y];
         }
         //fortest
         else if n < 32 {
             name = "gemm_m_f32";
-            global_worksize = [m as usize, n * batch as usize];
-            local_worksize = [32 as usize, n as usize];
+            global_worksize = [m, n * batch];
+            local_worksize = [32, n];
         } else if (n % 32) == 0 {
             name = "gemm_l_f32";
-            global_worksize = [m as usize, n * batch as usize];
-            local_worksize = [32 as usize, 32 as usize];
+            global_worksize = [m, n * batch];
+            local_worksize = [32, 32];
         } else {
             let nn = (n + 31) / 32 * 32;
             name = "gemm_f32";
-            global_worksize = [m * batch as usize, nn as usize];
-            local_worksize = [32 as usize, 32 as usize];
+            global_worksize = [m * batch, nn];
+            local_worksize = [32, 32];
         }
 
         let mut kernel = self.0.get_kernel(name).unwrap();

@@ -3,9 +3,7 @@ use crate::{
     opencl::{ClDevice, KernelCache},
     rank_not_support, ByteOf, LaunchError, QueueAlloc, SchemeError,
 };
-use clrt::bindings::cl_int;
-use clrt::Invalid;
-use clrt::SvmByte;
+use clrt::{bindings::cl_int, Invalid};
 use std::{ffi::CString, ptr::copy_nonoverlapping};
 
 pub struct Operator(KernelCache);
@@ -48,11 +46,10 @@ impl crate::Operator for Operator {
             let unit = scheme.unit();
             //todo:写一个直接拷贝的内核，长度为unit
             let queue = queue_alloc.queue();
-            let ss: &[SvmByte] = unsafe { std::slice::from_raw_parts(args.src_base, unit / 4) };
-            let mut dd: &mut [SvmByte] =
-                unsafe { std::slice::from_raw_parts_mut(args.dst_base, unit / 4) };
+            let ss = unsafe { std::slice::from_raw_parts(args.src_base, unit / 4) };
+            let dd = unsafe { std::slice::from_raw_parts_mut(args.dst_base, unit / 4) };
 
-            let mut map_d = queue.map_mut(&mut dd, Invalid);
+            let mut map_d = queue.map_mut(dd, Invalid);
             let ([], d_ans, []) = (unsafe { map_d.write_only_slice().align_to_mut::<u32>() })
             else {
                 panic!()
@@ -131,7 +128,7 @@ impl crate::Operator for Operator {
         let name = "rearrange";
         let global_workoffset = [0];
         let global_worksize = [(r * c * (unit as u32) / 128) as usize];
-        let local_worksize = [(unit / 128) as usize]; //32*4字节
+        let local_worksize = [unit / 128]; //32*4字节
 
         let mut kernel = self.0.get_kernel(name).unwrap();
 

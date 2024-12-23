@@ -34,7 +34,7 @@ impl crate::Operator for Operator {
         let Args { att_layout, .. } = _args;
 
         if dt != F32 {
-            return Err(type_not_support("").into());
+            return Err(type_not_support(""));
         }
 
         let &[att_len, ..] = att_layout.shape() else {
@@ -94,7 +94,7 @@ impl crate::Operator for Operator {
                 return Err(shape_not_support("Unsupported items_per_thread configuration").into());
             }
         };
-        let localsize = (local_worksize_y as usize).next_power_of_two();
+        let localsize = local_worksize_y.next_power_of_two();
 
         let global_workoffset = [0];
         let global_worksize = [(nh * seq_len * localsize) as usize];
