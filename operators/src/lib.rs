@@ -11,6 +11,7 @@ pub mod broadcast;
 pub mod conv;
 pub mod fuesd_softmax;
 pub mod gelu;
+pub mod gpt2_mlp;
 pub mod layer_norm;
 pub mod mat_mul;
 pub mod mlp;

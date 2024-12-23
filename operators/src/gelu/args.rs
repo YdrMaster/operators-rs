@@ -1,6 +1,4 @@
-use crate::{
-    utils::rank_error, Hardware, MaybeDyn, MutPtr, SchemeError, TensorLayout,
-};
+use crate::{utils::rank_error, Hardware, MaybeDyn, MutPtr, SchemeError, TensorLayout};
 use digit_layout::DigitLayout;
 
 pub struct Args<H: Hardware> {

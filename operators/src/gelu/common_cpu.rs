@@ -100,7 +100,6 @@ impl Scheme<f16> {
     }
 }
 
-
 impl Scheme<f32> {
     #[inline]
     fn calculate(&self) {
