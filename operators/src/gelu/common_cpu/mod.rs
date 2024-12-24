@@ -40,8 +40,8 @@ impl crate::Operator for Operator {
         };
 
         get_static! {
-            n   d
-            sn   sd
+             n  d
+            sn sd
         }
 
         macro_rules! calculate {
@@ -93,10 +93,7 @@ impl<T: Copy> Scheme<T> {
 impl Scheme<f16> {
     #[inline]
     fn calculate(&self) {
-        self.loop_(|base| {
-            let a = base.to_f32();
-            f16::from_f32(gelu_f32(a))
-        })
+        self.loop_(|base| f16::from_f32(gelu_f32(base.to_f32())))
     }
 }
 
@@ -116,19 +113,12 @@ impl Scheme<f64> {
 
 #[inline(always)]
 fn gelu_f32(x: f32) -> f32 {
-    use std::f32::consts::PI;
-
-    let sqrt_2_over_pi = (2.0 / PI).sqrt();
-    let c = 0.044715;
-    let tanh_arg = sqrt_2_over_pi * (x + c * x.powi(3));
-    0.5 * x * (1.0 + tanh_arg.tanh())
+    use std::f32::consts::FRAC_2_PI;
+    0.5 * x * (1. + (FRAC_2_PI.sqrt() * (x + 0.044715 * x.powi(3))).tanh())
 }
 
 #[inline(always)]
 fn gelu_f64(x: f64) -> f64 {
-    use std::f64::consts::PI;
-    let sqrt_2_over_pi = (2.0 / PI).sqrt();
-    let c = 0.044715;
-    let tanh_arg = sqrt_2_over_pi * (x + c * x.powi(3));
-    0.5 * x * (1.0 + tanh_arg.tanh())
+    use std::f64::consts::FRAC_2_PI;
+    0.5 * x * (1. + (FRAC_2_PI.sqrt() * (x + 0.044715 * x.powi(3))).tanh())
 }
