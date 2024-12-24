@@ -36,12 +36,14 @@ pub use handle::infini;
 #[cfg(use_infini)]
 pub extern crate infini_rt;
 
-#[cfg(use_cuda)]
+#[cfg(use_gpu)]
 pub use handle::nvidia_gpu;
-#[cfg(use_cuda)]
+#[cfg(use_gpu)]
 pub extern crate cublas;
-#[cfg(use_cuda)]
+
+#[cfg(use_gpu)]
 pub extern crate cuda;
+
 #[cfg(use_nccl)]
 pub extern crate nccl;
 

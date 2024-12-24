@@ -1,4 +1,4 @@
-﻿use super::Key;
+use super::Key;
 use fslock::LockFile;
 use libloading::Library;
 use log::{info, warn};
@@ -11,10 +11,11 @@ use std::{
     process::{Command, Output, Stdio},
     sync::{Arc, LazyLock, Once, OnceLock, RwLock},
 };
-
+#[allow(dead_code)]
 pub(crate) const EXPORT_H: &str = "#include \"../export.h\"";
+#[allow(dead_code)]
 pub(crate) const EXPORT: &str = "__C __export ";
-
+#[allow(dead_code)]
 pub(super) fn cache_lib(key: &Key, code: impl FnOnce() -> String) -> Arc<Library> {
     static CACHE: OnceLock<RwLock<HashMap<Key, Arc<Library>>>> = OnceLock::new();
     let cache = CACHE.get_or_init(Default::default);
@@ -53,7 +54,7 @@ pub(super) fn cache_lib(key: &Key, code: impl FnOnce() -> String) -> Arc<Library
     }
 
     let code = code();
-    let compile = if fs::read_to_string(&src).map_or(false, |s| s == code) {
+    let compile = if fs::read_to_string(&src).is_ok_and(|s| s == code) {
         !lib.exists()
     } else {
         fs::write(dir.join("xmake.lua"), include_str!("cxx/xmake.lua")).unwrap();
@@ -80,7 +81,7 @@ pub(super) fn cache_lib(key: &Key, code: impl FnOnce() -> String) -> Arc<Library
     cache.write().unwrap().insert(key.clone(), lib.clone());
     lib
 }
-
+#[allow(dead_code)]
 fn xmake_check() {
     const ERR: &str = "xmake detection failed";
     const MSG: &str = "
@@ -108,21 +109,33 @@ See [this page](https://xmake.io/#/getting_started?id=installation) to install x
         }
     }
 }
-
+#[allow(dead_code)]
 fn xmake_config(dir: impl AsRef<Path>, arch: impl fmt::Display) {
     let mut cmd = Command::new("xmake");
-    cmd.arg("config").arg("--toolchain=cuda");
-    if let Ok(cuda_root) = std::env::var("CUDA_ROOT") {
-        cmd.arg(format!("--cuda={cuda_root}"));
-    }
-    let output = cmd
-        .arg(format!("--cuflags={arch}"))
-        .arg(format!("--culdflags={arch}"))
-        .current_dir(&dir)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
-        .unwrap();
+
+    let output = if cfg!(use_cuda) {
+        cmd.arg("config").arg("--toolchain=cuda");
+        if let Ok(cuda_root) = std::env::var("CUDA_ROOT") {
+            cmd.arg(format!("--cuda={cuda_root}"));
+        }
+        cmd.arg(format!("--cuflags={arch}"))
+            .arg(format!("--culdflags={arch}"))
+            .current_dir(&dir)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap()
+    } else if cfg!(use_iluvatar) {
+        cmd.arg("config")
+            .arg("--iluvatar=y")
+            .current_dir(&dir)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .unwrap()
+    } else {
+        unreachable!()
+    };
     let log = read_output(&output);
     if output.status.success() {
         info!("{log}");
@@ -130,7 +143,7 @@ fn xmake_config(dir: impl AsRef<Path>, arch: impl fmt::Display) {
         panic!("xmake config failed at {}: {log}", dir.as_ref().display());
     }
 }
-
+#[allow(dead_code)]
 fn xmake_build(dir: impl AsRef<Path>) {
     let output = Command::new("xmake")
         .arg("build")
@@ -163,7 +176,7 @@ fn xmake_install(dir: impl AsRef<Path>) {
         panic!("xmake install failed at {}: {log}", dir.as_ref().display());
     }
 }
-
+#[allow(dead_code)]
 fn read_output(output: &Output) -> String {
     let mut log = String::new();
     if !output.stdout.is_empty() {

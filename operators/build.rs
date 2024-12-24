@@ -1,15 +1,15 @@
-﻿fn main() {
+fn main() {
     use build_script_cfg::Cfg;
     use search_cl_tools::find_opencl;
+    use search_corex_tools::find_corex;
     use search_cuda_tools::{find_cuda_root, find_nccl_root};
     use search_infini_tools::{find_infini_ccl, find_infini_op, find_infini_rt};
-
     let cpu = Cfg::new("use_cpu");
     let cl = Cfg::new("use_cl");
     let infini = Cfg::new("use_infini");
     let cuda = Cfg::new("use_cuda");
     let nccl = Cfg::new("use_nccl");
-
+    let iluvatar = Cfg::new("use_iluvatar");
     if cfg!(feature = "common-cpu") {
         cpu.define();
     }
@@ -25,8 +25,13 @@
     }
     if cfg!(feature = "nvidia-gpu") && find_cuda_root().is_some() {
         cuda.define();
+        Cfg::new("use_gpu").define();
         if find_nccl_root().is_some() {
             nccl.define();
         }
+    }
+    if cfg!(feature = "iluvatar-gpu") && find_corex().is_some() {
+        Cfg::new("use_gpu").define();
+        iluvatar.define();
     }
 }

@@ -1,4 +1,4 @@
-﻿use super::{args::SchemeLayout, Args, MatMul};
+use super::{args::SchemeLayout, Args, MatMul};
 use crate::{
     nvidia_gpu::{Gpu, Handle},
     type_not_support, ByteOf, LaunchError, QueueAlloc, SchemeError,
@@ -86,6 +86,10 @@ impl crate::Operator for Operator {
         let b = b.cast::<c_void>();
         let alpha = f16::from_f32(alpha);
         let beta = f16::from_f32(beta);
+        #[cfg(use_cuda)]
+        let compute_t = cublas::bindings::cublasComputeType_t::CUBLAS_COMPUTE_16F;
+        #[cfg(use_iluvatar)]
+        let compute_t = cublas::bindings::cudaDataType_t::CUDA_R_16F;
 
         self.handle.cublas(queue_alloc.queue(), |handle| {
             cublas!(cublasGemmStridedBatchedEx(
@@ -118,7 +122,7 @@ impl crate::Operator for Operator {
                 c_ld as _,
                 c_stride as _,
                 batch as _,
-                cublasComputeType_t::CUBLAS_COMPUTE_16F,
+                compute_t,
                 cublasGemmAlgo_t::CUBLAS_GEMM_DFALT,
             ));
         });

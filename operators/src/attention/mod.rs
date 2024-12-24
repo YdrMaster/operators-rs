@@ -21,7 +21,7 @@ macro_rules! impl_op {
 pub mod common_cpu;
 #[cfg(use_infini)]
 pub mod infini;
-#[cfg(use_cuda)]
+#[cfg(use_gpu)]
 pub mod nvidia_gpu;
 #[cfg(use_cl)]
 pub mod opencl;

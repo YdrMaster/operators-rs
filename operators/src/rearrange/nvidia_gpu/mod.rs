@@ -1,4 +1,4 @@
-﻿use super::{args::Scheme, Args, Rearrange};
+use super::{args::Scheme, Args, Rearrange};
 use crate::{
     nvidia_gpu::{Gpu, Handle, ModuleBox},
     rank_not_support, shape_not_support, ByteOf, LaunchError, QueueAlloc, SchemeError,
@@ -281,8 +281,12 @@ mod test {
 
         let dst_ans = gpu.apply(|ctx| {
             let stream = ctx.stream();
-            let src = stream.from_host(&src);
-            let mut dst = stream.malloc::<u8>(src.len());
+            #[cfg(use_cuda)]
+            let compute_ctx = ctx.stream();
+            #[cfg(use_iluvatar)]
+            let compute_ctx = ctx;
+            let src = compute_ctx.from_host(&src);
+            let mut dst = compute_ctx.malloc::<u8>(src.len());
             gpu_op
                 .launch(
                     &args(
