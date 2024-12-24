@@ -4,7 +4,7 @@ use libloading::Library;
 use log::{info, warn};
 use std::{
     collections::HashMap,
-    env::temp_dir,
+    env::{temp_dir, var},
     fmt, fs,
     io::ErrorKind::NotFound,
     path::{Path, PathBuf},
@@ -24,7 +24,8 @@ pub(super) fn cache_lib(key: &Key, code: impl FnOnce() -> String) -> Arc<Library
     }
 
     static ROOT: LazyLock<PathBuf> = LazyLock::new(|| {
-        let root = temp_dir().join("operators-rs-nv-libs");
+        let user = var(if cfg!(windows) { "USERNAME" } else { "USER" }).unwrap();
+        let root = temp_dir().join(format!("operators-rs-nv-libs-{user}"));
         fs::create_dir_all(&root).unwrap();
         fs::write(root.join("export.h"), include_str!("cxx/export.h")).unwrap();
         root
