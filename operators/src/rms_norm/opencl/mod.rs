@@ -10,7 +10,7 @@ pub struct Operator(KernelCache);
 
 impl RmsNorm<ClDevice> for Operator {}
 
-const MAX_THREADS_PER_BLOCK: usize = 1024;
+const MAX_THREADS_PER_BLOCK: usize = 256;
 
 impl crate::Operator for Operator {
     type Hardware = ClDevice;
@@ -36,13 +36,8 @@ impl crate::Operator for Operator {
         let items_per_thread = d.div_ceil(MAX_THREADS_PER_BLOCK);
         let kernel_name = match items_per_thread {
             1 => "rms_norm_padding",
-            2..=16 => "rms_norm_foldingV2",
-            // todo!() 添加倍数大于16的处理  --worksize存入operator中，在scheme处理
-            _ => {
-                return Err(shape_not_support(
-                    "Unsupported items_per_thread configuration",
-                ))
-            }
+            2..=16 => "rms_norm_folding",
+            _ => "rms_norm_general",
         };
 
         self.0
@@ -79,10 +74,19 @@ impl crate::Operator for Operator {
             n nsy nsx d
         }
 
-        let name = "rms_norm_fortest";
+        //todo 1.确认padding和folding内核，验证没有问题
+        //     2.添加超出16倍的支持，改善rms_norm_fortest2即可
+        //     3.支持padding支持任意尺寸规约，扩充
+        let items_per_thread = d.div_ceil(MAX_THREADS_PER_BLOCK);
+        let (name, local_worksize_y) = match items_per_thread {
+            1 => ("rms_norm_padding", d),
+            2..=16 => ("rms_norm_folding", MAX_THREADS_PER_BLOCK),
+            _ => ("rms_norm_general", MAX_THREADS_PER_BLOCK),
+        };
         let global_workoffset = [0];
-        let global_worksize = [n as usize];
-        let local_worksize = [n as usize];
+        let global_worksize = [(n * local_worksize_y) as usize];
+        let local_worksize = [local_worksize_y];
+
         let mut kernel = self.0.get_kernel(name).unwrap();
         _queue_alloc.queue().finish();
 
@@ -93,7 +97,7 @@ impl crate::Operator for Operator {
             .set_arg(3, (nsx / 4) as cl_int)
             .set_arg(4, w_base)
             .set_arg(5, epsilon);
-        if name == "rms_norm_fortest" {
+        if name == "rms_norm_folding" || name == "rms_norm_general" {
             kernel.set_arg(6, d as cl_int);
         }
         kernel.launch(
@@ -175,7 +179,7 @@ mod test {
                 let queue = context.queue();
                 let mut cl_op = Operator::new(&ClDevice::new(context.clone()));
 
-                for k in 11..=11 {
+                for k in 2..=12 {
                     let n = 5;
                     let d = 1 << k;
 
@@ -254,6 +258,18 @@ mod test {
                     let ([], y_ans, []) = (unsafe { map.align_to::<f32>() }) else {
                         panic!()
                     };
+
+                    // for (index, i) in y_ans.iter().enumerate() {
+                    //     print!("{}: {} ", index + 1, i);
+                    // }
+                    // println!();
+                    // println!();
+                    // for (index, i) in y_ref.iter().enumerate() {
+                    //     print!("{}: {} ", index + 1, i);
+                    // }
+                    // println!();
+                    // println!();
+
                     let diff = y_ref
                         .into_par_iter()
                         .zip(y_ans)
@@ -265,7 +281,8 @@ mod test {
                     diff.into_iter().for_each(|diff| ec.push(diff));
                     println!("{ec}");
                     println!("cl: {cl_time:?} / cpu: {cpu_time:?}");
-
+                    // let ee = ec.outliers();
+                    // println!("ee: {ee:?}");
                     let (out, count) = ec.summary();
                     assert!(out * 1000 <= count);
                     // assert!(2 <= 1);
