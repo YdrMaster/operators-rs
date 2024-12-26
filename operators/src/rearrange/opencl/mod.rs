@@ -12,6 +12,8 @@ pub struct Operator(KernelCache);
 
 impl Rearrange<ClDevice> for Operator {}
 
+const MAX_THREADS_PER_BLOCK: usize = 512;
+
 impl crate::Operator for Operator {
     type Hardware = ClDevice;
     type TopoNode = ClDevice;
@@ -28,7 +30,7 @@ impl crate::Operator for Operator {
         _args: &Self::Args,
         _max_workspace_size: usize,
     ) -> Result<usize, SchemeError> {
-        let kernel_name = "rearrange";
+        let kernel_name = "rearrangev2";
         self.0
             .set_kernel(kernel_name, self.0.get_kernel(kernel_name).unwrap());
         Ok(0)
@@ -125,13 +127,21 @@ impl crate::Operator for Operator {
                     src_cs: src_cs as _,
                 }
             }
-            _ => Err(rank_not_support("rearrange not support ndim > 2 on NV GPU"))?,
+            _ => Err(rank_not_support(
+                "rearrange not support ndim > 2 on Mobile GPU",
+            ))?,
         };
 
-        let name = "rearrange";
+        let unit_size = unit / 4;
+        let items_per_thread = unit_size.div_ceil(MAX_THREADS_PER_BLOCK);
+        let local_worksize_y = match items_per_thread {
+            1 => unit_size,
+            _ => MAX_THREADS_PER_BLOCK,
+        };
+        let name = "rearrangev2";
         let global_workoffset = [0];
-        let global_worksize = [(r * c * (unit as u32) / 128) as usize];
-        let local_worksize = [(unit / 128) as usize]; //32*4字节
+        let global_worksize = [(r * c * (unit_size as u32)) as usize];
+        let local_worksize = [local_worksize_y]; //32*4字节
 
         let mut kernel = self.0.get_kernel(name).unwrap();
 
@@ -140,7 +150,6 @@ impl crate::Operator for Operator {
         let dst_cs = dst_cs / unit;
         let src_rs = src_rs / unit;
         let src_cs = src_cs / unit;
-        let items = 32;
 
         kernel
             .set_arg(0, args.dst_base)
@@ -150,7 +159,7 @@ impl crate::Operator for Operator {
             .set_arg(4, src_rs as cl_int)
             .set_arg(5, src_cs as cl_int)
             .set_arg(6, c as cl_int)
-            .set_arg(7, items as cl_int)
+            .set_arg(7, unit_size as cl_int)
             .launch(
                 &global_workoffset,
                 &global_worksize,
