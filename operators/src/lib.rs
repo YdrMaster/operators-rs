@@ -3,6 +3,7 @@
 mod common;
 mod handle;
 
+pub mod add;
 pub mod add_rows;
 pub mod all_reduce;
 pub mod attention;
