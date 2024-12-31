@@ -18,6 +18,7 @@ ndarray-layout = "0.0"
 rayon = "1.10"
 lru = "0.12"
 num-traits = "0.2"
+itertools = "0.13"
 half = "2.4"
 log = "0.4"
 

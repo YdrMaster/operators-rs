@@ -3,6 +3,7 @@
 mod common;
 mod handle;
 
+pub mod add;
 pub mod add_rows;
 pub mod all_reduce;
 pub mod attention;
@@ -11,10 +12,8 @@ pub mod broadcast;
 pub mod conv;
 pub mod fuesd_softmax;
 pub mod gelu;
-pub mod gpt2_mlp;
 pub mod layer_norm;
 pub mod mat_mul;
-pub mod mlp;
 pub mod random_sample;
 pub mod rearrange;
 pub mod rms_norm;
