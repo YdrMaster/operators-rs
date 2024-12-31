@@ -281,12 +281,12 @@ mod test {
 
         let dst_ans = gpu.apply(|ctx| {
             let stream = ctx.stream();
-            #[cfg(use_cuda)]
-            let compute_ctx = ctx.stream();
+            #[cfg(use_nvidia)]
+            let rt = ctx.stream();
             #[cfg(use_iluvatar)]
-            let compute_ctx = ctx;
-            let src = compute_ctx.from_host(&src);
-            let mut dst = compute_ctx.malloc::<u8>(src.len());
+            let rt = ctx;
+            let src = rt.from_host(&src);
+            let mut dst = rt.malloc::<u8>(src.len());
             gpu_op
                 .launch(
                     &args(

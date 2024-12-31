@@ -109,14 +109,14 @@ mod test {
 
         let o_ans = gpu.apply(|ctx| {
             let stream = ctx.stream();
-            #[cfg(use_cuda)]
-            let compute_ctx = ctx.stream();
+            #[cfg(use_nvidia)]
+            let rt = ctx.stream();
             #[cfg(use_iluvatar)]
-            let compute_ctx = ctx;
+            let rt = ctx;
             let mut q = cast_load(&q, f16::from_f64, &stream);
             let k = cast_load(&k, f16::from_f64, &stream);
             let v = cast_load(&v, f16::from_f64, &stream);
-            let mut o = compute_ctx.malloc::<f16>(o.len());
+            let mut o = rt.malloc::<f16>(o.len());
             let mut k_cache = cast_load(&k_cache, f16::from_f64, &stream);
             let mut v_cache = cast_load(&v_cache, f16::from_f64, &stream);
             gpu_op

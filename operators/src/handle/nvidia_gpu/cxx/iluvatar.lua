@@ -1,9 +1,3 @@
-option("iluvatar") --目前的作用只是一个标识符，判断是否开启天数编译
-    set_default("auto") -- 默认值
-    set_showmenu(true) -- 是否显示在菜单中
-    set_category("ILUVATAR   SDK Configuration") -- 分类名称
-    set_description(" The ILUVATAR  SDK Directory (default: auto)") -- 描述信息
-
 toolchain("iluvatar.toolchain")
     set_toolset("cc"  , "clang"  )
     set_toolset("cxx" , "clang++")
@@ -41,13 +35,9 @@ target("lib")
     set_optimize("aggressive")
     set_languages("cxx17")
     add_files("src.cu")
-    -- if has_config("iluvatar") then
-        -- 如果配置了 Iluvatar，则按照 Iluvatar 的方式编译
-        set_toolchains("iluvatar.toolchain")
-        add_rules("iluvatar.env")
-        set_values("cuda.rdc", false)
-        add_links("cudart")   -- 首选动态链接 cudart 以免链接 cudart_static
-    -- end
-
+    -- 如果配置了 Iluvatar，则按照 Iluvatar 的方式编译
+    set_toolchains("iluvatar.toolchain")
+    add_rules("iluvatar.env")
+    set_values("cuda.rdc", false)
+    add_links("cudart")   -- 首选动态链接 cudart 以免链接 cudart_static
 target_end()
-

@@ -4,7 +4,7 @@
 pub mod common_cpu;
 #[cfg(use_infini)]
 pub mod infini;
-#[cfg(use_gpu)]
+#[cfg(use_cuda)]
 pub mod nvidia_gpu;
 #[cfg(use_cl)]
 pub mod opencl;

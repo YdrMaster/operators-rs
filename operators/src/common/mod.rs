@@ -27,7 +27,7 @@ pub mod utils {
     use super::{rank_not_support, shape_mismatch, type_mismatch, MaybeDyn, SchemeError};
     use digit_layout::DigitLayout;
 
-    #[cfg(use_gpu)]
+    #[cfg(use_cuda)]
     #[inline]
     pub(crate) const fn gcd(mut a: usize, mut b: usize) -> usize {
         while b != 0 {

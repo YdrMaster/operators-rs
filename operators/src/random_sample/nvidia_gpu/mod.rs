@@ -271,12 +271,12 @@ fn test_compute() {
     {
         let kv_ans = gpu.apply(|ctx| {
             let stream = ctx.stream();
-            #[cfg(use_cuda)]
-            let compute_ctx = ctx.stream();
+            #[cfg(use_nvidia)]
+            let rt = ctx.stream();
             #[cfg(use_iluvatar)]
-            let compute_ctx = ctx;
-            let logits = compute_ctx.from_host(&logits);
-            let mut kv = compute_ctx.malloc::<KVPair>(1);
+            let rt = ctx;
+            let logits = rt.from_host(&logits);
+            let mut kv = rt.malloc::<KVPair>(1);
 
             gpu_op
                 .launch(
@@ -321,13 +321,13 @@ fn test_compute() {
         let seed = 0.75;
         let kv_ans = gpu.apply(|ctx| {
             let stream = ctx.stream();
-            #[cfg(use_cuda)]
-            let compute_ctx = ctx.stream();
+            #[cfg(use_nvidia)]
+            let rt = ctx.stream();
             #[cfg(use_iluvatar)]
-            let compute_ctx = ctx;
-            let logits = compute_ctx.from_host(&logits);
+            let rt = ctx;
+            let logits = rt.from_host(&logits);
             let indices = Operator::build_indices(n, &stream).mem;
-            let mut kv = compute_ctx.malloc::<KVPair>(1);
+            let mut kv = rt.malloc::<KVPair>(1);
 
             gpu_op
                 .launch(

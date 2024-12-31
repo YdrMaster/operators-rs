@@ -57,7 +57,14 @@ pub(super) fn cache_lib(key: &Key, code: impl FnOnce() -> String) -> Arc<Library
     let compile = if fs::read_to_string(&src).is_ok_and(|s| s == code) {
         !lib.exists()
     } else {
-        fs::write(dir.join("xmake.lua"), include_str!("cxx/xmake.lua")).unwrap();
+        if cfg!(use_nvidia) {
+            fs::write(dir.join("xmake.lua"), include_str!("cxx/nv.lua")).unwrap();
+        } else if cfg!(use_iluvatar) {
+            fs::write(dir.join("xmake.lua"), include_str!("cxx/iluvatar.lua")).unwrap();
+        } else {
+            unreachable!()
+        }
+
         fs::write(src, code).unwrap();
         true
     };
@@ -113,7 +120,7 @@ See [this page](https://xmake.io/#/getting_started?id=installation) to install x
 fn xmake_config(dir: impl AsRef<Path>, arch: impl fmt::Display) {
     let mut cmd = Command::new("xmake");
 
-    let output = if cfg!(use_cuda) {
+    let output = if cfg!(use_nvidia) {
         cmd.arg("config").arg("--toolchain=cuda");
         if let Ok(cuda_root) = std::env::var("CUDA_ROOT") {
             cmd.arg(format!("--cuda={cuda_root}"));
@@ -127,7 +134,6 @@ fn xmake_config(dir: impl AsRef<Path>, arch: impl fmt::Display) {
             .unwrap()
     } else if cfg!(use_iluvatar) {
         cmd.arg("config")
-            .arg("--iluvatar=y")
             .current_dir(&dir)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())

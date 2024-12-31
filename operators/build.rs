@@ -7,9 +7,10 @@ fn main() {
     let cpu = Cfg::new("use_cpu");
     let cl = Cfg::new("use_cl");
     let infini = Cfg::new("use_infini");
-    let cuda = Cfg::new("use_cuda");
+    let cuda = Cfg::new("use_nvidia");
     let nccl = Cfg::new("use_nccl");
     let iluvatar = Cfg::new("use_iluvatar");
+    let _ = Cfg::new("use_cuda");
     if cfg!(feature = "common-cpu") {
         cpu.define();
     }
@@ -25,13 +26,13 @@ fn main() {
     }
     if cfg!(feature = "nvidia-gpu") && find_cuda_root().is_some() {
         cuda.define();
-        Cfg::new("use_gpu").define();
+        Cfg::new("use_cuda").define();
         if find_nccl_root().is_some() {
             nccl.define();
         }
     }
     if cfg!(feature = "iluvatar-gpu") && find_corex().is_some() {
-        Cfg::new("use_gpu").define();
+        Cfg::new("use_cuda").define();
         iluvatar.define();
     }
 }

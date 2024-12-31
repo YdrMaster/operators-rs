@@ -4,7 +4,7 @@ mod module;
 mod nccl;
 
 use crate::{Alloc, Hardware, Pool, QueueAlloc, QueueOf, SchemeDiversity};
-#[cfg(use_cuda)]
+#[cfg(use_nvidia)]
 use cublas::CublasLtSpore;
 use cublas::{Cublas, CublasSpore};
 use cuda::{
@@ -45,7 +45,7 @@ impl<'ctx> Alloc<DevMem<'ctx>> for &'ctx CurrentCtx {
     #[inline]
     fn free(&self, _mem: DevMem<'ctx>) {}
 }
-#[cfg(use_cuda)]
+#[cfg(use_nvidia)]
 impl<'ctx> Alloc<DevMem<'ctx>> for Stream<'ctx> {
     #[inline]
     fn alloc(&self, size: usize) -> DevMem<'ctx> {
@@ -57,7 +57,7 @@ impl<'ctx> Alloc<DevMem<'ctx>> for Stream<'ctx> {
         mem.drop_on(self)
     }
 }
-#[cfg(use_cuda)]
+#[cfg(use_nvidia)]
 impl<'ctx> QueueAlloc for Stream<'ctx> {
     type Hardware = Gpu;
     type DevMem = DevMem<'ctx>;
@@ -112,7 +112,7 @@ impl Gpu {
             context,
             config,
             cublas: Default::default(),
-            #[cfg(use_cuda)]
+            #[cfg(use_nvidia)]
             cublas_lt: Default::default(),
             modules: Default::default(),
         }))
@@ -136,7 +136,7 @@ pub(crate) struct Handle {
     #[allow(dead_code)]
     config: Config,
     cublas: Pool<CublasSpore>,
-    #[cfg(use_cuda)]
+    #[cfg(use_nvidia)]
     cublas_lt: Pool<CublasLtSpore>,
     modules: RwLock<HashMap<Key, Weak<ModuleBox>>>,
 }
@@ -229,7 +229,7 @@ impl Drop for Handle {
             while let Some(cublas) = self.cublas.pop() {
                 drop(cublas.sprout(ctx));
             }
-            #[cfg(use_cuda)]
+            #[cfg(use_nvidia)]
             while let Some(cublas) = self.cublas_lt.pop() {
                 drop(cublas.sprout(ctx));
             }
@@ -272,7 +272,7 @@ where
     let host = unsafe { std::slice::from_raw_parts_mut(host.as_mut_ptr().cast(), val.len()) };
     host.into_iter().zip(val).for_each(|(y, x)| *y = f(*x));
 
-    #[cfg(use_cuda)]
+    #[cfg(use_nvidia)]
     let mem = stream.from_host(host);
     #[cfg(use_iluvatar)]
     let mem = stream.ctx().from_host(host);

@@ -318,10 +318,11 @@ mod test {
 
             let y_ans = gpu.apply(|ctx| {
                 let stream = ctx.stream();
-                #[cfg(use_cuda)]
-                let mut y = stream.malloc::<f16>(n * d);
+                #[cfg(use_nvidia)]
+                let rt = ctx.stream();
                 #[cfg(use_iluvatar)]
-                let mut y = ctx.malloc::<f16>(n * d);
+                let rt = ctx;
+                let mut y = rt.malloc::<f16>(n * d);
                 let x = cast_load(&x, f16::from_f64, &stream);
                 let w = cast_load(&w, |x| x as f32, &stream);
                 gpu_op
