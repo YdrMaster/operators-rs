@@ -4,8 +4,6 @@ mod module;
 mod nccl;
 
 use crate::{Alloc, Hardware, Pool, QueueAlloc, QueueOf, SchemeDiversity};
-#[cfg(use_nvidia)]
-use cublas::CublasLtSpore;
 use cublas::{Cublas, CublasSpore};
 use cuda::{
     self, AsRaw, Context, ContextResource, ContextSpore, CurrentCtx, DevMem, Device, Stream,
@@ -13,9 +11,7 @@ use cuda::{
 };
 use digit_layout::DigitLayout;
 use libloading::Library;
-pub(crate) use library::{EXPORT, EXPORT_H};
 use lru::LruCache;
-pub(crate) use module::ModuleBox;
 use std::{
     collections::HashMap,
     hash::Hash,
@@ -23,8 +19,11 @@ use std::{
     sync::{Arc, Mutex, RwLock, Weak},
 };
 
-#[cfg(use_nccl)]
-pub use nccl::NcclNode;
+pub(crate) use library::{EXPORT, EXPORT_H};
+pub(crate) use module::ModuleBox;
+
+#[cfg(use_nvidia)]
+use cublas::CublasLtSpore;
 
 #[cfg(use_nccl)]
 pub use nccl::NcclNode;

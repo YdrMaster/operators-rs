@@ -1,8 +1,9 @@
-use super::{args::Meta, Args, Gelu};
-use crate::{get_static, infini::Device, ByteOf, LaunchError, QueueAlloc, SchemeError};
-use infini_op::{infiniop, AsRaw, Descriptor, Handle};
+use super::{Args, Gelu};
+use crate::{infini::Device, ByteOf, LaunchError, QueueAlloc, SchemeError};
+use infini_op::Handle;
 use std::sync::Arc;
 
+#[repr(transparent)]
 pub struct Operator(Arc<Handle>);
 
 impl Gelu<Device> for Operator {}

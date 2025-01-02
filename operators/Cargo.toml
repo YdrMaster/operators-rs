@@ -10,7 +10,7 @@ common-cpu = ["gemm"]
 opencl = ["clrt"]
 infini = ["infini-rt", "infini-op", "infini-ccl"]
 nvidia-gpu = ["cuda", "cublas", "nccl", "fslock", "libloading"]
-iluvatar-gpu=  ["cuda", "cublas", "fslock", "libloading"]
+iluvatar-gpu = ["cuda", "cublas", "fslock", "libloading"]
 
 [dependencies]
 digit-layout = "0.2"

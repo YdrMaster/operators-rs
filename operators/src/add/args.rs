@@ -84,9 +84,8 @@ impl Scheme {
                     "c: {:?}, a: {:?}, b: {:?}",
                     c.shape(),
                     a.shape(),
-                    b.shape()
-                ))
-                .into());
+                    b.shape(),
+                )));
             }
             // 剔除初始的 1 长维度
             if d != 1 {
@@ -147,15 +146,22 @@ impl Scheme {
         }
         // # 合并空间
         let mut layout = vec![0isize; 1 + ndim * 4].into_boxed_slice();
-        for (i, Dim { d, c, a, b }) in dims.into_iter().filter(|d| d.d != 1).enumerate() {
-            layout[0 + ndim * 0 + i] = d as _;
-            layout[1 + ndim * 1 + i] = c;
-            layout[1 + ndim * 2 + i] = a;
-            layout[1 + ndim * 3 + i] = b;
-        }
-        layout[ndim] = 1;
-        for i in (1..=ndim).rev() {
-            layout[i - 1] *= layout[i];
+        {
+            let (idx, tail) = layout.split_at_mut(1 + ndim);
+            let (c_, tail) = tail.split_at_mut(ndim);
+            let (a_, b_) = tail.split_at_mut(ndim);
+            for (Dim { d, c, a, b }, idx, c_, a_, b_) in
+                izip!(dims.into_iter().filter(|d| d.d != 1), &mut *idx, c_, a_, b_)
+            {
+                *idx = d as _;
+                *c_ = c;
+                *a_ = a;
+                *b_ = b;
+            }
+            idx[ndim] = 1;
+            for i in (1..=ndim).rev() {
+                idx[i - 1] *= idx[i];
+            }
         }
         Ok(Self(dt, layout))
     }
