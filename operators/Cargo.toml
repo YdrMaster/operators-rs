@@ -5,11 +5,12 @@ edition = "2021"
 authors = ["YdrMaster <ydrml@hotmail.com>"]
 
 [features]
-default = ["common-cpu", "opencl", "infini", "nvidia-gpu"]
+default = ["common-cpu", "opencl", "infini", "nvidia-gpu", "iluvatar-gpu"]
 common-cpu = ["gemm"]
 opencl = ["clrt"]
 infini = ["infini-rt", "infini-op", "infini-ccl"]
 nvidia-gpu = ["cuda", "cublas", "nccl", "fslock", "libloading"]
+iluvatar-gpu=  ["cuda", "cublas", "fslock", "libloading"]
 
 [dependencies]
 digit-layout = "0.2"
@@ -40,6 +41,7 @@ build-script-cfg = "0.0"
 search-cl-tools.workspace = true
 search-infini-tools.workspace = true
 search-cuda-tools.workspace = true
+search-corex-tools.workspace = true
 
 [dev-dependencies]
 gemm = "0.18"

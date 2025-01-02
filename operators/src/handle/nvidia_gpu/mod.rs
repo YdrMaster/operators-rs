@@ -4,14 +4,18 @@ mod module;
 mod nccl;
 
 use crate::{Alloc, Hardware, Pool, QueueAlloc, QueueOf, SchemeDiversity};
-use cublas::{Cublas, CublasLtSpore, CublasSpore};
+#[cfg(use_nvidia)]
+use cublas::CublasLtSpore;
+use cublas::{Cublas, CublasSpore};
 use cuda::{
     self, AsRaw, Context, ContextResource, ContextSpore, CurrentCtx, DevMem, Device, Stream,
     Version,
 };
 use digit_layout::DigitLayout;
 use libloading::Library;
+pub(crate) use library::{EXPORT, EXPORT_H};
 use lru::LruCache;
+pub(crate) use module::ModuleBox;
 use std::{
     collections::HashMap,
     hash::Hash,
@@ -19,8 +23,8 @@ use std::{
     sync::{Arc, Mutex, RwLock, Weak},
 };
 
-pub(crate) use library::{EXPORT, EXPORT_H};
-pub(crate) use module::ModuleBox;
+#[cfg(use_nccl)]
+pub use nccl::NcclNode;
 
 #[cfg(use_nccl)]
 pub use nccl::NcclNode;
@@ -41,7 +45,7 @@ impl<'ctx> Alloc<DevMem<'ctx>> for &'ctx CurrentCtx {
     #[inline]
     fn free(&self, _mem: DevMem<'ctx>) {}
 }
-
+#[cfg(use_nvidia)]
 impl<'ctx> Alloc<DevMem<'ctx>> for Stream<'ctx> {
     #[inline]
     fn alloc(&self, size: usize) -> DevMem<'ctx> {
@@ -53,7 +57,28 @@ impl<'ctx> Alloc<DevMem<'ctx>> for Stream<'ctx> {
         mem.drop_on(self)
     }
 }
+#[cfg(use_nvidia)]
+impl<'ctx> QueueAlloc for Stream<'ctx> {
+    type Hardware = Gpu;
+    type DevMem = DevMem<'ctx>;
+    #[inline]
+    fn queue(&self) -> &QueueOf<Self::Hardware> {
+        self
+    }
+}
+#[cfg(use_iluvatar)]
+impl<'ctx> Alloc<DevMem<'ctx>> for Stream<'ctx> {
+    #[inline]
+    fn alloc(&self, size: usize) -> DevMem<'ctx> {
+        self.ctx().malloc::<u8>(size)
+    }
 
+    #[inline]
+    fn free(&self, mem: DevMem<'ctx>) {
+        drop(mem)
+    }
+}
+#[cfg(use_iluvatar)]
 impl<'ctx> QueueAlloc for Stream<'ctx> {
     type Hardware = Gpu;
     type DevMem = DevMem<'ctx>;
@@ -87,11 +112,11 @@ impl Gpu {
             context,
             config,
             cublas: Default::default(),
+            #[cfg(use_nvidia)]
             cublas_lt: Default::default(),
             modules: Default::default(),
         }))
     }
-
     #[inline]
     pub fn apply<T>(&self, f: impl FnOnce(&CurrentCtx) -> T) -> T {
         self.0.context.apply(f)
@@ -108,8 +133,10 @@ impl Gpu {
 
 pub(crate) struct Handle {
     context: Context,
+    #[allow(dead_code)]
     config: Config,
     cublas: Pool<CublasSpore>,
+    #[cfg(use_nvidia)]
     cublas_lt: Pool<CublasLtSpore>,
     modules: RwLock<HashMap<Key, Weak<ModuleBox>>>,
 }
@@ -121,7 +148,7 @@ impl Handle {
     pub fn device(&self) -> Device {
         self.context.device()
     }
-
+    #[allow(dead_code)]
     pub fn cublas(&self, stream: &Stream, f: impl FnOnce(&Cublas)) {
         let ctx = stream.ctx();
         unsafe { assert_eq!(ctx.as_raw(), self.context.as_raw()) };
@@ -136,7 +163,7 @@ impl Handle {
 
         self.cublas.push(cublas.sporulate());
     }
-
+    #[allow(dead_code)]
     pub fn cublas_init(&self) {
         self.cublas.push(
             self.cublas
@@ -171,7 +198,7 @@ impl Handle {
             }
         }
     }
-
+    #[allow(dead_code)]
     pub fn compile(
         self: &Arc<Self>,
         name: impl AsRef<str>,
@@ -180,7 +207,7 @@ impl Handle {
     ) -> Arc<Library> {
         library::cache_lib(&(name.as_ref().to_string(), cc), code)
     }
-
+    #[allow(dead_code)]
     pub fn scheme_cache<K: Hash + Eq, V>(
         &self,
         diversity: SchemeDiversity,
@@ -195,7 +222,6 @@ impl Handle {
         ))
     }
 }
-
 impl Drop for Handle {
     fn drop(&mut self) {
         assert!(self.modules.read().unwrap().is_empty());
@@ -203,13 +229,13 @@ impl Drop for Handle {
             while let Some(cublas) = self.cublas.pop() {
                 drop(cublas.sprout(ctx));
             }
+            #[cfg(use_nvidia)]
             while let Some(cublas) = self.cublas_lt.pop() {
                 drop(cublas.sprout(ctx));
             }
         });
     }
 }
-
 pub(crate) fn dt_name(dt: DigitLayout) -> &'static str {
     use digit_layout::types as ty;
     match dt {
@@ -245,5 +271,10 @@ where
     let mut host = stream.ctx().malloc_host::<U>(val.len());
     let host = unsafe { std::slice::from_raw_parts_mut(host.as_mut_ptr().cast(), val.len()) };
     host.into_iter().zip(val).for_each(|(y, x)| *y = f(*x));
-    stream.from_host(host)
+
+    #[cfg(use_nvidia)]
+    let mem = stream.from_host(host);
+    #[cfg(use_iluvatar)]
+    let mem = stream.ctx().from_host(host);
+    mem
 }

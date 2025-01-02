@@ -39,8 +39,10 @@ pub extern crate infini_rt;
 pub use handle::nvidia_gpu;
 #[cfg(use_cuda)]
 pub extern crate cublas;
+
 #[cfg(use_cuda)]
 pub extern crate cuda;
+
 #[cfg(use_nccl)]
 pub extern crate nccl;
 

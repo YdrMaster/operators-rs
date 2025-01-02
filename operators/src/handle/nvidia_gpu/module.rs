@@ -1,4 +1,4 @@
-﻿use super::{Handle, Key};
+use super::{Handle, Key};
 use cuda::{
     bindings::nvrtcResult, ContextResource, ContextSpore, CurrentCtx, Dim3, KernelFn, ModuleSpore,
     Ptx, Stream,
@@ -76,7 +76,6 @@ fn cache_ptx(key: &Key, code: impl FnOnce() -> String) -> Result<Arc<Ptx>, (nvrt
     if let Some(ptx) = cache.read().unwrap().get(key) {
         return Ok(ptx.clone());
     }
-
     let (ptx, log) = Ptx::compile(code(), key.1);
     match ptx {
         Ok(ptx) => {

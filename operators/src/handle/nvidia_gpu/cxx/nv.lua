@@ -11,3 +11,4 @@ target("lib")
 
     set_languages("cxx17")
     add_files("src.cu")
+target_end()

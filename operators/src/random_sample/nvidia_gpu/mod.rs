@@ -1,4 +1,4 @@
-﻿mod ffi;
+mod ffi;
 
 use super::{
     args::{Meta, SampleArgs},
@@ -271,9 +271,12 @@ fn test_compute() {
     {
         let kv_ans = gpu.apply(|ctx| {
             let stream = ctx.stream();
-
-            let logits = stream.from_host(&logits);
-            let mut kv = stream.malloc::<KVPair>(1);
+            #[cfg(use_nvidia)]
+            let rt = ctx.stream();
+            #[cfg(use_iluvatar)]
+            let rt = ctx;
+            let logits = rt.from_host(&logits);
+            let mut kv = rt.malloc::<KVPair>(1);
 
             gpu_op
                 .launch(
@@ -318,10 +321,13 @@ fn test_compute() {
         let seed = 0.75;
         let kv_ans = gpu.apply(|ctx| {
             let stream = ctx.stream();
-
-            let logits = stream.from_host(&logits);
+            #[cfg(use_nvidia)]
+            let rt = ctx.stream();
+            #[cfg(use_iluvatar)]
+            let rt = ctx;
+            let logits = rt.from_host(&logits);
             let indices = Operator::build_indices(n, &stream).mem;
-            let mut kv = stream.malloc::<KVPair>(1);
+            let mut kv = rt.malloc::<KVPair>(1);
 
             gpu_op
                 .launch(
