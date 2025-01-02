@@ -1,6 +1,6 @@
 use super::{args::SchemeLayout, Args, MatMul};
 use crate::{
-    nvidia_gpu::{Gpu, Handle},
+    cuda::{Gpu, Handle},
     type_not_support, ByteOf, LaunchError, QueueAlloc, SchemeError,
 };
 use cublas::cublas;
@@ -167,7 +167,7 @@ mod test {
         use super::{super::common_cpu::Operator as RefOp, Gpu, Operator};
         use crate::{
             common_cpu::{Cpu, ThisThread},
-            nvidia_gpu::cast_load,
+            cuda::cast_load,
             test_utils::{Diff, ErrorCollector},
             Operator as _,
         };

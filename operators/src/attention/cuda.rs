@@ -1,4 +1,4 @@
-impl_op!(nvidia_gpu, Gpu);
+impl_op!(cuda, Gpu);
 
 #[cfg(test)]
 mod test {
@@ -6,7 +6,7 @@ mod test {
         super::{args::Meta, Args},
         Operator,
     };
-    use crate::{nvidia_gpu::Gpu, ByteOf, Hardware, Operator as _, TensorLayout};
+    use crate::{cuda::Gpu, ByteOf, Hardware, Operator as _, TensorLayout};
     use digit_layout::{types as ty, DigitLayout};
 
     fn dyn_args<H: Hardware>(dt: DigitLayout, nh: usize, seq: usize, att: usize) -> Args<H> {
@@ -63,7 +63,7 @@ mod test {
         use super::super::common_cpu::Operator as RefOp;
         use crate::{
             common_cpu::{Cpu, ThisThread},
-            nvidia_gpu::cast_load,
+            cuda::cast_load,
             test_utils::{Diff, ErrorCollector},
         };
         use cuda::memcpy_d2h;

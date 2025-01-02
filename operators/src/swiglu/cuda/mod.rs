@@ -1,8 +1,7 @@
-﻿use super::{args::Meta, Args, Swiglu};
+use super::{args::Meta, Args, Swiglu};
 use crate::{
-    get_static,
-    nvidia_gpu::{Gpu, Handle, ModuleBox},
-    strides_not_support, type_not_support,
+    cuda::{Gpu, Handle, ModuleBox},
+    get_static, strides_not_support, type_not_support,
     utils::gcd,
     ByteOf, LaunchError, QueueAlloc, SchemeError,
 };
@@ -177,7 +176,7 @@ mod test {
         use super::super::common_cpu::Operator as RefOp;
         use crate::{
             common_cpu::{Cpu, ThisThread},
-            nvidia_gpu::cast_load,
+            cuda::cast_load,
             test_utils::{Diff, ErrorCollector},
         };
         use cuda::memcpy_d2h;

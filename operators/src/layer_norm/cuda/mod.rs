@@ -1,9 +1,9 @@
-use super::{Args, Gelu};
-use crate::{nvidia_gpu::Gpu, ByteOf, LaunchError, QueueAlloc, SchemeError};
+﻿use super::{Args, LayerNorm};
+use crate::{cuda::Gpu, ByteOf, LaunchError, QueueAlloc, SchemeError};
 
 pub struct Operator;
 
-impl Gelu<Gpu> for Operator {}
+impl LayerNorm<Gpu> for Operator {}
 
 impl crate::Operator for Operator {
     type Hardware = Gpu;

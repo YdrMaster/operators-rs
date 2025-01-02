@@ -1,5 +1,5 @@
 ﻿use super::{AddRows, Args};
-use crate::{nvidia_gpu::Gpu, ByteOf, LaunchError, QueueAlloc, SchemeError};
+use crate::{cuda::Gpu, ByteOf, LaunchError, QueueAlloc, SchemeError};
 
 pub struct Operator;
 

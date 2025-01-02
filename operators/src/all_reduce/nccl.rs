@@ -1,6 +1,6 @@
 ﻿use super::{args::Meta, AllReduce, Args, ReduceOp};
 use crate::{
-    nvidia_gpu::{Gpu, NcclNode},
+    cuda::{Gpu, NcclNode},
     rearrange, ByteOf, LaunchError, QueueAlloc, SchemeError,
 };
 use std::{

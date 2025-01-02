@@ -1,9 +1,8 @@
 use super::{args::Meta, fill_pos, Args, Rope, Seq, SinCosTable};
 use crate::{
-    get_static,
-    nvidia_gpu::{Gpu, Handle, ModuleBox},
-    shape_not_support, strides_not_support, type_not_support, Blob, ByteOf, LaunchError,
-    QueueAlloc, SchemeError,
+    cuda::{Gpu, Handle, ModuleBox},
+    get_static, shape_not_support, strides_not_support, type_not_support, Blob, ByteOf,
+    LaunchError, QueueAlloc, SchemeError,
 };
 use digit_layout::{types as ty, DigitLayout};
 use std::{ffi::CString, sync::Arc};
@@ -260,7 +259,7 @@ mod test {
         use super::super::common_cpu::Operator as RefOp;
         use crate::{
             common_cpu::{Cpu, ThisThread},
-            nvidia_gpu::cast_load,
+            cuda::cast_load,
             test_utils::{Diff, ErrorCollector},
         };
         use cuda::memcpy_d2h;

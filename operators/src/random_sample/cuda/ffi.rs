@@ -34,7 +34,7 @@ type SampleFunc = unsafe extern "C" fn(
 macro_rules! extern_c {
     ($ty:ty; $lib:expr, $name:expr; $($args:expr),* $(,)?) => {{
         let result = unsafe { $lib.get::<$ty>($name.as_bytes()).unwrap()( $( $args ),* ) };
-        if result == $crate::cuda::bindings::CUresult::CUDA_SUCCESS as _ {
+        if result == ::cuda::bindings::CUresult::CUDA_SUCCESS as _ {
             Ok(())
         } else {
             Err($crate::execution_failed(format!(
@@ -116,7 +116,7 @@ pub(super) fn format_code(
     argmax_name: &str,
     sample_name: &str,
 ) -> String {
-    use crate::nvidia_gpu::{EXPORT, EXPORT_H};
+    use crate::cuda::{EXPORT, EXPORT_H};
     const CODE: &str = include_str!("sample.cuh");
 
     format!(

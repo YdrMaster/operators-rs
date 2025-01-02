@@ -5,9 +5,9 @@ use super::{
     Args, Indices, RandomSample,
 };
 use crate::{
-    get_static,
-    nvidia_gpu::{dt_name, Gpu, Handle},
-    strides_not_support, ByteOf, LaunchError, QueueAlloc, SchemeDiversity, SchemeError, Workspace,
+    cuda::{dt_name, Gpu, Handle},
+    get_static, strides_not_support, ByteOf, LaunchError, QueueAlloc, SchemeDiversity, SchemeError,
+    Workspace,
 };
 use cuda::{DevByte, Stream};
 use digit_layout::DigitLayout;

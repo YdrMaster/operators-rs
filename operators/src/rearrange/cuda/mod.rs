@@ -1,6 +1,6 @@
 use super::{args::Scheme, Args, Rearrange};
 use crate::{
-    nvidia_gpu::{Gpu, Handle, ModuleBox},
+    cuda::{Gpu, Handle, ModuleBox},
     rank_not_support, shape_not_support, ByteOf, LaunchError, QueueAlloc, SchemeError,
 };
 use std::{

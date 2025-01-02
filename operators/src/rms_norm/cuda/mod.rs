@@ -1,9 +1,8 @@
-﻿use super::{args::Meta, Args, RmsNorm};
+use super::{args::Meta, Args, RmsNorm};
 use crate::{
-    get_static,
-    nvidia_gpu::{dt_name, Gpu, Handle, ModuleBox},
-    shape_not_support, strides_not_support, ByteOf, LaunchError, QueueAlloc, SchemeDiversity,
-    SchemeError,
+    cuda::{dt_name, Gpu, Handle, ModuleBox},
+    get_static, shape_not_support, strides_not_support, ByteOf, LaunchError, QueueAlloc,
+    SchemeDiversity, SchemeError,
 };
 use digit_layout::DigitLayout;
 use lru::LruCache;
@@ -289,7 +288,7 @@ mod test {
         use super::super::common_cpu::Operator as RefOp;
         use crate::{
             common_cpu::{Cpu, ThisThread},
-            nvidia_gpu::cast_load,
+            cuda::cast_load,
             test_utils::{Diff, ErrorCollector},
         };
         use cuda::memcpy_d2h;
