@@ -1,4 +1,5 @@
 mod blob;
+mod calculator;
 mod error;
 mod maybe_dyn;
 mod pool;
@@ -7,6 +8,7 @@ mod unsigned;
 mod workspace;
 
 pub use blob::Blob;
+pub use calculator::OffsetCalculator;
 pub use error::{functions::*, LaunchError, LaunchErrorKind, SchemeError, SchemeErrorKind};
 pub use maybe_dyn::{dyn_, DynVal, MaybeDyn};
 pub use pool::Pool;
