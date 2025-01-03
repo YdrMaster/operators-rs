@@ -71,7 +71,7 @@ impl<'ctx> StreamMemPool<'ctx> {
             stream,
             mem_pool: Rc::new(RefCell::new(MemPool {
                 pool: Vec::new(),
-                recorder: OffsetCalculator::new(alignment),
+                recorder: OffsetCalculator::new(if alignment == 0 { 256 } else { alignment }),
             })),
         }
     }
