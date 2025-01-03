@@ -1,24 +1,21 @@
+mod alloc;
 mod library;
 mod module;
 #[cfg(use_nccl)]
 mod nccl;
 
-use crate::{Alloc, Hardware, OffsetCalculator, Pool, QueueAlloc, QueueOf, SchemeDiversity};
+use crate::{Hardware, Pool, SchemeDiversity};
 use cublas::{Cublas, CublasSpore};
 use cuda::{
-    self, AsRaw, Context, ContextResource, ContextSpore, CurrentCtx, DevByte, DevMem, Device,
-    Stream, Version,
+    self, AsRaw, Context, ContextResource, ContextSpore, CurrentCtx, Device, Stream, Version,
 };
 use digit_layout::DigitLayout;
 use libloading::Library;
 use lru::LruCache;
 use std::{
-    cell::RefCell,
     collections::HashMap,
     hash::Hash,
     num::NonZeroUsize,
-    ops::{Deref, DerefMut, Range},
-    rc::Rc,
     sync::{Arc, Mutex, RwLock, Weak},
 };
 
@@ -31,137 +28,13 @@ use cublas::CublasLtSpore;
 #[cfg(use_nccl)]
 pub use nccl::NcclNode;
 
+pub use alloc::{MemPoolBlob, StreamMemPool};
+
 pub struct Gpu(pub(crate) Arc<Handle>);
 
 impl Hardware for Gpu {
     type Byte = cuda::DevByte;
     type Queue<'ctx> = cuda::Stream<'ctx>;
-}
-
-pub struct StreamMemPool<'ctx> {
-    stream: Stream<'ctx>,
-    mem_pool: Rc<RefCell<MemPool<'ctx>>>,
-}
-
-pub struct MemPool<'ctx> {
-    pool: Vec<DevMem<'ctx>>,
-    recorder: OffsetCalculator,
-}
-
-pub struct MemPoolBlob(Range<usize>);
-
-impl Deref for MemPoolBlob {
-    type Target = [DevByte];
-    #[inline]
-    fn deref(&self) -> &Self::Target {
-        unsafe { std::slice::from_raw_parts(self.0.start as _, self.0.len()) }
-    }
-}
-
-impl DerefMut for MemPoolBlob {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { std::slice::from_raw_parts_mut(self.0.start as _, self.0.len()) }
-    }
-}
-
-impl<'ctx> StreamMemPool<'ctx> {
-    pub fn new(stream: Stream<'ctx>) -> Self {
-        let alignment = stream.ctx().dev().alignment();
-        Self {
-            stream,
-            mem_pool: Rc::new(RefCell::new(MemPool {
-                pool: Vec::new(),
-                recorder: OffsetCalculator::new(if alignment == 0 { 256 } else { alignment }),
-            })),
-        }
-    }
-
-    pub fn put(&self, size: usize) {
-        let blob = self.stream.ctx().malloc::<u8>(size);
-        let area = blob.as_ptr_range();
-        let mut mem_pool = self.mem_pool.borrow_mut();
-        mem_pool.pool.push(blob);
-        mem_pool.recorder.put(&(area.start as _..area.end as _));
-    }
-}
-
-impl Alloc<MemPoolBlob> for StreamMemPool<'_> {
-    #[inline]
-    fn alloc(&self, size: usize) -> MemPoolBlob {
-        MemPoolBlob(
-            self.mem_pool
-                .borrow_mut()
-                .recorder
-                .take(size)
-                .expect("out of memory"),
-        )
-    }
-
-    #[inline]
-    fn free(&self, mem: MemPoolBlob) {
-        self.mem_pool.borrow_mut().recorder.put(&mem.0)
-    }
-}
-
-impl QueueAlloc for StreamMemPool<'_> {
-    type Hardware = Gpu;
-    type DevMem = MemPoolBlob;
-    #[inline]
-    fn queue(&self) -> &QueueOf<Self::Hardware> {
-        &self.stream
-    }
-}
-
-impl<'ctx> Alloc<DevMem<'ctx>> for &'ctx CurrentCtx {
-    #[inline]
-    fn alloc(&self, size: usize) -> DevMem<'ctx> {
-        self.malloc::<u8>(size)
-    }
-
-    #[inline]
-    fn free(&self, _mem: DevMem<'ctx>) {}
-}
-#[cfg(use_nvidia)]
-impl<'ctx> Alloc<DevMem<'ctx>> for Stream<'ctx> {
-    #[inline]
-    fn alloc(&self, size: usize) -> DevMem<'ctx> {
-        self.malloc::<u8>(size)
-    }
-
-    #[inline]
-    fn free(&self, mem: DevMem<'ctx>) {
-        mem.drop_on(self)
-    }
-}
-#[cfg(use_nvidia)]
-impl<'ctx> QueueAlloc for Stream<'ctx> {
-    type Hardware = Gpu;
-    type DevMem = DevMem<'ctx>;
-    #[inline]
-    fn queue(&self) -> &QueueOf<Self::Hardware> {
-        self
-    }
-}
-#[cfg(use_iluvatar)]
-impl<'ctx> Alloc<DevMem<'ctx>> for Stream<'ctx> {
-    #[inline]
-    fn alloc(&self, size: usize) -> DevMem<'ctx> {
-        self.ctx().malloc::<u8>(size)
-    }
-
-    #[inline]
-    fn free(&self, mem: DevMem<'ctx>) {
-        drop(mem)
-    }
-}
-#[cfg(use_iluvatar)]
-impl<'ctx> QueueAlloc for Stream<'ctx> {
-    type Hardware = Gpu;
-    type DevMem = DevMem<'ctx>;
-    #[inline]
-    fn queue(&self) -> &QueueOf<Self::Hardware> {
-        self
-    }
 }
 
 #[derive(Clone, Debug)]
