@@ -1,7 +1,8 @@
 ﻿use super::{args::Meta, AllReduce, Args, ReduceOp};
 use crate::{
     infini::{Device, InfiniNode},
-    rearrange, ByteOf, LaunchError, QueueAlloc, SchemeError,
+    rearrange::{self, infini::Operator as Rearrange},
+    ByteOf, LaunchError, QueueAlloc, SchemeError,
 };
 use digit_layout::types as ty;
 use infini_ccl::bindings::InfiniDataType_t;
@@ -10,8 +11,9 @@ use std::{
     sync::Arc,
 };
 
-pub struct Operator {
-    comm: Arc<infini_ccl::Comm>,
+pub enum Operator {
+    Rearrange(Rearrange),
+    Comm(Arc<infini_ccl::Comm>),
 }
 
 impl AllReduce<Device, InfiniNode> for Operator {}
@@ -22,8 +24,9 @@ impl crate::Operator for Operator {
     type Args = Args<Device>;
 
     fn new(node: &Self::TopoNode) -> Self {
-        Self {
-            comm: node.comm.clone(),
+        match node.comm.as_ref() {
+            Some(comm) => Self::Comm(comm.clone()),
+            None => Self::Rearrange(Rearrange::new(&node.device)),
         }
     }
 
@@ -38,33 +41,40 @@ impl crate::Operator for Operator {
     fn launch<QA>(
         &self,
         args: &Self::Args,
-        _workspace: &mut [ByteOf<Self::Hardware>],
+        workspace: &mut [ByteOf<Self::Hardware>],
         queue_alloc: &QA,
     ) -> Result<(), LaunchError>
     where
         QA: QueueAlloc<Hardware = Self::Hardware>,
     {
-        let Meta { dt, size } = args.meta()?;
-        let &Args {
-            pair: rearrange::Args {
-                dst_base, src_base, ..
-            },
-            op,
-            ..
-        } = args;
+        match self {
+            Self::Rearrange(rearrange) => rearrange.launch(&args.pair, workspace, queue_alloc),
+            Self::Comm(comm) => {
+                let Meta { dt, size } = args.meta()?;
+                let &Args {
+                    pair:
+                        rearrange::Args {
+                            dst_base, src_base, ..
+                        },
+                    op,
+                    ..
+                } = args;
 
-        assert_eq!(op, ReduceOp::Sum);
-        let len = dt.nbytes() * size;
-        self.comm.allreduce_sum(
-            unsafe { from_raw_parts_mut(dst_base, len) },
-            unsafe { from_raw_parts(src_base, len) },
-            match dt {
-                ty::F16 => InfiniDataType_t::INFINI_F16,
-                ty::F32 => InfiniDataType_t::INFINI_F32,
-                _ => todo!(),
-            },
-            queue_alloc.queue(),
-        );
-        Ok(())
+                assert_eq!(op, ReduceOp::Sum);
+                let len = dt.nbytes() * size;
+
+                comm.allreduce_sum(
+                    unsafe { from_raw_parts_mut(dst_base, len) },
+                    unsafe { from_raw_parts(src_base, len) },
+                    match dt {
+                        ty::F16 => InfiniDataType_t::INFINI_F16,
+                        ty::F32 => InfiniDataType_t::INFINI_F32,
+                        _ => todo!(),
+                    },
+                    queue_alloc.queue(),
+                );
+                Ok(())
+            }
+        }
     }
 }
