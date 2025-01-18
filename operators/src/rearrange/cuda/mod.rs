@@ -1,13 +1,22 @@
 use super::{args::Scheme, Args, Rearrange};
 use crate::{
     cuda::{Gpu, Handle, ModuleBox},
-    rank_not_support, shape_not_support, ByteOf, LaunchError, QueueAlloc, SchemeError,
+    rank_not_support, ByteOf, LaunchError, QueueAlloc, SchemeError,
 };
+use itertools::Itertools;
 use std::{
     ffi::CString,
     slice::{from_raw_parts, from_raw_parts_mut},
     sync::Arc,
 };
+struct Layout {
+    r: u32,
+    c: u32,
+    dst_rs: i32,
+    dst_cs: i32,
+    src_rs: i32,
+    src_cs: i32,
+}
 
 pub struct Operator {
     _handle: Arc<Handle>,
@@ -69,37 +78,82 @@ impl crate::Operator for Operator {
             return Ok(());
         }
 
-        let scheme = scheme.distribute_unit((0..=5).rev().map(|n| 32 * (1 << n)));
-        let unit = scheme.unit();
+        //----------------------------------------------------------------------
+        // 发现读取的最大连续内存和写入的最大连续内存
 
-        struct Layout {
-            r: u32,
-            c: u32,
-            dst_rs: i32,
-            dst_cs: i32,
-            src_rs: i32,
-            src_cs: i32,
+        // 发现最大的1 thread 处理的数据量
+        let scheme_update = scheme.distribute_unit((0..=5).rev().map(|n| (1 << n)));
+
+        let src_strides = scheme_update.src_strides();
+        let dst_strides = scheme_update.dst_strides();
+        let shape = scheme_update.shape().collect::<Vec<_>>();
+        let unit = scheme_update.unit();
+
+        // 计算写入的最大连续内存
+        let mut max_dst_contiguous = unit;
+        let mut max_dst_contiguous_index = scheme_update.ndim();
+        for i in (0..scheme_update.ndim()).rev() {
+            if dst_strides[i] as usize == max_dst_contiguous {
+                max_dst_contiguous *= shape[i];
+                max_dst_contiguous_index = i;
+            } else {
+                break;
+            }
         }
 
-        let Layout {
-            r,
-            c,
-            dst_rs,
-            dst_cs,
-            src_rs,
-            src_cs,
-        } = match scheme.ndim() {
+        // 计算读取的最大连续内存
+
+        let mut max_src_contiguous = unit;
+        let mut max_src_contiguous_index = scheme_update.ndim();
+
+        //src strides 降序 index
+        let src_strides_desc_idx = (0..scheme_update.ndim())
+            .zip(src_strides)
+            .sorted_by(|a, b| b.1.cmp(&a.1))
+            .map(|(i, _)| i)
+            .collect::<Vec<_>>();
+
+        for i in (0..scheme_update.ndim()).rev() {
+            if src_strides[src_strides_desc_idx[i]] as usize == max_src_contiguous {
+                max_src_contiguous *= shape[src_strides_desc_idx[i]];
+                max_src_contiguous_index = i;
+            } else {
+                break;
+            }
+        }
+
+        // 检查源数据和目标数据的连续性
+        let src_continuous = if max_src_contiguous_index == scheme.ndim() {
+            false
+        } else {
+            shape[*src_strides_desc_idx.last().unwrap()] >= self.warp_size
+        };
+        let dst_continuous = if max_dst_contiguous_index == scheme.ndim() {
+            false
+        } else {
+            *shape.last().unwrap() >= self.warp_size
+        };
+
+        println!("src_continuous: {src_continuous}, dst_continuous: {dst_continuous}");
+
+        // 决定是否使用共享内存优化
+        let _use_shared_memory = src_continuous || dst_continuous;
+
+        let use_shared_memory = true;
+        //----------------------------------------------------------------------
+
+        let layout = match scheme_update.ndim() {
             0 => unreachable!(),
             1 => {
-                let &[dst_cs] = scheme.dst_strides() else {
+                let &[dst_cs] = scheme_update.dst_strides() else {
                     unreachable!()
                 };
-                let &[src_cs] = scheme.src_strides() else {
+                let &[src_cs] = scheme_update.src_strides() else {
                     unreachable!()
                 };
                 Layout {
                     r: 1,
-                    c: scheme.shape().next().unwrap() as _,
+                    c: scheme_update.shape().next().unwrap() as _,
                     dst_rs: 0,
                     dst_cs: dst_cs as _,
                     src_rs: 0,
@@ -107,49 +161,65 @@ impl crate::Operator for Operator {
                 }
             }
             2 => {
-                let mut shape = scheme.shape();
+                let mut shape = scheme_update.shape();
                 let r = shape.next().unwrap();
                 let c = shape.next().unwrap();
-                let &[dst_rs, dst_cs] = scheme.dst_strides() else {
+                let &[dst_rs, dst_cs] = scheme_update.dst_strides() else {
                     unreachable!()
                 };
-                let &[src_rs, src_cs] = scheme.src_strides() else {
+                let &[src_rs, src_cs] = scheme_update.src_strides() else {
                     unreachable!()
                 };
-                Layout {
-                    r: r as _,
-                    c: c as _,
-                    dst_rs: dst_rs as _,
-                    dst_cs: dst_cs as _,
-                    src_rs: src_rs as _,
-                    src_cs: src_cs as _,
+
+                unsafe {
+                    if IS_INVERSE {
+                        Layout {
+                            r: c as _,
+                            c: r as _,
+                            dst_rs: dst_cs as _,
+                            dst_cs: dst_rs as _,
+                            src_rs: src_cs as _,
+                            src_cs: src_rs as _,
+                        }
+                    } else {
+                        Layout {
+                            r: r as _,
+                            c: c as _,
+                            dst_rs: dst_rs as _,
+                            dst_cs: dst_cs as _,
+                            src_rs: src_rs as _,
+                            src_cs: src_cs as _,
+                        }
+                    }
                 }
             }
             _ => Err(rank_not_support("rearrange not support ndim > 2 on NV GPU"))?,
         };
 
+        println!(
+            "layout: r={}, c={}, dst_rs={}, dst_cs={}, src_rs={}, src_cs={}",
+            layout.r, layout.c, layout.dst_rs, layout.dst_cs, layout.src_rs, layout.src_cs
+        );
+
         let name = CString::new(NAME).unwrap();
-        if unit % self.warp_size != 0 {
-            Err(shape_not_support(format!(
-                "memory region {unit} is not align to warp size, which is not supported yet on NV GPU",
-            )))?;
-        }
-        let bytes_thread = (unit / self.warp_size) as u32;
-        if bytes_thread > 32 || !bytes_thread.is_power_of_two() {
-            Err(shape_not_support(format!(
-                "bytes per thread {bytes_thread} is not supported yet on NV GPU"
-            )))?;
-        }
 
         let warps = self.max_warps_block as u32;
-        let grid = (r, c.div_ceil(warps));
-        let block = (c.div_ceil(grid.1), self.warp_size as u32);
+        let grid = (
+            layout.c.div_ceil(self.warp_size as u32),
+            layout.r.div_ceil(self.warp_size as u32),
+        );
+        let block = if use_shared_memory {
+            // 使用32x32的block大小
+            (32, 32)
+        } else {
+            (self.warp_size as u32, warps)
+        };
 
         let unit = unit as i32;
-        let dst_rs = dst_rs / unit;
-        let dst_cs = dst_cs / unit;
-        let src_rs = src_rs / unit;
-        let src_cs = src_cs / unit;
+        let dst_rs = layout.dst_rs / unit;
+        let dst_cs = layout.dst_cs / unit;
+        let src_rs = layout.src_rs / unit;
+        let src_cs = layout.src_cs / unit;
 
         let params = cuda::params![
             args.dst_base,
@@ -158,11 +228,28 @@ impl crate::Operator for Operator {
             args.src_base,
             src_rs,
             src_cs,
-            c,
-            bytes_thread
+            layout.r,
+            layout.c,
+            32u32,         // sub_size_x
+            32u32,         // sub_size_y
+            (unit as u32)  // bytes_per_thread
         ];
-        self.module
-            .launch(&name, grid, block, params.as_ptr(), 0, queue_alloc.queue());
+
+        let shared_memory_size = if use_shared_memory {
+            // 计算共享内存大小：32x32 的块大小 * 每个元素的字节数
+            32 * 32 * (unit as usize)
+        } else {
+            0
+        };
+
+        self.module.launch(
+            &name,
+            grid,
+            block,
+            params.as_ptr(),
+            shared_memory_size,
+            queue_alloc.queue(),
+        );
         Ok(())
     }
 }
@@ -178,21 +265,27 @@ extern "C" __global__ void {NAME}(
     void const *__restrict__ src,
     int const rsb,
     int const csb,
+    unsigned int const nrows,
     unsigned int const ncols,
+    unsigned int const sub_size_x,
+    unsigned int const sub_size_y,
     unsigned int const bytes_per_thread
 ){{
-    switch (bytes_per_thread) {{
-        case  1: rearrange<uchar1 >(dst, rsa, csa, src, rsb, csb, ncols); break;
-        case  2: rearrange<uchar2 >(dst, rsa, csa, src, rsb, csb, ncols); break;
-        case  4: rearrange<float1 >(dst, rsa, csa, src, rsb, csb, ncols); break;
-        case  8: rearrange<float2 >(dst, rsa, csa, src, rsb, csb, ncols); break;
-        case 16: rearrange<float4 >(dst, rsa, csa, src, rsb, csb, ncols); break;
-        case 32: rearrange<double4>(dst, rsa, csa, src, rsb, csb, ncols); break;
+    // 使用共享内存版本
+    switch (bytes_per_thread) {{  // 使用实际的 bytes_per_thread
+        case  1: rearrange_shared<uchar1 >(dst, rsa, csa, src, rsb, csb, nrows, ncols, sub_size_x, sub_size_y); break;
+        case  2: rearrange_shared<uchar2 >(dst, rsa, csa, src, rsb, csb, nrows, ncols, sub_size_x, sub_size_y); break;
+        case  4: rearrange_shared<float1 >(dst, rsa, csa, src, rsb, csb, nrows, ncols, sub_size_x, sub_size_y); break;
+        case  8: rearrange_shared<float2 >(dst, rsa, csa, src, rsb, csb, nrows, ncols, sub_size_x, sub_size_y); break;
+        case 16: rearrange_shared<float4 >(dst, rsa, csa, src, rsb, csb, nrows, ncols, sub_size_x, sub_size_y); break;
+        case 32: rearrange_shared<double4>(dst, rsa, csa, src, rsb, csb, nrows, ncols, sub_size_x, sub_size_y); break;
     }}
 }}
 "#
     )
 }
+
+static mut IS_INVERSE: bool = false;
 
 #[cfg(test)]
 mod test {
@@ -238,7 +331,7 @@ mod test {
         println!("{}", gpu.0.device().info());
 
         let mut op = Operator::new(&gpu);
-        op.scheme(&dyn_args(ty::F16), 0).unwrap();
+        op.scheme(&dyn_args(ty::U8), 0).unwrap();
 
         let module = op.module;
         gpu.apply(|ctx| {
@@ -268,9 +361,9 @@ mod test {
         cpu_op.scheme(&dyn_args(dt), 0).unwrap();
         gpu_op.scheme(&dyn_args(dt), 0).unwrap();
 
-        let nh = 32;
-        let seq = 7;
-        let dh = 128;
+        let nh = 4342;
+        let seq = 143;
+        let dh = 8;
         let mut src = vec![0u32; nh * seq * dh];
         rand::rng().fill(&mut src[..]);
 
@@ -287,6 +380,8 @@ mod test {
             let rt = ctx;
             let src = rt.from_host(&src);
             let mut dst = rt.malloc::<u8>(src.len());
+
+            let start_event = stream.record();
             gpu_op
                 .launch(
                     &args(
@@ -301,6 +396,10 @@ mod test {
                     &stream,
                 )
                 .unwrap();
+            let end_event = stream.record();
+            end_event.synchronize();
+            let time = end_event.elapse_from(&start_event);
+            println!("time: {time:?}");
             let mut host = vec![0u32; nh * seq * dh];
             memcpy_d2h(&mut host, &dst);
             host
@@ -322,5 +421,82 @@ mod test {
             )
             .unwrap();
         assert_eq!(dst_ans, dst_ref);
+    }
+
+    use std::time;
+    fn time_cost(is_inverse: bool, total_exp: u32, dh_exp: u32) -> time::Duration {
+        use super::super::common_cpu::Operator as RefOp;
+        use crate::common_cpu::Cpu;
+
+        use ndarray_layout::{ArrayLayout, Endian::BigEndian};
+
+        let Some(gpu) = Gpu::init() else {
+            panic!("init gpu failed");
+        };
+
+        let dt = ty::U8;
+
+        let mut cpu_op = RefOp::new(&Cpu);
+        let mut gpu_op = Operator::new(&gpu);
+        cpu_op.scheme(&dyn_args(dt), 0).unwrap();
+        gpu_op.scheme(&dyn_args(dt), 0).unwrap();
+
+        let nh = 1 << ((total_exp + 1) / 2 - (dh_exp + 1) / 2);
+        let seq = 1 << (total_exp / 2 - dh_exp / 2);
+        let dh = 1 << dh_exp;
+        println!("nh: {nh}, seq: {seq}, dh: {dh}");
+
+        let ele = dt.nbytes();
+
+        let s_src = ArrayLayout::<3>::new_contiguous(&[nh, seq, dh], BigEndian, ele);
+        let s_dst =
+            ArrayLayout::<3>::new_contiguous(&[seq, nh, dh], BigEndian, ele).transpose(&[1, 0]);
+
+        use super::IS_INVERSE;
+        unsafe {
+            IS_INVERSE = is_inverse;
+        }
+        gpu.apply(|ctx| {
+            let stream = ctx.stream();
+            #[cfg(use_nvidia)]
+            let rt = &stream;
+            #[cfg(use_iluvatar)]
+            let rt = ctx;
+            let src = rt.malloc::<u8>(nh * seq * dh);
+            let mut dst = rt.malloc::<u8>(nh * seq * dh);
+
+            let mut total_time = time::Duration::ZERO;
+
+            let count = 10;
+            for _ in 0..count {
+                let start_event = stream.record();
+                gpu_op
+                    .launch(
+                        &args(
+                            dt,
+                            &[nh, seq, dh],
+                            s_src.strides(),
+                            s_dst.strides(),
+                            src.as_ptr().cast(),
+                            dst.as_mut_ptr().cast(),
+                        ),
+                        &mut [],
+                        &stream,
+                    )
+                    .unwrap();
+                let end_event = stream.record();
+                end_event.synchronize();
+                let time = end_event.elapse_from(&start_event);
+                println!("time: {time:?}");
+                total_time += time;
+            }
+            total_time / count
+        })
+    }
+
+    #[test]
+    fn test_time() {
+        time_cost(false, 32, 4);
+        time_cost(true, 32, 4);
     }
 }
