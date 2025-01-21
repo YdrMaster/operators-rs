@@ -144,3 +144,27 @@ static __device__ void rearrange_large_unit(
     }
 }
 
+template<class Tmem>
+static __device__ void rearrange_direct_copy(
+    void *__restrict__ dst,
+    void const *__restrict__ src,
+    unsigned int const total_elements,
+    unsigned int const unit_size = sizeof(Tmem)
+) {
+    const int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    const int elements_per_thread = unit_size / sizeof(Tmem);
+    
+    if (tid < total_elements) {
+        if (elements_per_thread == 1) {
+            // 对于小于等于32字节的unit，直接拷贝
+            reinterpret_cast<Tmem *>(dst)[tid] = reinterpret_cast<Tmem const *>(src)[tid];
+        } else {
+            // 对于大于32字节的unit，使用循环处理
+            const int base_idx = tid * elements_per_thread;
+            for (int i = 0; i < elements_per_thread; i++) {
+                reinterpret_cast<Tmem *>(dst)[base_idx + i] = reinterpret_cast<Tmem const *>(src)[base_idx + i];
+            }
+        }
+    }
+}
+
