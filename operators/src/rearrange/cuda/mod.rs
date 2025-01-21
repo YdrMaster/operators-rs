@@ -134,7 +134,7 @@ impl crate::Operator for Operator {
             *shape.last().unwrap() >= self.warp_size
         };
 
-        println!("src_continuous: {src_continuous}, dst_continuous: {dst_continuous}");
+        // println!("src_continuous: {src_continuous}, dst_continuous: {dst_continuous}");
 
         // 决定是否使用共享内存优化
         let _use_shared_memory = src_continuous || dst_continuous;
@@ -196,10 +196,10 @@ impl crate::Operator for Operator {
             _ => Err(rank_not_support("rearrange not support ndim > 2 on NV GPU"))?,
         };
 
-        println!(
-            "layout: r={}, c={}, dst_rs={}, dst_cs={}, src_rs={}, src_cs={}",
-            layout.r, layout.c, layout.dst_rs, layout.dst_cs, layout.src_rs, layout.src_cs
-        );
+        // println!(
+        //     "layout: r={}, c={}, dst_rs={}, dst_cs={}, src_rs={}, src_cs={}",
+        //     layout.r, layout.c, layout.dst_rs, layout.dst_cs, layout.src_rs, layout.src_cs
+        // );
 
         let name = CString::new(NAME).unwrap();
 
@@ -291,6 +291,7 @@ static mut IS_INVERSE: bool = false;
 mod test {
     use super::{Args, Gpu, Operator};
     use crate::{ConstPtr, Hardware, MutPtr, Operator as _, TensorLayout};
+    use cuda::{DevMem, Ptx};
     use digit_layout::{types as ty, DigitLayout};
 
     fn dyn_args<H: Hardware>(dt: DigitLayout) -> Args<H> {
@@ -423,6 +424,45 @@ mod test {
         assert_eq!(dst_ans, dst_ref);
     }
 
+    use crate::cuda::CurrentCtx;
+    use crate::cuda::Stream;
+
+    use std::ffi::CString;
+    fn fill_src_code() -> String {
+        format!(
+            r#"
+
+extern "C" __global__ void fill_src(
+    unsigned char *src,
+    unsigned int n
+){{
+    int idx = threadIdx.x + blockIdx.x * blockDim.x;
+    if (idx < n) {{
+        ((unsigned char*)src)[idx] = threadIdx.x;
+    }}
+}}
+"#
+        )
+    }
+    fn fill_src(src: &mut DevMem, ctx: &CurrentCtx, queue: &Stream) {
+        let (ptx, _) = Ptx::compile(fill_src_code(), ctx.dev().compute_capability());
+        let module = ctx.load(&ptx.unwrap());
+        let name = CString::new("fill_src").unwrap();
+
+        let block_size = 256; // 使用较小的 block size
+        let total_threads = src.len();
+
+        let grid_size = (total_threads + block_size - 1) / block_size;
+
+        let block = block_size;
+        let grid = grid_size;
+
+        let params = cuda::params![src.as_mut_ptr(), src.len() as u32];
+        module
+            .get_kernel(&name)
+            .launch(grid as u32, block as u32, params.as_ptr(), 0, Some(queue));
+    }
+
     use std::time;
     fn time_cost(is_inverse: bool, total_exp: u32, dh_exp: u32) -> time::Duration {
         use super::super::common_cpu::Operator as RefOp;
@@ -444,7 +484,7 @@ mod test {
         let nh = 1 << ((total_exp + 1) / 2 - (dh_exp + 1) / 2);
         let seq = 1 << (total_exp / 2 - dh_exp / 2);
         let dh = 1 << dh_exp;
-        println!("nh: {nh}, seq: {seq}, dh: {dh}");
+        // println!("nh: {nh}, seq: {seq}, dh: {dh}");
 
         let ele = dt.nbytes();
 
@@ -462,8 +502,9 @@ mod test {
             let rt = &stream;
             #[cfg(use_iluvatar)]
             let rt = ctx;
-            let src = rt.malloc::<u8>(nh * seq * dh);
+            let mut src = rt.malloc::<u8>(nh * seq * dh);
             let mut dst = rt.malloc::<u8>(nh * seq * dh);
+            fill_src(&mut src, ctx, &stream);
 
             let mut total_time = time::Duration::ZERO;
 
@@ -487,7 +528,7 @@ mod test {
                 let end_event = stream.record();
                 end_event.synchronize();
                 let time = end_event.elapse_from(&start_event);
-                println!("time: {time:?}");
+                // println!("time: {time:?}");
                 total_time += time;
             }
             total_time / count
@@ -496,7 +537,52 @@ mod test {
 
     #[test]
     fn test_time() {
-        time_cost(false, 32, 4);
-        time_cost(true, 32, 4);
+        let total_exps = [24, 26, 28, 30, 32];
+
+        for &total_exp in &total_exps {
+            // 收集测试数据
+            let mut results = Vec::new();
+
+            println!("\n性能测试结果 (total_exp = {total_exp}):");
+            println!(
+                "数据规模: {} ({:.2}GB)",
+                1u64 << total_exp,
+                (1u64 << total_exp) as f64 / (1024.0 * 1024.0 * 1024.0)
+            );
+            println!("----------------------------------------");
+            println!("dh_exp  dh大小  正向时间          反向时间");
+            println!("----------------------------------------");
+
+            for dh_exp in 1..=5 {
+                let dh_size = 1 << dh_exp;
+                let forward_time = time_cost(false, total_exp, dh_exp);
+                let inverse_time = time_cost(true, total_exp, dh_exp);
+                results.push((dh_exp, dh_size, forward_time, inverse_time));
+
+                println!(
+                    "{:<7} {:<7} {:<16?} {:<16?}",
+                    dh_exp, dh_size, forward_time, inverse_time
+                );
+            }
+
+            println!("----------------------------------------");
+
+            // 计算和打印平均时间
+            let avg_forward = results
+                .iter()
+                .map(|(_, _, f, _)| f.as_nanos())
+                .sum::<u128>()
+                / results.len() as u128;
+            let avg_inverse = results
+                .iter()
+                .map(|(_, _, _, i)| i.as_nanos())
+                .sum::<u128>()
+                / results.len() as u128;
+            println!(
+                "平均时间: 正向={:?}ns, 反向={:?}ns",
+                avg_forward, avg_inverse
+            );
+            println!("========================================\n");
+        }
     }
 }

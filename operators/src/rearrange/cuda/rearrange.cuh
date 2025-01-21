@@ -72,26 +72,34 @@ static __device__ void rearrange_shared(
     }
 }
 
-// 优化版本的入口函数
+
 template<class Tmem>
-static __device__ void rearrange_optimized(
+static __device__ void rearrange2(
     void *__restrict__ dst,
     int const rsa,
     int const csa,
     void const *__restrict__ src,
     int const rsb,
     int const csb,
+    unsigned int const nrows,
     unsigned int const ncols,
-    bool use_shared_memory  // 是否使用共享内存优化
+    unsigned int const sub_size_x,
+    unsigned int const sub_size_y
 ) {
-    if (use_shared_memory) {
-        // 使用32x32的block大小
-        constexpr int BLOCK_SIZE = 32;
-        rearrange_shared<Tmem, BLOCK_SIZE, BLOCK_SIZE>(
-            dst, rsa, csa, src, rsb, csb, ncols
-        );
-    } else {
-        // 使用原始版本
-        rearrange<Tmem>(dst, rsa, csa, src, rsb, csb, ncols);
+    // 计算线程和 warp 的索引
+    const int warp_thread_idx = threadIdx.x;
+    const int warp_idx = threadIdx.y;
+    const int row_base = blockIdx.x * sub_size_x;
+    const int col_base = blockIdx.y * sub_size_y;
+
+    // 读取阶段：每个 warp 中只有前 sub_size_x 个线程工作
+    if (warp_thread_idx < sub_size_x && warp_idx < sub_size_y) {
+        const int row = row_base + warp_thread_idx;
+        const int col = col_base + warp_idx;
+        if (row < nrows && col < ncols) {
+            const int src_idx = row * rsb + col * csb;
+            const int dst_idx = row * rsa + col * csa;
+            reinterpret_cast<Tmem *>(dst)[dst_idx] = reinterpret_cast<Tmem const *>(src)[src_idx];
+        }
     }
 }
