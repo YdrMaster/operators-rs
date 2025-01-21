@@ -4,11 +4,7 @@ use crate::{
     rank_not_support, ByteOf, LaunchError, QueueAlloc, SchemeError,
 };
 use itertools::Itertools;
-use std::{
-    ffi::CString,
-    slice::{from_raw_parts, from_raw_parts_mut},
-    sync::Arc,
-};
+use std::{ffi::CString, sync::Arc};
 struct Layout {
     r: u32,
     c: u32,
@@ -70,14 +66,52 @@ impl crate::Operator for Operator {
         QA: QueueAlloc<Hardware = Self::Hardware>,
     {
         let scheme = Scheme::new(args)?;
+        // if scheme.ndim() == 0 {
+        //     let unit = scheme.unit();
+        //     let dst = unsafe { from_raw_parts_mut(args.dst_base, unit) };
+        //     let src = unsafe { from_raw_parts(args.src_base, unit) };
+        //     queue_alloc.queue().memcpy_d2d(dst, src);
+        //     return Ok(());
+        // }
+
         if scheme.ndim() == 0 {
-            let unit = scheme.unit();
-            let dst = unsafe { from_raw_parts_mut(args.dst_base, unit) };
-            let src = unsafe { from_raw_parts(args.src_base, unit) };
-            queue_alloc.queue().memcpy_d2d(dst, src);
+            let unit = unsafe { BARE_UNIT };
+            let len = scheme.unit();
+
+            let name = CString::new(NAME).unwrap();
+
+            // 使用较大的block size来提高并行度
+            let block_size = 1024;
+
+            // 计算总元素数
+            let total_elements: usize = len / unit;
+
+            let grid_size = (total_elements + block_size - 1) / block_size;
+
+            let params = cuda::params![
+                args.dst_base,
+                0i32, // rsa
+                0i32, // csa
+                args.src_base,
+                0i32,                  // rsb
+                0i32,                  // csb
+                total_elements as u32, // nrows
+                1u32,                  // ncols
+                32u32,                 // sub_size_x
+                32u32,                 // sub_size_y
+                unit as u32            // bytes_per_thread
+            ];
+
+            self.module.launch(
+                &name,
+                grid_size as u32,
+                block_size as u32,
+                params.as_ptr(),
+                0,
+                queue_alloc.queue(),
+            );
             return Ok(());
         }
-
         //----------------------------------------------------------------------
         // 发现读取的最大连续内存和写入的最大连续内存
 
@@ -133,8 +167,6 @@ impl crate::Operator for Operator {
         } else {
             *shape.last().unwrap() >= self.warp_size
         };
-
-        // println!("src_continuous: {src_continuous}, dst_continuous: {dst_continuous}");
 
         // 决定是否使用共享内存优化
         let _use_shared_memory = src_continuous || dst_continuous;
@@ -271,9 +303,26 @@ extern "C" __global__ void {NAME}(
     unsigned int const sub_size_y,
     unsigned int const bytes_per_thread
 ){{
+    // 当 rsa == rsb 且 csa == csb 时，说明是直接拷贝模式
+    if (rsa == rsb && csa == csb) {{
+        const unsigned int total_elements = nrows * ncols;
+        switch (bytes_per_thread) {{
+            case  1: rearrange_direct_copy<uchar1 >(dst, src, total_elements, bytes_per_thread); break;
+            case  2: rearrange_direct_copy<uchar2 >(dst, src, total_elements, bytes_per_thread); break;
+            case  4: rearrange_direct_copy<float1 >(dst, src, total_elements, bytes_per_thread); break;
+            case  8: rearrange_direct_copy<float2 >(dst, src, total_elements, bytes_per_thread); break;
+            case 16: rearrange_direct_copy<float4 >(dst, src, total_elements, bytes_per_thread); break;
+            case 32: rearrange_direct_copy<double4>(dst, src, total_elements, bytes_per_thread); break;
+            case 64: rearrange_direct_copy<double4>(dst, src, total_elements, bytes_per_thread); break;
+            case 128: rearrange_direct_copy<double4>(dst, src, total_elements, bytes_per_thread); break;
+            case 256: rearrange_direct_copy<double4>(dst, src, total_elements, bytes_per_thread); break;
+        }}
+        return;
+    }}
+
+    // 原有的重排模式
     if (bytes_per_thread <= 32) {{
-        // 使用共享内存版本处理小数据
-        switch (bytes_per_thread) {{  // 使用实际的 bytes_per_thread
+        switch (bytes_per_thread) {{
             case  1: rearrange2<uchar1 >(dst, rsa, csa, src, rsb, csb, nrows, ncols, sub_size_x, sub_size_y); break;
             case  2: rearrange2<uchar2 >(dst, rsa, csa, src, rsb, csb, nrows, ncols, sub_size_x, sub_size_y); break;
             case  4: rearrange2<float1 >(dst, rsa, csa, src, rsb, csb, nrows, ncols, sub_size_x, sub_size_y); break;
@@ -282,7 +331,6 @@ extern "C" __global__ void {NAME}(
             case 32: rearrange2<double4>(dst, rsa, csa, src, rsb, csb, nrows, ncols, sub_size_x, sub_size_y); break;
         }}
     }} else {{
-        // 使用大数据版本处理
         switch (bytes_per_thread) {{
             case  64: rearrange_large_unit<double4>(dst, rsa, csa, src, rsb, csb, nrows, ncols, sub_size_x, sub_size_y, bytes_per_thread); break;
             case 128: rearrange_large_unit<double4>(dst, rsa, csa, src, rsb, csb, nrows, ncols, sub_size_x, sub_size_y, bytes_per_thread); break;
@@ -295,6 +343,7 @@ extern "C" __global__ void {NAME}(
 }
 
 static mut IS_INVERSE: bool = false;
+static mut BARE_UNIT: usize = 4;
 
 #[cfg(test)]
 mod test {
@@ -472,35 +521,27 @@ extern "C" __global__ void fill_src(
             .launch(grid as u32, block as u32, params.as_ptr(), 0, Some(queue));
     }
 
-    use std::time;
-    fn time_cost(is_inverse: bool, total_exp: u32, dh_exp: u32) -> time::Duration {
+    use std::time::Duration;
+    fn time_cost(is_inverse: bool, total_exp: u32, dh_exp: u32) -> Duration {
         use super::super::common_cpu::Operator as RefOp;
         use crate::common_cpu::Cpu;
-
         use ndarray_layout::{ArrayLayout, Endian::BigEndian};
-
         let Some(gpu) = Gpu::init() else {
             panic!("init gpu failed");
         };
-
         let dt = ty::U8;
-
         let mut cpu_op = RefOp::new(&Cpu);
         let mut gpu_op = Operator::new(&gpu);
         cpu_op.scheme(&dyn_args(dt), 0).unwrap();
         gpu_op.scheme(&dyn_args(dt), 0).unwrap();
-
         let nh = 1 << ((total_exp + 1) / 2 - (dh_exp + 1) / 2);
         let seq = 1 << (total_exp / 2 - dh_exp / 2);
         let dh = 1 << dh_exp;
         // println!("nh: {nh}, seq: {seq}, dh: {dh}");
-
         let ele = dt.nbytes();
-
         let s_src = ArrayLayout::<3>::new_contiguous(&[nh, seq, dh], BigEndian, ele);
         let s_dst =
             ArrayLayout::<3>::new_contiguous(&[seq, nh, dh], BigEndian, ele).transpose(&[1, 0]);
-
         use super::IS_INVERSE;
         unsafe {
             IS_INVERSE = is_inverse;
@@ -514,44 +555,86 @@ extern "C" __global__ void fill_src(
             let mut src = rt.malloc::<u8>(nh * seq * dh);
             let mut dst = rt.malloc::<u8>(nh * seq * dh);
             fill_src(&mut src, ctx, &stream);
+            stream.bench(
+                |_, stream| {
+                    gpu_op
+                        .launch(
+                            &args(
+                                dt,
+                                &[nh, seq, dh],
+                                s_src.strides(),
+                                s_dst.strides(),
+                                src.as_ptr().cast(),
+                                dst.as_mut_ptr().cast(),
+                            ),
+                            &mut [],
+                            stream,
+                        )
+                        .unwrap();
+                },
+                20,
+                2,
+            )
+        })
+    }
 
-            let mut total_time = time::Duration::ZERO;
+    fn time_cost_bare(total_exp: u32, dh_exp: u32) -> Duration {
+        use super::super::common_cpu::Operator as RefOp;
+        use crate::common_cpu::Cpu;
+        use ndarray_layout::{ArrayLayout, Endian::BigEndian};
+        let Some(gpu) = Gpu::init() else {
+            panic!("init gpu failed");
+        };
+        let dt = ty::U8;
+        let mut cpu_op = RefOp::new(&Cpu);
+        let mut gpu_op = Operator::new(&gpu);
+        cpu_op.scheme(&dyn_args(dt), 0).unwrap();
+        gpu_op.scheme(&dyn_args(dt), 0).unwrap();
 
-            let count = 10;
-            for _ in 0..count {
-                let start_event = stream.record();
-                gpu_op
-                    .launch(
-                        &args(
-                            dt,
-                            &[nh, seq, dh],
-                            s_src.strides(),
-                            s_dst.strides(),
-                            src.as_ptr().cast(),
-                            dst.as_mut_ptr().cast(),
-                        ),
-                        &mut [],
-                        &stream,
-                    )
-                    .unwrap();
-                let end_event = stream.record();
-                end_event.synchronize();
-                let time = end_event.elapse_from(&start_event);
-                // println!("time: {time:?}");
-                total_time += time;
-            }
-            total_time / count
+        let total_size = 1 << total_exp;
+        let unit = 1 << dh_exp;
+        use crate::rearrange::cuda::BARE_UNIT;
+        unsafe {
+            BARE_UNIT = unit;
+        }
+        let ele = dt.nbytes();
+        let s_src = ArrayLayout::<1>::new_contiguous(&[total_size], BigEndian, ele);
+
+        gpu.apply(|ctx| {
+            let stream = ctx.stream();
+            #[cfg(use_nvidia)]
+            let rt = &stream;
+            #[cfg(use_iluvatar)]
+            let rt = ctx;
+            let mut src = rt.malloc::<u8>(total_size);
+            let mut dst = rt.malloc::<u8>(total_size);
+            fill_src(&mut src, ctx, &stream);
+            stream.bench(
+                |_, stream| {
+                    gpu_op
+                        .launch(
+                            &args(
+                                dt,
+                                &[total_size],
+                                s_src.strides(),
+                                s_src.strides(),
+                                src.as_ptr().cast(),
+                                dst.as_mut_ptr().cast(),
+                            ),
+                            &mut [],
+                            stream,
+                        )
+                        .unwrap();
+                },
+                20,
+                2,
+            )
         })
     }
 
     #[test]
     fn test_time() {
-        let total_exps = [24, 26, 28, 30, 32];
-
-        for &total_exp in &total_exps {
-            // 收集测试数据
-            let mut results = Vec::new();
-
+        for total_exp in [24, 26, 28, 30] {
             println!("\n性能测试结果 (total_exp = {total_exp}):");
             println!(
                 "数据规模: {} ({:.2}GB)",
@@ -559,39 +642,16 @@ extern "C" __global__ void fill_src(
                 (1u64 << total_exp) as f64 / (1024.0 * 1024.0 * 1024.0)
             );
             println!("----------------------------------------");
-            println!("dh_exp  dh大小  正向时间          反向时间");
+            println!("dh_exp  dh大小  正向时间          反向时间          直接拷贝时间");
             println!("----------------------------------------");
-
             for dh_exp in 1..=8 {
                 let dh_size = 1 << dh_exp;
-                let forward_time = time_cost(false, total_exp, dh_exp);
                 let inverse_time = time_cost(true, total_exp, dh_exp);
-                results.push((dh_exp, dh_size, forward_time, inverse_time));
-
-                println!(
-                    "{:<7} {:<7} {:<16?} {:<16?}",
-                    dh_exp, dh_size, forward_time, inverse_time
-                );
+                let forward_time = time_cost(false, total_exp, dh_exp);
+                let bare_time = time_cost_bare(total_exp, dh_exp);
+                println!("{dh_exp:<7} {dh_size:<7} {forward_time:<16?} {inverse_time:<16?} {bare_time:<16?}");
             }
-
             println!("----------------------------------------");
-
-            // 计算和打印平均时间
-            let avg_forward = results
-                .iter()
-                .map(|(_, _, f, _)| f.as_nanos())
-                .sum::<u128>()
-                / results.len() as u128;
-            let avg_inverse = results
-                .iter()
-                .map(|(_, _, _, i)| i.as_nanos())
-                .sum::<u128>()
-                / results.len() as u128;
-            println!(
-                "平均时间: 正向={:?}ns, 反向={:?}ns",
-                avg_forward, avg_inverse
-            );
-            println!("========================================\n");
         }
     }
 }
