@@ -82,7 +82,7 @@ impl crate::Operator for Operator {
         // 发现读取的最大连续内存和写入的最大连续内存
 
         // 发现最大的1 thread 处理的数据量
-        let scheme_update = scheme.distribute_unit((0..=5).rev().map(|n| (1 << n)));
+        let scheme_update = scheme.distribute_unit((0..=8).rev().map(|n| (1 << n)));
 
         let src_strides = scheme_update.src_strides();
         let dst_strides = scheme_update.dst_strides();
@@ -139,7 +139,7 @@ impl crate::Operator for Operator {
         // 决定是否使用共享内存优化
         let _use_shared_memory = src_continuous || dst_continuous;
 
-        let use_shared_memory = true;
+        let use_shared_memory = false;
         //----------------------------------------------------------------------
 
         let layout = match scheme_update.ndim() {
@@ -271,14 +271,23 @@ extern "C" __global__ void {NAME}(
     unsigned int const sub_size_y,
     unsigned int const bytes_per_thread
 ){{
-    // 使用共享内存版本
-    switch (bytes_per_thread) {{  // 使用实际的 bytes_per_thread
-        case  1: rearrange_shared<uchar1 >(dst, rsa, csa, src, rsb, csb, nrows, ncols, sub_size_x, sub_size_y); break;
-        case  2: rearrange_shared<uchar2 >(dst, rsa, csa, src, rsb, csb, nrows, ncols, sub_size_x, sub_size_y); break;
-        case  4: rearrange_shared<float1 >(dst, rsa, csa, src, rsb, csb, nrows, ncols, sub_size_x, sub_size_y); break;
-        case  8: rearrange_shared<float2 >(dst, rsa, csa, src, rsb, csb, nrows, ncols, sub_size_x, sub_size_y); break;
-        case 16: rearrange_shared<float4 >(dst, rsa, csa, src, rsb, csb, nrows, ncols, sub_size_x, sub_size_y); break;
-        case 32: rearrange_shared<double4>(dst, rsa, csa, src, rsb, csb, nrows, ncols, sub_size_x, sub_size_y); break;
+    if (bytes_per_thread <= 32) {{
+        // 使用共享内存版本处理小数据
+        switch (bytes_per_thread) {{  // 使用实际的 bytes_per_thread
+            case  1: rearrange2<uchar1 >(dst, rsa, csa, src, rsb, csb, nrows, ncols, sub_size_x, sub_size_y); break;
+            case  2: rearrange2<uchar2 >(dst, rsa, csa, src, rsb, csb, nrows, ncols, sub_size_x, sub_size_y); break;
+            case  4: rearrange2<float1 >(dst, rsa, csa, src, rsb, csb, nrows, ncols, sub_size_x, sub_size_y); break;
+            case  8: rearrange2<float2 >(dst, rsa, csa, src, rsb, csb, nrows, ncols, sub_size_x, sub_size_y); break;
+            case 16: rearrange2<float4 >(dst, rsa, csa, src, rsb, csb, nrows, ncols, sub_size_x, sub_size_y); break;
+            case 32: rearrange2<double4>(dst, rsa, csa, src, rsb, csb, nrows, ncols, sub_size_x, sub_size_y); break;
+        }}
+    }} else {{
+        // 使用大数据版本处理
+        switch (bytes_per_thread) {{
+            case  64: rearrange_large_unit<double4>(dst, rsa, csa, src, rsb, csb, nrows, ncols, sub_size_x, sub_size_y, bytes_per_thread); break;
+            case 128: rearrange_large_unit<double4>(dst, rsa, csa, src, rsb, csb, nrows, ncols, sub_size_x, sub_size_y, bytes_per_thread); break;
+            case 256: rearrange_large_unit<double4>(dst, rsa, csa, src, rsb, csb, nrows, ncols, sub_size_x, sub_size_y, bytes_per_thread); break;
+        }}
     }}
 }}
 "#
@@ -553,7 +562,7 @@ extern "C" __global__ void fill_src(
             println!("dh_exp  dh大小  正向时间          反向时间");
             println!("----------------------------------------");
 
-            for dh_exp in 1..=5 {
+            for dh_exp in 1..=8 {
                 let dh_size = 1 << dh_exp;
                 let forward_time = time_cost(false, total_exp, dh_exp);
                 let inverse_time = time_cost(true, total_exp, dh_exp);
