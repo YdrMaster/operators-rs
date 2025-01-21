@@ -103,3 +103,44 @@ static __device__ void rearrange2(
         }
     }
 }
+
+template<class Tmem>
+static __device__ void rearrange_large_unit(
+    void *__restrict__ dst,
+    int const rsa,
+    int const csa,
+    void const *__restrict__ src,
+    int const rsb,
+    int const csb,
+    unsigned int const nrows,
+    unsigned int const ncols,
+    unsigned int const sub_size_x,
+    unsigned int const sub_size_y,
+    unsigned int const unit_size
+) {
+    // 计算线程和 warp 的索引
+    const int warp_thread_idx = threadIdx.x;
+    const int warp_idx = threadIdx.y;
+    const int row_base = blockIdx.x * sub_size_x;
+    const int col_base = blockIdx.y * sub_size_y;
+
+    // 计算每个线程需要处理的元素数量
+    const int elements_per_thread = unit_size / sizeof(Tmem);
+
+    // 读取阶段：每个 warp 中只有前 sub_size_x 个线程工作
+    if (warp_thread_idx < sub_size_x && warp_idx < sub_size_y) {
+        const int row = row_base + warp_thread_idx;
+        const int col = col_base + warp_idx;
+        if (row < nrows && col < ncols) {
+            const int src_base_idx = row * rsb + col * csb;
+            const int dst_base_idx = row * rsa + col * csa;
+            
+            // 使用循环处理多个元素
+            for (int i = 0; i < elements_per_thread; i++) {
+                reinterpret_cast<Tmem *>(dst)[dst_base_idx * elements_per_thread + i] = 
+                    reinterpret_cast<Tmem const *>(src)[src_base_idx * elements_per_thread + i];
+            }
+        }
+    }
+}
+
