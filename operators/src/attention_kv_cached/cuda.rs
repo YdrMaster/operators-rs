@@ -110,7 +110,7 @@ mod test {
         let o_ans = gpu.apply(|ctx| {
             let stream = ctx.stream();
             #[cfg(use_nvidia)]
-            let rt = ctx.stream();
+            let rt = &stream;
             #[cfg(use_iluvatar)]
             let rt = ctx;
             let mut q = cast_load(&q, f16::from_f64, &stream);

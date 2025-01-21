@@ -272,7 +272,7 @@ fn test_compute() {
         let kv_ans = gpu.apply(|ctx| {
             let stream = ctx.stream();
             #[cfg(use_nvidia)]
-            let rt = ctx.stream();
+            let rt = &stream;
             #[cfg(use_iluvatar)]
             let rt = ctx;
             let logits = rt.from_host(&logits);
@@ -322,7 +322,7 @@ fn test_compute() {
         let kv_ans = gpu.apply(|ctx| {
             let stream = ctx.stream();
             #[cfg(use_nvidia)]
-            let rt = ctx.stream();
+            let rt = &stream;
             #[cfg(use_iluvatar)]
             let rt = ctx;
             let logits = rt.from_host(&logits);

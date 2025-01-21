@@ -286,7 +286,7 @@ mod test {
         let t_ans = gpu.apply(|ctx| {
             let stream = ctx.stream();
             #[cfg(use_nvidia)]
-            let rt = ctx.stream();
+            let rt = &stream;
             #[cfg(use_iluvatar)]
             let rt = ctx;
             let mut t = cast_load(&t, f16::from_f64, &stream);
