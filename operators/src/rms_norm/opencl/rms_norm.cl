@@ -107,38 +107,6 @@ __kernel void rms_norm_folding(
             y[idx_y + i] = rms * val_x[i] * val_w[i];
     }
 }
-__kernel void rms_norm_base(
-    __global float *y,
-    const int y_stride,
-    __global const float *x,
-    const int x_stride,
-    __global const float *w,
-    const float epsilon,
-    const int d) {
-
-    //获取线程和块的索引
-    int global_id = get_global_id(0);
-
-    float squared = 0.0f;
-    float yy, xx, ww, rms;
-
-    //计算输入输出指针
-    int idx_x = global_id * x_stride;
-    int idx_y = global_id * y_stride;
-    int idx_w = 0;
-    for (int i = 0; i < d; i++) {
-        xx = x[idx_x + i];
-        squared += xx * xx;
-    }
-    rms = native_rsqrt(squared / d + epsilon);
-
-    //计算最终结果并存储
-    for (int i = 0; i < d; i++) {
-        xx = x[idx_x + i];
-        ww = w[idx_w + i];
-        y[idx_y + i] = rms * xx * ww;
-    }
-}
 
 __kernel void rms_norm_general(
     __global float *y,

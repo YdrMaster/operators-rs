@@ -30,7 +30,7 @@ impl crate::Operator for Operator {
         _args: &Self::Args,
         _max_workspace_size: usize,
     ) -> Result<usize, SchemeError> {
-        let kernel_name = "rearrangev2";
+        let kernel_name = "rearrange";
         self.0
             .set_kernel(kernel_name, self.0.get_kernel(kernel_name).unwrap());
         Ok(0)
@@ -138,7 +138,7 @@ impl crate::Operator for Operator {
             1 => unit_size,
             _ => MAX_THREADS_PER_BLOCK,
         };
-        let name = "rearrangev2";
+        let name = "rearrange";
         let global_workoffset = [0];
         let global_worksize = [(r * c * (unit_size as u32)) as usize];
         let local_worksize = [local_worksize_y]; //32*4字节

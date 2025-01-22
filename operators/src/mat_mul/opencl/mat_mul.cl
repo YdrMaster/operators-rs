@@ -40,7 +40,7 @@ __kernel void gemv_f32v2(__global float *A, __global float *B, __global float *C
     float value = localA[0];
     barrier(CLK_LOCAL_MEM_FENCE);
     //写回
-    float *p = C + batch_id * cs + global_id_x * crs;
+    __global float *p = C + batch_id * cs + global_id_x * crs;
     float valueC = *p;
     *p = beta * valueC + alpha * value;
 }
@@ -87,7 +87,7 @@ __kernel void gemv_f32(__global float *A, __global float *B, __global float *C,
         barrier(CLK_LOCAL_MEM_FENCE);
     }
     //写回
-    float *p = C + batch_id * cs + global_id_x * crs;
+    __global float *p = C + batch_id * cs + global_id_x * crs;
     float valueC = *p;
     *p = beta * valueC + alpha * value;
     // }
