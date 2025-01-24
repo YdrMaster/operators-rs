@@ -87,33 +87,16 @@ impl crate::Operator for Operator {
                 global_worksize = [m as usize, n * k * batch as usize];
                 local_worksize = [1 as usize, k as usize];
             }
-        }
-        //fortest
-        else if n != 1 {
+        } else if n != 1 {
             let mn = m * n;
             let items_per_thread = mn.div_ceil(MAX_THREADS_PER_BLOCK);
             let local_worksize_y = match items_per_thread {
                 1 => mn,
-                _ => MAX_THREADS_PER_BLOCK, //todo!()修改
+                _ => MAX_THREADS_PER_BLOCK,
             };
             name = "general_gemm_f32";
             global_worksize = [batch as usize, mn as usize];
             local_worksize = [1 as usize, local_worksize_y as usize];
-        }
-        //fortest
-        else if n < 32 {
-            name = "gemm_m_f32";
-            global_worksize = [m as usize, n * batch as usize];
-            local_worksize = [32 as usize, n as usize];
-        } else if (n % 32) == 0 {
-            name = "gemm_l_f32";
-            global_worksize = [m as usize, n * batch as usize];
-            local_worksize = [32 as usize, 32 as usize];
-        } else {
-            let nn = (n + 31) / 32 * 32;
-            name = "gemm_f32";
-            global_worksize = [m * batch as usize, nn as usize];
-            local_worksize = [32 as usize, 32 as usize];
         }
 
         let mut kernel = self.0.get_kernel(name).unwrap();
@@ -141,7 +124,6 @@ impl crate::Operator for Operator {
                 &global_workoffset,
                 &global_worksize,
                 &local_worksize,
-                // _queue_alloc.queue(),
                 queue,
                 None,
             );
@@ -201,7 +183,6 @@ mod test {
             for device in platform.devices() {
                 println!("device: {}", device.name());
 
-                // let time0 = Instant::now();
                 let context = device.context();
                 let queue = context.queue();
                 let cl_op = Operator::new(&ClDevice::new(context.clone()));
@@ -210,7 +191,7 @@ mod test {
                 // let k = 2048;
                 // let n = 5632;
                 let k = 9;
-                let n = 64; //m
+                let n = 64;
                 for m in [8] {
                     // for m in [1, 7, 64, 255, 1024] {
                     for i in 0..1 {
@@ -317,23 +298,16 @@ mod test {
                             .zip(y_ans)
                             .map(|(a, b)| Diff::new(a, *b as _))
                             .collect::<Vec<_>>();
-                        // queue.unmap(map);
-
                         let mut ec = ErrorCollector::new(f32::EPSILON as f64, 5e-3);
                         diff.into_iter().for_each(|diff| ec.push(diff));
                         let ee = ec.outliers();
-                        // // let time1 = time0.elapsed();
-                        // println!("ee: {ee:?}");
                         println!("{ec}");
                         println!("cl: {cl_time:?} / cpu: {cpu_time:?}");
-                        // println!("time1: {time1:?}");
-                        // println!("time3: {time3:?}");
 
                         let (out, count) = ec.summary();
                         queue.unmap(map);
                         assert!(out * 1000 <= count);
                     }
-                    // assert!(2 <= 1);
                 }
             }
         }

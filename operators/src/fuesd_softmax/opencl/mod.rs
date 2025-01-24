@@ -48,12 +48,7 @@ impl crate::Operator for Operator {
         let kernel_name = match items_per_thread {
             1 => "softmax_padding",
             2..=16 => "softmax_folding",
-            // todo!() 添加倍数大于16的处理
-            _ => {
-                return Err(shape_not_support(
-                    "Unsupported items_per_thread configuration",
-                ))
-            }
+            _ => "softmax_general",
         };
 
         self.0
@@ -89,12 +84,9 @@ impl crate::Operator for Operator {
         let (name, local_worksize_y) = match items_per_thread {
             1 => ("softmax_padding", att_len),
             2..=16 => ("softmax_folding", MAX_THREADS_PER_BLOCK),
-            _ => {
-                // todo!() 添加倍数大于16的处理
-                return Err(shape_not_support("Unsupported items_per_thread configuration").into());
-            }
+            _ => ("softmax_general", MAX_THREADS_PER_BLOCK),
         };
-        let localsize = (local_worksize_y as usize).next_power_of_two();
+        let localsize = (local_worksize_y as usize).next_power_of_two(); //for padding block reduce
 
         let global_workoffset = [0];
         let global_worksize = [(nh * seq_len * localsize) as usize];
@@ -174,8 +166,20 @@ mod test {
                 cl_op.scheme(&dyn_args(ty::F32), 0).unwrap();
 
                 let nh = 32;
-                // for (seq_len, att_len) in [(5, 5),(1, 11),(1, 12),(1, 19),(1, 20)] {
-                for (seq_len, att_len) in [(1, 13)] {
+                for (seq_len, att_len) in [
+                    (5, 5),
+                    (1, 11),
+                    (1, 12),
+                    (1, 19),
+                    (1, 20),
+                    (1, 1023),
+                    (1, 1024),
+                    (1, 2048),
+                    (7, 2048),
+                    (7, 20443),
+                    (7, 20480),
+                ] {
+                    // for (seq_len, att_len) in [(1, 13)] {
                     // for (seq_len, att_len) in [(1, 1024), (1, 2048), (7, 2048)] {
                     let mut att = vec![0.0f64; nh * seq_len * att_len];
                     rand::thread_rng().fill(&mut att[..]);
@@ -231,14 +235,10 @@ mod test {
 
                     let mut ec = ErrorCollector::new(f32::EPSILON as f64, 1e-3);
                     diff.into_iter().for_each(|diff| ec.push(diff));
-                    // println!("{ec}");
                     println!("cl: {cl_time:?} / cpu: {cpu_time:?}");
-                    // let ee = ec.outliers();
-                    // println!("ee: {ee:?}");
 
                     let (out, count) = ec.summary();
                     assert!(out * 1000 <= count);
-                    // assert!(2 <= 1); //测试性能
                 }
             }
         }
