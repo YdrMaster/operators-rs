@@ -3,15 +3,16 @@ members = ["operators"]
 resolver = "2"
 
 [workspace.dependencies]
-ndarray-layout = { git = "https://github.com/YdrMaster/ndarray-layout", rev = "48d36c5" }
+clrt = { git = "https://github.com/InfiniTensor/clrt", rev = "14570ea" }
+search-cl-tools = { git = "https://github.com/InfiniTensor/clrt", rev = "14570ea" }
 
-clrt = { git = "https://github.com/InfiniTensor/clrt", rev = "9b6289d" }
-search-cl-tools = { git = "https://github.com/InfiniTensor/clrt", rev = "9b6289d" }
+infini-rt = { git = "https://github.com/InfiniTensor/infini-toolkit", rev = "e8362c3" }
+infini-op = { git = "https://github.com/InfiniTensor/infini-toolkit", rev = "e8362c3" }
+infini-ccl = { git = "https://github.com/InfiniTensor/infini-toolkit", rev = "e8362c3" }
+search-infini-tools = { git = "https://github.com/InfiniTensor/infini-toolkit", rev = "e8362c3" }
 
-cuda = { git = "https://github.com/YdrMaster/cuda-driver", rev = "e2ec203" }
-cublas = { git = "https://github.com/YdrMaster/cuda-driver", rev = "e2ec203" }
-nccl = { git = "https://github.com/YdrMaster/cuda-driver", rev = "e2ec203" }
-search-cuda-tools = { git = "https://github.com/YdrMaster/cuda-driver", rev = "e2ec203" }
-
-ascendcl = { git = "https://github.com/InfiniTensor/ascendcl", rev = "bca7489" }
-search-ascend-tools = { git = "https://github.com/InfiniTensor/ascendcl", rev = "bca7489" }
+cuda = { git = "https://github.com/YdrMaster/cuda-driver", rev = "f3ffbcc" }
+cublas = { git = "https://github.com/YdrMaster/cuda-driver", rev = "f3ffbcc" }
+nccl = { git = "https://github.com/YdrMaster/cuda-driver", rev = "f3ffbcc" }
+search-cuda-tools = { git = "https://github.com/YdrMaster/cuda-driver", rev = "f3ffbcc" }
+search-corex-tools = { git = "https://github.com/YdrMaster/cuda-driver", rev = "f3ffbcc" }
