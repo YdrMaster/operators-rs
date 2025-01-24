@@ -133,7 +133,7 @@ fn test_compute() {
             println!("device: {}", device.name());
             let context = device.context();
             let queue = context.queue();
-            let mut cl_op = Operator::new(&ClDevice::new(context.clone()));
+            let cl_op = Operator::new(&ClDevice::new(context.clone()));
 
             let mut logits = vec![0.0f32; n];
             rand::thread_rng().fill(&mut logits[..]);
@@ -198,7 +198,7 @@ fn test_compute() {
             let cpu_time = time.elapsed();
 
             println!("cl: {cl_time:?} / cpu: {cpu_time:?}");
-            let mut map = queue.map(&mut kv_pair_svm);
+            let map = queue.map(&mut kv_pair_svm);
 
             let ([], y_ans, []) = (unsafe { map.align_to::<KVPair>() }) else {
                 panic!()

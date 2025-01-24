@@ -2,7 +2,7 @@
 use crate::{
     get_static,
     opencl::{ClDevice, KernelCache},
-    shape_not_support, type_not_support, ByteOf, LaunchError, QueueAlloc, SchemeError,
+    type_not_support, ByteOf, LaunchError, QueueAlloc, SchemeError,
 };
 use clrt::bindings::cl_int;
 use digit_layout::types::F32;
@@ -34,7 +34,7 @@ impl crate::Operator for Operator {
         let Args { att_layout, .. } = _args;
 
         if dt != F32 {
-            return Err(type_not_support("").into());
+            return Err(type_not_support("softmax").into());
         }
 
         let &[att_len, ..] = att_layout.shape() else {
@@ -74,7 +74,7 @@ impl crate::Operator for Operator {
             unreachable!()
         };
         if dt != F32 {
-            return Err(type_not_support("").into());
+            return Err(type_not_support("softmax").into());
         }
         get_static! {
             nh seq_len att_len
@@ -192,11 +192,6 @@ mod test {
                     for (dst, src) in zip(&mut *mem, &att) {
                         *dst = *src as _;
                     }
-                    queue.unmap(map);
-                    let map = queue.map(&mut att_svm);
-                    let ([], mem, []) = (unsafe { map.align_to::<f32>() }) else {
-                        panic!()
-                    };
                     queue.unmap(map);
 
                     let time = Instant::now();

@@ -36,7 +36,7 @@ impl crate::Operator for Operator {
         if dt == F32 {
             Ok(0)
         } else {
-            Err(type_not_support(""))
+            Err(type_not_support("swiglu"))
         }
     }
 
@@ -64,7 +64,7 @@ impl crate::Operator for Operator {
         };
 
         if dt != F32 {
-            return Err(type_not_support("").into());
+            return Err(type_not_support("swiglu").into());
         }
 
         get_static! {

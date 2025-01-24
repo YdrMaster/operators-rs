@@ -7,7 +7,7 @@ use crate::{
 };
 use clrt::bindings::cl_int;
 use clrt::Invalid;
-use digit_layout::types::{F32, U32};
+use digit_layout::types::{F32, U64};
 use std::{alloc::Layout, ffi::CString, iter::zip};
 
 pub struct Operator(KernelCache);
@@ -40,12 +40,12 @@ impl Rope<ClDevice> for Operator {
         I: IntoIterator<Item = Seq>,
         QA: QueueAlloc<Hardware = Self::Hardware>,
     {
-        let mut blob = _queue_alloc.alloc(Layout::array::<u32>(_nt).unwrap().size());
-        let mut host = vec![0u32; _nt];
-        fill_pos(host.as_mut_ptr().cast::<u32>(), _nt, _iter);
+        let mut blob = _queue_alloc.alloc(Layout::array::<u64>(_nt).unwrap().size());
+        let mut host = vec![0u64; _nt];
+        fill_pos(host.as_mut_ptr().cast::<u64>(), _nt, _iter);
         let queue = _queue_alloc.queue();
         let mut map = queue.map_mut(&mut blob, Invalid);
-        let ([], mem, []) = (unsafe { map.write_only_slice().align_to_mut::<u32>() }) else {
+        let ([], mem, []) = (unsafe { map.write_only_slice().align_to_mut::<u64>() }) else {
             panic!()
         };
         for (dst, src) in zip(mem, &host) {
@@ -73,10 +73,10 @@ impl crate::Operator for Operator {
         _max_workspace_size: usize,
     ) -> Result<usize, SchemeError> {
         let Meta { dt_t, dt_p, .. } = _args.meta()?;
-        if dt_t == F32 || dt_p == U32 {
+        if dt_t == F32 && dt_p == U64 {
             Ok(0)
         } else {
-            Err(type_not_support(""))
+            Err(type_not_support("rope"))
         }
     }
 
@@ -93,8 +93,8 @@ impl crate::Operator for Operator {
             dt_t, dt_p, nt, dh, ..
         } = args.meta()?;
 
-        if dt_t != F32 || dt_p != U32 {
-            return Err(type_not_support("").into());
+        if dt_t != F32 || dt_p != U64 {
+            return Err(type_not_support(format!("Unsupported {dt_t},{dt_p}")).into());
         }
 
         let Args {
@@ -122,7 +122,7 @@ impl crate::Operator for Operator {
         }
 
         let unit = dt_t.nbytes() as isize;
-        if sd != unit || sp != size_of::<u32>() as isize {
+        if sd != unit || sp != size_of::<u64>() as isize {
             return Err(strides_not_support("").into());
         };
 
@@ -170,7 +170,7 @@ mod test {
     use super::Args;
     use crate::{Hardware, TensorLayout};
     use digit_layout::{
-        types::{F32, F64, U32},
+        types::{F32, F64, U64},
         DigitLayout,
     };
 
@@ -236,8 +236,8 @@ mod test {
                 let context = device.context();
                 let queue = context.queue();
                 let mut cl_op = Operator::new(&ClDevice::new(context.clone()));
-                cpu_op.scheme(&dyn_args(F64, U32), 0).unwrap();
-                cl_op.scheme(&dyn_args(F32, U32), 0).unwrap();
+                cpu_op.scheme(&dyn_args(F64, U64), 0).unwrap();
+                cl_op.scheme(&dyn_args(F32, U64), 0).unwrap();
 
                 const NT: usize = 1;
                 let nh = 32;
@@ -245,9 +245,9 @@ mod test {
 
                 let mut t = vec![0.0f64; NT * nh * dh];
                 rand::thread_rng().fill(&mut t[..]);
-                let p: [u32; NT] = [0];
+                let p: [u64; NT] = [0];
                 let mut t_svm = context.malloc::<f32>(NT * nh * dh);
-                let mut p_svm = context.malloc::<u32>(7);
+                let mut p_svm = context.malloc::<u64>(7);
 
                 let mut map = queue.map_mut(&mut t_svm, Invalid);
                 let ([], mem, []) = (unsafe { map.write_only_slice().align_to_mut::<f32>() })
@@ -260,7 +260,7 @@ mod test {
                 queue.unmap(map);
 
                 let mut map = queue.map_mut(&mut p_svm, Invalid);
-                let ([], mem, []) = (unsafe { map.write_only_slice().align_to_mut::<u32>() })
+                let ([], mem, []) = (unsafe { map.write_only_slice().align_to_mut::<u64>() })
                 else {
                     panic!()
                 };
@@ -274,7 +274,7 @@ mod test {
                     .launch(
                         &args(
                             ty::F32,
-                            ty::U32,
+                            ty::U64,
                             NT,
                             nh,
                             dh,
@@ -295,7 +295,7 @@ mod test {
                     .launch(
                         &args(
                             F64,
-                            U32,
+                            U64,
                             NT,
                             nh,
                             dh,

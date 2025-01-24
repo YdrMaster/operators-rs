@@ -2,7 +2,7 @@
 use crate::{
     get_static,
     opencl::{ClDevice, KernelCache},
-    shape_not_support, ByteOf, LaunchError, QueueAlloc, SchemeError,
+    ByteOf, LaunchError, QueueAlloc, SchemeError,
 };
 use clrt::bindings::cl_int;
 use std::ffi::CString;
