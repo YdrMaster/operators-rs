@@ -8,7 +8,6 @@ __kernel void rope_f32(
     __global const unsigned int *pos,
     const float theta) {
 
-    //索引
     int nh_l = get_local_size(0);
     int dh = get_local_size(1);
     int it = get_group_id(0);
@@ -17,7 +16,6 @@ __kernel void rope_f32(
     int ih = ih_h * nh_l + ih_l;
     int i = get_local_id(1);
 
-    //计算位置
     __global float2 *t2 = t + it * stride_token + ih * stride_head + i;
 
     float2 data = *t2;

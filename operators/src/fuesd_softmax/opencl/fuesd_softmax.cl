@@ -100,7 +100,7 @@ __kernel void softmax_folding(
         barrier(CLK_LOCAL_MEM_FENCE);
     }
     max_val = localA[0];
-    barrier(CLK_LOCAL_MEM_FENCE);//此处同步是必须的
+    barrier(CLK_LOCAL_MEM_FENCE);
 
     for (int i = 0; i < items; i++) {
         if (local_base + i < att_len) {

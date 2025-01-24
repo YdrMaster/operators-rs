@@ -48,7 +48,6 @@ impl crate::Operator for Operator {
         let scheme = Scheme::new(args)?;
         if scheme.ndim() == 0 {
             let unit = scheme.unit();
-            //todo:写一个直接拷贝的内核，长度为unit
             let queue = queue_alloc.queue();
             let ss: &[SvmByte] = unsafe { std::slice::from_raw_parts(args.src_base, unit / 4) };
             let mut dd: &mut [SvmByte] =
@@ -141,7 +140,7 @@ impl crate::Operator for Operator {
         let name = "rearrange";
         let global_workoffset = [0];
         let global_worksize = [(r * c * (unit_size as u32)) as usize];
-        let local_worksize = [local_worksize_y]; //32*4字节
+        let local_worksize = [local_worksize_y];
 
         let mut kernel = self.0.get_kernel(name).unwrap();
 
@@ -239,12 +238,8 @@ mod test {
                 let dh = 64;
                 let mut src = vec![0u32; nh * seq * dh];
                 rand::thread_rng().fill(&mut src[..]);
-                let s_src = ArrayLayout::<3>::new_contiguous(
-                    &[nh, seq, dh],
-                    BigEndian,
-                    // dt.nbytes().unwrap(),
-                    dt.nbytes(),
-                );
+                let s_src =
+                    ArrayLayout::<3>::new_contiguous(&[nh, seq, dh], BigEndian, dt.nbytes());
                 // let s_src = ArrayLayout::<3>::new(
                 //     &[nh, seq, dh],
                 //     &[0, (4 * dh) as isize, 4],
@@ -322,19 +317,9 @@ mod test {
                 let ([], y_ans, []) = (unsafe { map.align_to::<u32>() }) else {
                     panic!()
                 };
-                // for (index, i) in y_ans.iter().enumerate() {
-                //     print!("{}: {} ", index + 1, i);
-                // }
-                // println!();
-
-                // for (index, i) in dst_ref.iter().enumerate() {
-                //     print!("{}: {} ", index + 1, i);
-                // }
-                // println!();
                 assert_eq!(y_ans, dst_ref);
                 queue.unmap(map);
                 println!("cl: {cl_time:?} / cpu: {cpu_time:?}");
-                // assert!(2 <= 1);
             }
         }
     }

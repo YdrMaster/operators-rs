@@ -9,7 +9,7 @@ typedef struct {
 __kernel void argmax_step1(
     __global float *input,
     const int n) {
-    //获取相关线程和块的索引
+
     int global_id = get_global_id(0);
     int local_id = get_local_id(0);
     int group_id = get_group_id(0);
@@ -17,12 +17,11 @@ __kernel void argmax_step1(
 
     __local float local_max_value[TILE_SIZE];
     __local int local_max_index[TILE_SIZE];
-    //加载到共享
+
     local_max_value[local_id] = (global_id < n) ? *(input + global_id) : -1;
     local_max_index[local_id] = (global_id < n) ? global_id : -1;
-    barrier(CLK_LOCAL_MEM_FENCE);//加载后同步
+    barrier(CLK_LOCAL_MEM_FENCE);
 
-    //规约求最大
     for (int offset = local_size / 2; offset > 0; offset /= 2) {
         if (local_id < offset) {
             if (local_max_value[local_id] < local_max_value[local_id + offset]) {
@@ -41,7 +40,7 @@ __kernel void argmax_step2(
     __global float *input,
     __global KVPair *kvpair,
     const int n) {
-    //获取相关线程和块的索引
+
     int global_id = get_global_id(0);
     int local_id = get_local_id(0);
     int group_id = get_group_id(0);
@@ -49,12 +48,12 @@ __kernel void argmax_step2(
 
     __local float local_max_value[TILE_SIZE];
     __local int local_max_index[TILE_SIZE];
-    //加载到共享
+
     local_max_value[local_id] = (global_id < n) ? *(input + global_id) : -1;
     local_max_index[local_id] = (global_id < n) ? *(input + TILE_SIZE + local_id) : -1;
-    barrier(CLK_LOCAL_MEM_FENCE);//加载后同步
+    barrier(CLK_LOCAL_MEM_FENCE);
 
-    //规约求最大
+
     for (int offset = local_size / 2; offset > 0; offset /= 2) {
         if (local_id < offset) {
             if (local_max_value[local_id] < local_max_value[local_id + offset]) {
@@ -64,7 +63,7 @@ __kernel void argmax_step2(
         }
         barrier(CLK_LOCAL_MEM_FENCE);
     }
-    //存储最大值
+
     if (local_id == 0) {
         kvpair[0].val = local_max_value[0];
         kvpair[0].idx = local_max_index[0];

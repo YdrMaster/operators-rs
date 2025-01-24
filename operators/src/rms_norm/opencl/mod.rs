@@ -10,7 +10,7 @@ pub struct Operator(KernelCache);
 
 impl RmsNorm<ClDevice> for Operator {}
 
-const MAX_THREADS_PER_BLOCK: usize = 256;
+const MAX_THREADS_PER_BLOCK: usize = 512;
 
 impl crate::Operator for Operator {
     type Hardware = ClDevice;
@@ -74,9 +74,6 @@ impl crate::Operator for Operator {
             n nsy nsx d
         }
 
-        //todo 1.确认padding和folding内核，验证没有问题
-        //     2.添加超出16倍的支持，改善rms_norm_fortest2即可
-        //     3.支持padding支持任意尺寸规约，扩充
         let items_per_thread = d.div_ceil(MAX_THREADS_PER_BLOCK);
         let (name, local_worksize_y) = match items_per_thread {
             1 => ("rms_norm_padding", d),
@@ -259,17 +256,6 @@ mod test {
                         panic!()
                     };
 
-                    // for (index, i) in y_ans.iter().enumerate() {
-                    //     print!("{}: {} ", index + 1, i);
-                    // }
-                    // println!();
-                    // println!();
-                    // for (index, i) in y_ref.iter().enumerate() {
-                    //     print!("{}: {} ", index + 1, i);
-                    // }
-                    // println!();
-                    // println!();
-
                     let diff = y_ref
                         .into_par_iter()
                         .zip(y_ans)
@@ -281,11 +267,8 @@ mod test {
                     diff.into_iter().for_each(|diff| ec.push(diff));
                     println!("{ec}");
                     println!("cl: {cl_time:?} / cpu: {cpu_time:?}");
-                    // let ee = ec.outliers();
-                    // println!("ee: {ee:?}");
                     let (out, count) = ec.summary();
                     assert!(out * 1000 <= count);
-                    // assert!(2 <= 1);
                 }
             }
         }

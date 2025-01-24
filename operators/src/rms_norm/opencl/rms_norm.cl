@@ -1,6 +1,6 @@
 #define CL_TARGET_OPENCL_VERSION 200
 #pragma OPENCL EXTENSION cl_khr_fp16 : enable
-#define BLOCK_SIZE 256
+#define BLOCK_SIZE 512
 #define TILE_SIZE 16
 
 __kernel void rms_norm_padding(
@@ -11,24 +11,20 @@ __kernel void rms_norm_padding(
     __global const float *w,
     const float epsilon) {
 
-    //获取线程和块的索引
     int global_id = get_global_id(0);
     int local_id = get_local_id(0);
     int group_id = get_group_id(0);
     int local_size = get_local_size(0);
 
-    //计算输入输出指针
     int idx_x = group_id * x_stride + local_id;
     int idx_y = group_id * y_stride + local_id;
 
-    //读取数据
     float val_x = x[idx_x];
     float val_w = w[local_id];
 
-    //申请共享内存 求平方
     __local float squared[BLOCK_SIZE];
     squared[local_id] = val_x * val_x;
-    barrier(CLK_LOCAL_MEM_FENCE);// 确保所有线程完成写入局部内存
+    barrier(CLK_LOCAL_MEM_FENCE);
 
     //规约求和--local_size = 2 ^ n
     for (int offset = local_size / 2; offset > 0; offset /= 2) {
@@ -37,16 +33,14 @@ __kernel void rms_norm_padding(
         }
         barrier(CLK_LOCAL_MEM_FENCE);// 确保上一轮结束
     }
-    //各块内线程规约求和   work_group_reduce_add:opencl自带的规约函数,但是移动端GPU不支持
+    //各块内线程规约求和   可以使用work_group_reduce_add:opencl自带的规约函数,但是移动端GPU不支持
 
-    //求均方根
     __local float rms;
     if (local_id == 0) {
         rms = native_rsqrt(squared[0] / local_size + epsilon);
     }
-    barrier(CLK_LOCAL_MEM_FENCE);// 共享内存同步
+    barrier(CLK_LOCAL_MEM_FENCE);
 
-    //计算最终结果并存储
     y[idx_y] = rms * val_x * val_w;
 }
 
@@ -59,21 +53,17 @@ __kernel void rms_norm_folding(
     const float epsilon,
     const int d) {
 
-    //获取线程和块的索引
     int global_id = get_global_id(0);
     int local_id = get_local_id(0);
     int group_id = get_group_id(0);
     int local_size = get_local_size(0);
 
-    //每个工作项实际处理的个数
     int items = (d + local_size - 1) / local_size;
 
-    //计算输入输出指针
     int idx_x = group_id * x_stride + local_id * items;
     int idx_y = group_id * y_stride + local_id * items;
     int idx_w = local_id * items;
 
-    //读取数据
     float val_x[TILE_SIZE];
     float val_w[TILE_SIZE];
     float squared = 0.0f;
@@ -83,7 +73,6 @@ __kernel void rms_norm_folding(
         squared += val_x[i] * val_x[i];
     }
 
-    //规约求和
     __local float Ssquared[BLOCK_SIZE];
     Ssquared[local_id] = squared;
     barrier(CLK_LOCAL_MEM_FENCE);
@@ -94,14 +83,12 @@ __kernel void rms_norm_folding(
         barrier(CLK_LOCAL_MEM_FENCE);
     }
 
-    //求均方根
     __local float rms;
     if (local_id == 0) {
         rms = native_rsqrt(Ssquared[0] / d + epsilon);
     }
     barrier(CLK_LOCAL_MEM_FENCE);
 
-    //计算最终结果并存储
     for (int i = 0; i < items; i++) {
         if (local_id * items + i < d)
             y[idx_y + i] = rms * val_x[i] * val_w[i];
@@ -117,20 +104,17 @@ __kernel void rms_norm_general(
     const float epsilon,
     const int d) {
 
-    //获取线程和块的索引
     int local_id = get_local_id(0);
     int group_id = get_group_id(0);
     int global_id = get_global_id(0);
     int local_size = get_local_size(0);
 
-    //每个工作项实际处理的个数
     int items = (d + local_size - 1) / local_size;
-    //计算输入输出指针
+
     int idx_x = group_id * x_stride + local_id * items;
     int idx_y = group_id * y_stride + local_id * items;
     int idx_w = local_id * items;
 
-    //读取数据
     float squared = 0.0f;
     float val_x;
     float val_w;

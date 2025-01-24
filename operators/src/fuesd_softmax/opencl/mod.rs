@@ -235,14 +235,10 @@ mod test {
 
                     let mut ec = ErrorCollector::new(f32::EPSILON as f64, 1e-3);
                     diff.into_iter().for_each(|diff| ec.push(diff));
-                    // println!("{ec}");
                     println!("cl: {cl_time:?} / cpu: {cpu_time:?}");
-                    // let ee = ec.outliers();
-                    // println!("ee: {ee:?}");
 
                     let (out, count) = ec.summary();
                     assert!(out * 1000 <= count);
-                    // assert!(2 <= 1); //测试性能
                 }
             }
         }

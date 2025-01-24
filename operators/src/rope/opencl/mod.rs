@@ -42,7 +42,6 @@ impl Rope<ClDevice> for Operator {
     {
         let mut blob = _queue_alloc.alloc(Layout::array::<u32>(_nt).unwrap().size());
         let mut host = vec![0u32; _nt];
-        // fill_pos(&mut host, _iter);
         fill_pos(host.as_mut_ptr().cast::<u32>(), _nt, _iter);
         let queue = _queue_alloc.queue();
         let mut map = queue.map_mut(&mut blob, Invalid);
@@ -290,7 +289,6 @@ mod test {
                 queue.finish();
                 let cl_time = time.elapsed();
 
-                //CPU
                 let mut t_ref = t;
                 let time = Instant::now();
                 cpu_op
@@ -326,14 +324,10 @@ mod test {
 
                 let mut ec = ErrorCollector::new(f32::EPSILON as f64, 1e-3);
                 diff.into_iter().for_each(|diff| ec.push(diff));
-                // let ee = ec.outliers();
-                // println!("ee: {ee:?}");
-                // println!("{ec}");
                 println!("cl: {cl_time:?} / cpu: {cpu_time:?}");
 
                 let (out, count) = ec.summary();
                 assert!(out * 1000 <= count);
-                // assert!(2 <= 1);
             }
         }
     }

@@ -241,7 +241,6 @@ mod test {
                 println!("cl: {cl_time:?} / cpu: {cpu_time:?}");
                 let (out, count) = ec.summary();
                 assert!(out * 1000 <= count);
-                // assert!(2 <= 1);
             }
         }
     }
