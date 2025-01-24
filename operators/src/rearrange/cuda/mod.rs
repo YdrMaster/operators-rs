@@ -171,7 +171,7 @@ impl crate::Operator for Operator {
         // 决定是否使用共享内存优化
         let _use_shared_memory = src_continuous || dst_continuous;
 
-        let use_shared_memory = false;
+        let use_shared_memory = true;
         //----------------------------------------------------------------------
 
         let layout = match scheme_update.ndim() {
@@ -323,12 +323,12 @@ extern "C" __global__ void {NAME}(
     // 原有的重排模式
     if (bytes_per_thread <= 32) {{
         switch (bytes_per_thread) {{
-            case  1: rearrange2<uchar1 >(dst, rsa, csa, src, rsb, csb, nrows, ncols, sub_size_x, sub_size_y); break;
-            case  2: rearrange2<uchar2 >(dst, rsa, csa, src, rsb, csb, nrows, ncols, sub_size_x, sub_size_y); break;
-            case  4: rearrange2<float1 >(dst, rsa, csa, src, rsb, csb, nrows, ncols, sub_size_x, sub_size_y); break;
-            case  8: rearrange2<float2 >(dst, rsa, csa, src, rsb, csb, nrows, ncols, sub_size_x, sub_size_y); break;
-            case 16: rearrange2<float4 >(dst, rsa, csa, src, rsb, csb, nrows, ncols, sub_size_x, sub_size_y); break;
-            case 32: rearrange2<double4>(dst, rsa, csa, src, rsb, csb, nrows, ncols, sub_size_x, sub_size_y); break;
+            case  1: rearrange_shared<uchar1 >(dst, rsa, csa, src, rsb, csb, nrows, ncols, sub_size_x, sub_size_y); break;
+            case  2: rearrange_shared<uchar2 >(dst, rsa, csa, src, rsb, csb, nrows, ncols, sub_size_x, sub_size_y); break;
+            case  4: rearrange_shared<float1 >(dst, rsa, csa, src, rsb, csb, nrows, ncols, sub_size_x, sub_size_y); break;
+            case  8: rearrange_shared<float2 >(dst, rsa, csa, src, rsb, csb, nrows, ncols, sub_size_x, sub_size_y); break;
+            case 16: rearrange_shared<float4 >(dst, rsa, csa, src, rsb, csb, nrows, ncols, sub_size_x, sub_size_y); break;
+            case 32: rearrange_shared<double4>(dst, rsa, csa, src, rsb, csb, nrows, ncols, sub_size_x, sub_size_y); break;
         }}
     }} else {{
         switch (bytes_per_thread) {{
@@ -644,7 +644,7 @@ extern "C" __global__ void fill_src(
             println!("----------------------------------------");
             println!("dh_exp  dh大小  正向时间          反向时间          直接拷贝时间");
             println!("----------------------------------------");
-            for dh_exp in 1..=8 {
+            for dh_exp in 1..=5 {
                 let dh_size = 1 << dh_exp;
                 let inverse_time = time_cost(true, total_exp, dh_exp);
                 let forward_time = time_cost(false, total_exp, dh_exp);
@@ -653,5 +653,12 @@ extern "C" __global__ void fill_src(
             }
             println!("----------------------------------------");
         }
+    }
+
+    #[test]
+    fn test_time_one() {
+        time_cost(true, 26, 4);
+        time_cost(false, 26, 4);
+        time_cost_bare(26, 8);
     }
 }
