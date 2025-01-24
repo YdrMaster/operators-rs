@@ -262,9 +262,9 @@ impl crate::Operator for Operator {
             src_cs,
             layout.r,
             layout.c,
-            32u32,         // sub_size_x
-            32u32,         // sub_size_y
-            (unit as u32)  // bytes_per_thread
+            32u32, // sub_size_x
+            32u32, // sub_size_y
+            unit   // bytes_per_thread
         ];
 
         let shared_memory_size = if use_shared_memory {
@@ -491,12 +491,13 @@ mod test {
             r#"
 
 extern "C" __global__ void fill_src(
-    unsigned char *src,
+    void *__restrict__ src,
     unsigned int n
 ){{
     int idx = threadIdx.x + blockIdx.x * blockDim.x;
+
     if (idx < n) {{
-        ((unsigned char*)src)[idx] = threadIdx.x;
+        reinterpret_cast<char *>(src)[idx] =  11;
     }}
 }}
 "#
@@ -515,10 +516,15 @@ extern "C" __global__ void fill_src(
         let block = block_size;
         let grid = grid_size;
 
-        let params = cuda::params![src.as_mut_ptr(), src.len() as u32];
+        let src_ptr = src.as_mut_ptr();
+        let src_len = src.len() as i32;
+
+        let params = cuda::params![src_ptr, src_len];
+
         module
             .get_kernel(&name)
             .launch(grid as u32, block as u32, params.as_ptr(), 0, Some(queue));
+        let _keep_alive = (src_ptr, src_len);
     }
 
     use std::time::Duration;
