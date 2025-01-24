@@ -84,7 +84,7 @@ impl crate::Operator for Operator {
             let block_size = 1024;
 
             // 计算总元素数
-            let total_elements: usize = len / unit;
+            let total_elements: u32 = (len / unit) as u32;
 
             let grid_size = (total_elements + block_size - 1) / block_size;
 
@@ -93,13 +93,13 @@ impl crate::Operator for Operator {
                 0i32, // rsa
                 0i32, // csa
                 args.src_base,
-                0i32,                  // rsb
-                0i32,                  // csb
-                total_elements as u32, // nrows
-                1u32,                  // ncols
-                32u32,                 // sub_size_x
-                32u32,                 // sub_size_y
-                unit as u32            // bytes_per_thread
+                0i32,           // rsb
+                0i32,           // csb
+                total_elements, // nrows
+                1u32,           // ncols
+                32u32,          // sub_size_x
+                32u32,          // sub_size_y
+                unit            // bytes_per_thread
             ];
 
             self.module.launch(
@@ -253,6 +253,8 @@ impl crate::Operator for Operator {
         let src_rs = layout.src_rs / unit;
         let src_cs = layout.src_cs / unit;
 
+        let sub_size = 32 as u32;
+
         let params = cuda::params![
             args.dst_base,
             dst_rs,
@@ -262,9 +264,9 @@ impl crate::Operator for Operator {
             src_cs,
             layout.r,
             layout.c,
-            32u32, // sub_size_x
-            32u32, // sub_size_y
-            unit   // bytes_per_thread
+            sub_size, // sub_size_x
+            sub_size, // sub_size_y
+            unit      // bytes_per_thread
         ];
 
         let shared_memory_size = if use_shared_memory {
