@@ -2,7 +2,7 @@
 use crate::{
     get_static,
     opencl::{ClDevice, KernelCache},
-    shape_not_support, type_not_support, ByteOf, LaunchError, QueueAlloc, SchemeError,
+    type_not_support, ByteOf, LaunchError, QueueAlloc, SchemeError,
 };
 use clrt::bindings::cl_int;
 use digit_layout::types::F32;
@@ -21,7 +21,7 @@ impl crate::Operator for Operator {
 
     fn new(node: &Self::TopoNode) -> Self {
         const SRC: &str = include_str!("fuesd_softmax.cl");
-        let opts = CString::new("").unwrap();
+        let opts = CString::new("-cl-std=CL2.0").unwrap();
         Self(KernelCache::new(node.context(), SRC, &opts))
     }
 
@@ -34,7 +34,7 @@ impl crate::Operator for Operator {
         let Args { att_layout, .. } = _args;
 
         if dt != F32 {
-            return Err(type_not_support("").into());
+            return Err(type_not_support(""));
         }
 
         let &[att_len, ..] = att_layout.shape() else {
@@ -86,7 +86,7 @@ impl crate::Operator for Operator {
             2..=16 => ("softmax_folding", MAX_THREADS_PER_BLOCK),
             _ => ("softmax_general", MAX_THREADS_PER_BLOCK),
         };
-        let localsize = (local_worksize_y as usize).next_power_of_two(); //for padding block reduce
+        let localsize = local_worksize_y.next_power_of_two(); //for padding block reduce
 
         let global_workoffset = [0];
         let global_worksize = [(nh * seq_len * localsize) as usize];
@@ -193,14 +193,8 @@ mod test {
                         *dst = *src as _;
                     }
                     queue.unmap(map);
-                    let map = queue.map(&mut att_svm);
-                    let ([], mem, []) = (unsafe { map.align_to::<f32>() }) else {
-                        panic!()
-                    };
-                    queue.unmap(map);
 
                     let time = Instant::now();
-                    // for i in 0..100 {
                     cl_op
                         .launch(
                             &args(ty::F32, nh, seq_len, att_len, att_svm.as_mut_ptr().cast()),
@@ -209,7 +203,6 @@ mod test {
                         )
                         .unwrap();
                     queue.finish();
-                    // }
                     let cl_time = time.elapsed();
                     let time = Instant::now();
                     cpu_op

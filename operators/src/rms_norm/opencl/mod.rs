@@ -2,7 +2,7 @@
 use crate::{
     get_static,
     opencl::{ClDevice, KernelCache},
-    shape_not_support, ByteOf, LaunchError, QueueAlloc, SchemeError,
+    ByteOf, LaunchError, QueueAlloc, SchemeError,
 };
 use clrt::bindings::cl_int;
 use std::ffi::CString;
@@ -19,7 +19,7 @@ impl crate::Operator for Operator {
 
     fn new(node: &Self::TopoNode) -> Self {
         const SRC: &str = include_str!("rms_norm.cl");
-        let opts = CString::new("").unwrap();
+        let opts = CString::new("-cl-std=CL2.0").unwrap();
         Self(KernelCache::new(node.context(), SRC, &opts))
     }
 

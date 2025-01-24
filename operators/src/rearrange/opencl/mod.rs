@@ -3,9 +3,7 @@ use crate::{
     opencl::{ClDevice, KernelCache},
     rank_not_support, ByteOf, LaunchError, QueueAlloc, SchemeError,
 };
-use clrt::bindings::cl_int;
-use clrt::Invalid;
-use clrt::SvmByte;
+use clrt::{bindings::cl_int, Invalid};
 use std::{ffi::CString, ptr::copy_nonoverlapping};
 
 pub struct Operator(KernelCache);
@@ -21,7 +19,7 @@ impl crate::Operator for Operator {
 
     fn new(node: &Self::TopoNode) -> Self {
         const SRC: &str = include_str!("rearrange.cl");
-        let opts = CString::new("").unwrap();
+        let opts = CString::new("-cl-std=CL2.0").unwrap();
         Self(KernelCache::new(node.context(), SRC, &opts))
     }
 
@@ -49,11 +47,10 @@ impl crate::Operator for Operator {
         if scheme.ndim() == 0 {
             let unit = scheme.unit();
             let queue = queue_alloc.queue();
-            let ss: &[SvmByte] = unsafe { std::slice::from_raw_parts(args.src_base, unit / 4) };
-            let mut dd: &mut [SvmByte] =
-                unsafe { std::slice::from_raw_parts_mut(args.dst_base, unit / 4) };
+            let ss = unsafe { std::slice::from_raw_parts(args.src_base, unit / 4) };
+            let dd = unsafe { std::slice::from_raw_parts_mut(args.dst_base, unit / 4) };
 
-            let mut map_d = queue.map_mut(&mut dd, Invalid);
+            let mut map_d = queue.map_mut(dd, Invalid);
             let ([], d_ans, []) = (unsafe { map_d.write_only_slice().align_to_mut::<u32>() })
             else {
                 panic!()

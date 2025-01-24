@@ -23,7 +23,7 @@ impl crate::Operator for Operator {
 
     fn new(node: &Self::TopoNode) -> Self {
         const SRC: &str = include_str!("swiglu.cl");
-        let opts = CString::new("").unwrap();
+        let opts = CString::new("-cl-std=CL2.0").unwrap();
         Self(KernelCache::new(node.context(), SRC, &opts))
     }
 

@@ -19,11 +19,13 @@ pub struct Args<H: Hardware> {
     pub b_layout: TensorLayout,
     pub b_base: ConstPtr<H>,
 }
+
 pub(super) struct Meta {
     pub dt: DigitLayout,
     pub n: MaybeDyn<usize>,
     pub d: MaybeDyn<usize>,
 }
+
 impl<H: Hardware> Args<H> {
     pub fn new_null(
         c_layout: TensorLayout,
@@ -39,6 +41,7 @@ impl<H: Hardware> Args<H> {
             b_base: null(),
         }
     }
+
     pub(super) fn meta(&self) -> Result<Meta, SchemeError> {
         let Self {
             c_layout,

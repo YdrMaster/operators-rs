@@ -114,7 +114,7 @@ __kernel void general_gemm_f32(__global float *A, __global float *B, __global fl
         value += valueA * valueB;
     }
 
-    float *p = C + global_id_x * cs + row_id * crs + cow_id * ccs;
+    __global float *p = C + global_id_x * cs + row_id * crs + cow_id * ccs;
     float valueC = *p;
     *p = beta * valueC + alpha * value;
 }
