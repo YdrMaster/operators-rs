@@ -40,11 +40,11 @@ impl<H: Hardware> Args<H> {
             indices: TensorLayout::new(ty::U32, &[n], &[ty::U32.nbytes() as _]),
             indices_base: null(),
             config: SampleArgs {
-                temperature: 0.0,
-                top_p: 0.0,
+                temperature: 0.,
+                top_p: 0.,
                 top_k: usize::MAX,
             },
-            seed: 0.0,
+            seed: 0.,
         }
     }
 }
@@ -64,10 +64,10 @@ impl SampleArgs {
     };
 
     pub fn new(temperature: f32, top_p: f32, top_k: usize) -> Result<Self, SampleArgsError> {
-        if temperature < 0.0 {
+        if temperature < 0. {
             return Err(SampleArgsError::NegativeTemperature);
         }
-        if top_k == 0 || top_p <= 0.0 {
+        if top_k == 0 || top_p <= 0. {
             return Err(SampleArgsError::NonPositiveTop);
         }
         Ok(Self {
@@ -79,7 +79,7 @@ impl SampleArgs {
 
     #[inline]
     pub fn is_argmax(&self) -> bool {
-        self.temperature == 0.0 || self.top_k == 1
+        self.temperature == 0. || self.top_k == 1
     }
 }
 

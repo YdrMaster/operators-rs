@@ -198,7 +198,7 @@ mod test {
                 host
             };
 
-            let mut y_ref = vec![0.0; n * d];
+            let mut y_ref = vec![0.; n * d];
             cpu_op
                 .launch(
                     &args(

@@ -7,62 +7,49 @@ pub struct InfiniNode {
     rank: usize,
     group_size: usize,
     pub(crate) device: Device,
-    pub(crate) comm: Arc<Comm>,
+    pub(crate) comm: Option<Arc<Comm>>,
 }
 
 impl InfiniNode {
     pub fn cpu(n: usize) -> Vec<Self> {
-        let device = Device::cpu();
-        let indices = (0..n as c_uint).collect::<Vec<_>>();
-        Comm::init_all(DeviceType::DEVICE_CPU, &indices)
-            .into_iter()
-            .enumerate()
-            .map(|(id, comm)| Self {
-                rank: id,
-                group_size: n,
-                device: device.clone(),
-                comm: Arc::new(comm),
-            })
-            .collect()
+        let indices = (0..n as _).collect::<Vec<_>>();
+        Self::new(&indices, DeviceType::DEVICE_CPU)
     }
 
     pub fn nv_gpu(indices: &[c_uint]) -> Vec<Self> {
-        Comm::init_all(DeviceType::DEVICE_NVIDIA, indices)
-            .into_iter()
-            .enumerate()
-            .map(|(id, comm)| Self {
-                rank: id,
-                group_size: indices.len(),
-                device: Device::nv_gpu(id),
-                comm: Arc::new(comm),
-            })
-            .collect()
+        Self::new(indices, DeviceType::DEVICE_NVIDIA)
     }
 
     pub fn cambricon_mlu(indices: &[c_uint]) -> Vec<Self> {
-        Comm::init_all(DeviceType::DEVICE_CAMBRICON, indices)
-            .into_iter()
-            .enumerate()
-            .map(|(id, comm)| Self {
-                rank: id,
-                group_size: indices.len(),
-                device: Device::cambricon_mlu(id),
-                comm: Arc::new(comm),
-            })
-            .collect()
+        Self::new(indices, DeviceType::DEVICE_CAMBRICON)
     }
 
     pub fn ascend_npu(indices: &[c_uint]) -> Vec<Self> {
-        Comm::init_all(DeviceType::DEVICE_ASCEND, indices)
-            .into_iter()
-            .enumerate()
-            .map(|(id, comm)| Self {
-                rank: id,
-                group_size: indices.len(),
-                device: Device::ascend_npu(id),
-                comm: Arc::new(comm),
-            })
-            .collect()
+        Self::new(indices, DeviceType::DEVICE_ASCEND)
+    }
+
+    fn new(indices: &[c_uint], ty: DeviceType) -> Vec<Self> {
+        let confused = unsafe { std::mem::transmute(ty) };
+        if let &[id] = indices {
+            vec![Self {
+                rank: 0,
+                group_size: 1,
+                device: Device::new(confused, id as _),
+                comm: None,
+            }]
+        } else {
+            Comm::init_all(ty, indices)
+                .into_iter()
+                .zip(indices)
+                .enumerate()
+                .map(|(idx, (comm, &id))| Self {
+                    rank: idx,
+                    group_size: indices.len(),
+                    device: Device::new(confused, id as _),
+                    comm: Some(Arc::new(comm)),
+                })
+                .collect()
+        }
     }
 }
 

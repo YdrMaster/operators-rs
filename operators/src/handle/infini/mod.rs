@@ -1,8 +1,5 @@
 use crate::{Alloc, Hardware, QueueAlloc, QueueOf};
-use infini_rt::{
-    DevBlob, DevByte, DeviceType, Stream, DEVICE_ASCEND, DEVICE_CAMBRICON, DEVICE_CPU,
-    DEVICE_NVIDIA,
-};
+use infini_rt::{DevBlob, DevByte, DeviceType, Stream};
 use std::{ops::Deref, sync::Arc};
 
 mod ccl;
@@ -17,34 +14,34 @@ pub struct Device {
 impl Device {
     #[inline]
     pub fn cpu() -> Self {
-        Self::new(DEVICE_CPU, 0)
+        Self::new(infini_rt::DEVICE_CPU, 0)
     }
 
     #[inline]
     pub fn nv_gpu(id: usize) -> Self {
-        Self::new(DEVICE_NVIDIA, id)
+        Self::new(infini_rt::DEVICE_NVIDIA, id)
     }
 
     #[inline]
     pub fn cambricon_mlu(id: usize) -> Self {
-        Self::new(DEVICE_CAMBRICON, id)
+        Self::new(infini_rt::DEVICE_CAMBRICON, id)
     }
 
     #[inline]
     pub fn ascend_npu(id: usize) -> Self {
-        Self::new(DEVICE_ASCEND, id)
+        Self::new(infini_rt::DEVICE_ASCEND, id)
     }
 
     fn new(ty: infini_rt::DeviceType, id: usize) -> Self {
-        use infini_op::bindings::Device::*;
+        use infini_op::bindings::Device as Ty;
         Self {
             device: infini_rt::Device { ty, id: id as _ },
             handle: Arc::new(infini_op::Handle::new(
                 match ty {
-                    DEVICE_CPU => DevCpu,
-                    DEVICE_NVIDIA => DevNvGpu,
-                    DEVICE_CAMBRICON => DevCambriconMlu,
-                    DEVICE_ASCEND => DevAscendNpu,
+                    infini_rt::DEVICE_CPU => Ty::DevCpu,
+                    infini_rt::DEVICE_NVIDIA => Ty::DevNvGpu,
+                    infini_rt::DEVICE_CAMBRICON => Ty::DevCambriconMlu,
+                    infini_rt::DEVICE_ASCEND => Ty::DevAscendNpu,
                     _ => unreachable!("unknown device type"),
                 },
                 id as _,

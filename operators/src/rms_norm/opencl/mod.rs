@@ -232,7 +232,7 @@ mod test {
                     let cl_time = time.elapsed();
 
                     //CPU
-                    let mut y_ref = vec![0.0; n * d];
+                    let mut y_ref = vec![0.; n * d];
                     let time = Instant::now();
                     cpu_op
                         .launch(

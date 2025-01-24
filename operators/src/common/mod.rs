@@ -1,4 +1,5 @@
 mod blob;
+mod calculator;
 mod error;
 mod maybe_dyn;
 mod pool;
@@ -7,6 +8,7 @@ mod unsigned;
 mod workspace;
 
 pub use blob::Blob;
+pub use calculator::OffsetCalculator;
 pub use error::{functions::*, LaunchError, LaunchErrorKind, SchemeError, SchemeErrorKind};
 pub use maybe_dyn::{dyn_, DynVal, MaybeDyn};
 pub use pool::Pool;
@@ -92,7 +94,7 @@ pub(crate) mod test_utils {
         pub fn new(abs: f64, rel: f64) -> Self {
             Self {
                 threshold: Diff { abs, rel },
-                max_diff: Diff { abs: 0.0, rel: 0.0 },
+                max_diff: Diff { abs: 0., rel: 0. },
                 outliers: vec![],
                 count: 0,
             }

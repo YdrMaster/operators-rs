@@ -1,6 +1,6 @@
 ﻿use super::{args::Meta, Args, Broadcast};
 use crate::{
-    nvidia_gpu::{Gpu, NcclNode},
+    cuda::{Gpu, NcclNode},
     rearrange, ByteOf, LaunchError, QueueAlloc, SchemeError,
 };
 use std::{

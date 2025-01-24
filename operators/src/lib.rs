@@ -1,24 +1,24 @@
-// #![deny(warnings)]
+#![deny(warnings)]
 
 mod common;
 mod handle;
 
+pub mod add;
 pub mod add_rows;
+pub mod all_reduce;
 pub mod attention;
 pub mod attention_kv_cached;
+pub mod broadcast;
 pub mod conv;
 pub mod fuesd_softmax;
+pub mod gelu;
 pub mod layer_norm;
 pub mod mat_mul;
-pub mod mlp;
 pub mod random_sample;
 pub mod rearrange;
 pub mod rms_norm;
 pub mod rope;
 pub mod swiglu;
-
-pub mod all_reduce;
-pub mod broadcast;
 
 pub use common::*;
 
@@ -36,11 +36,12 @@ pub use handle::infini;
 pub extern crate infini_rt;
 
 #[cfg(use_cuda)]
-pub use handle::nvidia_gpu;
+pub mod cuda {
+    pub use crate::handle::cuda::*;
+    pub use ::cuda::*;
+}
 #[cfg(use_cuda)]
 pub extern crate cublas;
-#[cfg(use_cuda)]
-pub extern crate cuda;
 #[cfg(use_nccl)]
 pub extern crate nccl;
 
