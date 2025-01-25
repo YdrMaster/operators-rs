@@ -1,7 +1,6 @@
 use crate::{
-    get_static, rank_mismatch, shape_mismatch, shape_not_support,
-    utils::{dim_distinct, rank_error, type_distinct},
-    ConstPtr, Hardware, MaybeDyn, MutPtr, SchemeError, TensorLayout,
+    get_static, rank_mismatch, shape_mismatch, shape_not_support, utils::type_distinct, ConstPtr,
+    Hardware, MutPtr, SchemeError, TensorLayout,
 };
 use digit_layout::DigitLayout;
 use itertools::izip;
@@ -20,12 +19,6 @@ pub struct Args<H: Hardware> {
     pub b_base: ConstPtr<H>,
 }
 
-pub(super) struct Meta {
-    pub dt: DigitLayout,
-    pub n: MaybeDyn<usize>,
-    pub d: MaybeDyn<usize>,
-}
-
 impl<H: Hardware> Args<H> {
     pub fn new_null(
         c_layout: TensorLayout,
@@ -40,31 +33,6 @@ impl<H: Hardware> Args<H> {
             b_layout,
             b_base: null(),
         }
-    }
-
-    pub(super) fn meta(&self) -> Result<Meta, SchemeError> {
-        let Self {
-            c_layout,
-            a_layout,
-            b_layout,
-            ..
-        } = self;
-
-        let &[nc, dc] = c_layout.shape() else {
-            return Err(rank_error("c", 2, c_layout.ndim()));
-        };
-        let &[na, da] = a_layout.shape() else {
-            return Err(rank_error("a", 2, a_layout.ndim()));
-        };
-        let &[nb, db] = b_layout.shape() else {
-            return Err(rank_error("b", 2, b_layout.ndim()));
-        };
-
-        Ok(Meta {
-            dt: type_distinct(&[c_layout.dt(), a_layout.dt(), b_layout.dt()])?,
-            n: dim_distinct(&[nc, na, nb])?,
-            d: dim_distinct(&[dc, da, db])?,
-        })
     }
 }
 

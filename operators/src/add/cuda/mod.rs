@@ -1,22 +1,21 @@
-use super::{Add, Args};
+use super::{args::Scheme, Add, Args};
 use crate::{
-    add::args::Meta,
     cuda::{dt_name, Gpu, Handle, ModuleBox},
-    get_static, strides_not_support,
-    utils::gcd,
+    shape_not_support, strides_not_support,
+    utils::{gcd, type_distinct},
     ByteOf, LaunchError, QueueAlloc, SchemeDiversity, SchemeError,
 };
 use digit_layout::DigitLayout;
 use lru::LruCache;
 use std::{
-    ffi::CString,
+    ffi::{c_uint, CString},
     sync::{Arc, Mutex},
 };
 
 pub struct Operator {
     handle: Arc<Handle>,
     max_threads_block: usize,
-    schemes: Mutex<LruCache<SchemeKey, Scheme>>,
+    schemes: Mutex<LruCache<DigitLayout, Arc<ModuleBox>>>,
 }
 impl Add<Gpu> for Operator {}
 
@@ -39,13 +38,11 @@ impl crate::Operator for Operator {
         args: &Self::Args,
         _max_workspace_size: usize,
     ) -> Result<usize, SchemeError> {
-        let Meta { dt, .. } = args.meta()?;
-
-        let key = SchemeKey { dt };
+        let dt = type_distinct(&[args.c_layout.dt(), args.a_layout.dt(), args.b_layout.dt()])?;
         self.schemes
             .lock()
             .unwrap()
-            .try_get_or_insert(key, || Scheme::new(&self.handle, key))?;
+            .get_or_insert(dt, || compile(&self.handle, dt));
         Ok(0)
     }
 
@@ -58,99 +55,70 @@ impl crate::Operator for Operator {
     where
         QA: QueueAlloc<Hardware = Self::Hardware>,
     {
-        let Meta { dt, n, d } = args.meta()?;
-        let Args {
-            c_layout,
-            c_base,
-            a_layout,
-            a_base,
-            b_layout,
-            b_base,
-        } = args;
-        let &[cns, cds] = c_layout.strides() else {
-            unreachable!()
-        };
-        let &[_, ads] = a_layout.strides() else {
-            unreachable!()
-        };
-        let &[_, bds] = b_layout.strides() else {
-            unreachable!()
-        };
+        let scheme = Scheme::new(args)?;
+        let dt = scheme.dt();
+        let count = scheme.count();
 
-        get_static!(
-            n   d
-            cns cds
-            ads
-            bds
-        );
-
+        let &[1] = scheme.idx_strides() else {
+            return Err(shape_not_support("").into());
+        };
+        let &[sc] = scheme.c_strides() else {
+            return Err(shape_not_support("").into());
+        };
+        let &[sa] = scheme.a_strides() else {
+            return Err(shape_not_support("").into());
+        };
+        let &[sb] = scheme.b_strides() else {
+            return Err(shape_not_support("").into());
+        };
         let unit = dt.nbytes() as isize;
-        if cds != unit || ads != unit || bds != unit {
+        if sc != unit || sa != unit || sb != unit {
             return Err(strides_not_support("").into());
-        };
+        }
 
-        let key = SchemeKey { dt };
-        let scheme = self
-            .schemes
+        let block_dims = gcd(count, self.max_threads_block);
+        let grid_dims = count / block_dims;
+        let Args {
+            c_base,
+            a_base,
+            b_base,
+            ..
+        } = args;
+        let params = cuda::params![c_base, a_base, b_base];
+
+        self.schemes
             .lock()
             .unwrap()
-            .try_get_or_insert(key, || Scheme::new(&self.handle, key))?
-            .clone();
-
-        let block = gcd(self.max_threads_block, d);
-        let cns = (cns / unit) as i32;
-        let params = cuda::params![c_base, a_base, b_base, cns];
-        scheme.module.launch(
-            &scheme.name,
-            (n as u32, (d / block) as u32),
-            block as u32,
-            params.as_ptr(),
-            0,
-            queue_alloc.queue(),
-        );
+            .get_or_insert(dt, || compile(&self.handle, dt))
+            .launch(
+                CString::new("add").unwrap(),
+                grid_dims as c_uint,
+                block_dims as c_uint,
+                params.as_ptr(),
+                0,
+                queue_alloc.queue(),
+            );
         Ok(())
     }
 }
 
-#[derive(Clone)]
-struct Scheme {
-    module: Arc<ModuleBox>,
-    name: CString,
-}
+fn compile(handle: &Arc<Handle>, dt: DigitLayout) -> Arc<ModuleBox> {
+    const CODE: &str = include_str!("add.cuh");
+    let cc = handle.device().compute_capability();
+    let ty = dt_name(dt);
+    handle.compile_kernel(&format!("add_{ty}"), cc, || {
+        format!(
+            r#"{CODE}
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-struct SchemeKey {
-    dt: DigitLayout,
-}
-
-impl Scheme {
-    pub fn new(handle: &Arc<Handle>, SchemeKey { dt }: SchemeKey) -> Result<Self, SchemeError> {
-        let device = handle.device();
-        let cc = device.compute_capability();
-        let type_name = dt_name(dt);
-
-        const CODE: &str = include_str!("add.cuh");
-        let name = format!("add_{type_name}");
-        let module = handle.compile_kernel(&name, cc, || {
-            format!(
-                r#"{CODE}
-            
-extern "C" __global__ void  add_{type_name}(
-    {type_name} *__restrict__ c,
-    {type_name}  const *__restrict__ a,
-    {type_name} const *__restrict__ b,
-    int const stride
+extern "C" __global__ void add(
+    {ty} *__restrict__ c,
+    {ty} const *__restrict__ a,
+    {ty} const *__restrict__ b
 ){{
-    add(c, a, b,stride);
+    _add(c, a, b);
 }}"#
-            )
-        });
-
-        Ok(Self {
-            module,
-            name: CString::new(name).unwrap(),
-        })
-    }
+        )
+    })
 }
 
 #[cfg(test)]
