@@ -61,6 +61,8 @@ pub(crate) struct KernelCache {
     kernels: HashMap<String, Pool<Kernel>>,
 }
 
+pub(crate) const CL2_0: &CStr = c"-cl-std=CL2.0";
+
 impl KernelCache {
     pub fn new(ctx: &Context, src: &str, opts: &CStr) -> Self {
         let program = match ctx.build_from_source(src, opts) {

@@ -1,15 +1,15 @@
 ﻿use super::{args::Meta, Args, Swiglu};
 use crate::{
     get_static,
-    opencl::{ClDevice, KernelCache},
+    opencl::{ClDevice, KernelCache, CL2_0},
     strides_not_support, type_not_support,
     utils::gcd,
     ByteOf, LaunchError, QueueAlloc, SchemeError,
 };
 use clrt::bindings::cl_int;
 use digit_layout::types::F32;
-use std::ffi::CString;
 
+#[repr(transparent)]
 pub struct Operator(KernelCache);
 
 impl Swiglu<ClDevice> for Operator {}
@@ -22,9 +22,11 @@ impl crate::Operator for Operator {
     type Args = Args<ClDevice>;
 
     fn new(node: &Self::TopoNode) -> Self {
-        const SRC: &str = include_str!("swiglu.cl");
-        let opts = CString::new("-cl-std=CL2.0").unwrap();
-        Self(KernelCache::new(node.context(), SRC, &opts))
+        Self(KernelCache::new(
+            node.context(),
+            include_str!("swiglu.cl"),
+            CL2_0,
+        ))
     }
 
     fn scheme(
@@ -32,12 +34,7 @@ impl crate::Operator for Operator {
         _args: &Self::Args,
         _max_workspace_size: usize,
     ) -> Result<usize, SchemeError> {
-        let Meta { dt, .. } = _args.meta()?;
-        if dt == F32 {
-            Ok(0)
-        } else {
-            Err(type_not_support(""))
-        }
+        Ok(0)
     }
 
     fn launch<QA>(

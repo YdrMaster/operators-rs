@@ -1,13 +1,13 @@
 ﻿use super::{args::Meta, Args, FusedSoftmax};
 use crate::{
     get_static,
-    opencl::{ClDevice, KernelCache},
+    opencl::{ClDevice, KernelCache, CL2_0},
     type_not_support, ByteOf, LaunchError, QueueAlloc, SchemeError,
 };
 use clrt::bindings::cl_int;
 use digit_layout::types::F32;
-use std::ffi::CString;
 
+#[repr(transparent)]
 pub struct Operator(KernelCache);
 
 impl FusedSoftmax<ClDevice> for Operator {}
@@ -20,9 +20,11 @@ impl crate::Operator for Operator {
     type Args = Args<ClDevice>;
 
     fn new(node: &Self::TopoNode) -> Self {
-        const SRC: &str = include_str!("fuesd_softmax.cl");
-        let opts = CString::new("-cl-std=CL2.0").unwrap();
-        Self(KernelCache::new(node.context(), SRC, &opts))
+        Self(KernelCache::new(
+            node.context(),
+            include_str!("fuesd_softmax.cl"),
+            CL2_0,
+        ))
     }
 
     fn scheme(

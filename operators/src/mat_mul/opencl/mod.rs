@@ -1,10 +1,11 @@
 ﻿use super::{args::SchemeLayout, Args, MatMul};
 use crate::{
-    opencl::{ClDevice, KernelCache},
+    opencl::{ClDevice, KernelCache, CL2_0},
     ByteOf, LaunchError, QueueAlloc, SchemeError,
 };
 use clrt::bindings::cl_int;
-use std::ffi::CString;
+
+#[repr(transparent)]
 pub struct Operator(KernelCache);
 
 impl MatMul<ClDevice> for Operator {}
@@ -17,9 +18,11 @@ impl crate::Operator for Operator {
     type Args = Args<ClDevice>;
 
     fn new(node: &Self::TopoNode) -> Self {
-        const SRC: &str = include_str!("mat_mul.cl");
-        let opts = CString::new("-cl-std=CL2.0").unwrap();
-        Self(KernelCache::new(node.context(), SRC, &opts))
+        Self(KernelCache::new(
+            node.context(),
+            include_str!("mat_mul.cl"),
+            CL2_0,
+        ))
     }
 
     fn scheme(

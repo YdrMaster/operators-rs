@@ -1,11 +1,12 @@
 ﻿use super::{args::Meta, Args, RmsNorm};
 use crate::{
     get_static,
-    opencl::{ClDevice, KernelCache},
+    opencl::{ClDevice, KernelCache, CL2_0},
     ByteOf, LaunchError, QueueAlloc, SchemeError,
 };
 use clrt::bindings::cl_int;
-use std::ffi::CString;
+
+#[repr(transparent)]
 pub struct Operator(KernelCache);
 
 impl RmsNorm<ClDevice> for Operator {}
@@ -18,9 +19,11 @@ impl crate::Operator for Operator {
     type Args = Args<ClDevice>;
 
     fn new(node: &Self::TopoNode) -> Self {
-        const SRC: &str = include_str!("rms_norm.cl");
-        let opts = CString::new("-cl-std=CL2.0").unwrap();
-        Self(KernelCache::new(node.context(), SRC, &opts))
+        Self(KernelCache::new(
+            node.context(),
+            include_str!("rms_norm.cl"),
+            CL2_0,
+        ))
     }
 
     fn scheme(

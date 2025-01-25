@@ -1,15 +1,15 @@
 ﻿use super::{args::Meta, fill_pos, Args, Rope, Seq, SinCosTable};
 use crate::{
     get_static,
-    opencl::{ClDevice, KernelCache},
+    opencl::{ClDevice, KernelCache, CL2_0},
     shape_not_support, strides_not_support, type_not_support, ByteOf, LaunchError, QueueAlloc,
     SchemeError,
 };
-use clrt::bindings::cl_int;
-use clrt::Invalid;
+use clrt::{bindings::cl_int, Invalid};
 use digit_layout::types::{F32, U32};
-use std::{alloc::Layout, ffi::CString, iter::zip};
+use std::{alloc::Layout, iter::zip};
 
+#[repr(transparent)]
 pub struct Operator(KernelCache);
 
 const MAX_THREADS_PER_BLOCK: usize = 512;
@@ -62,9 +62,11 @@ impl crate::Operator for Operator {
     type Args = Args<ClDevice>;
 
     fn new(node: &Self::TopoNode) -> Self {
-        const SRC: &str = include_str!("rope.cl");
-        let opts = CString::new("-cl-std=CL2.0").unwrap();
-        Self(KernelCache::new(node.context(), SRC, &opts))
+        Self(KernelCache::new(
+            node.context(),
+            include_str!("rope.cl"),
+            CL2_0,
+        ))
     }
 
     fn scheme(
@@ -72,12 +74,7 @@ impl crate::Operator for Operator {
         _args: &Self::Args,
         _max_workspace_size: usize,
     ) -> Result<usize, SchemeError> {
-        let Meta { dt_t, dt_p, .. } = _args.meta()?;
-        if dt_t == F32 || dt_p == U32 {
-            Ok(0)
-        } else {
-            Err(type_not_support(""))
-        }
+        Ok(0)
     }
 
     fn launch<QA>(

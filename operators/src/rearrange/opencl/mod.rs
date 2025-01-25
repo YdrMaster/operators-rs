@@ -1,11 +1,12 @@
 ﻿use super::{args::Scheme, Args, Rearrange};
 use crate::{
-    opencl::{ClDevice, KernelCache},
+    opencl::{ClDevice, KernelCache, CL2_0},
     rank_not_support, ByteOf, LaunchError, QueueAlloc, SchemeError,
 };
 use clrt::{bindings::cl_int, Invalid};
-use std::{ffi::CString, ptr::copy_nonoverlapping};
+use std::ptr::copy_nonoverlapping;
 
+#[repr(transparent)]
 pub struct Operator(KernelCache);
 
 impl Rearrange<ClDevice> for Operator {}
@@ -18,9 +19,11 @@ impl crate::Operator for Operator {
     type Args = Args<ClDevice>;
 
     fn new(node: &Self::TopoNode) -> Self {
-        const SRC: &str = include_str!("rearrange.cl");
-        let opts = CString::new("-cl-std=CL2.0").unwrap();
-        Self(KernelCache::new(node.context(), SRC, &opts))
+        Self(KernelCache::new(
+            node.context(),
+            include_str!("rearrange.cl"),
+            CL2_0,
+        ))
     }
 
     fn scheme(
