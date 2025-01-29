@@ -163,7 +163,7 @@ mod test {
 
                 let context = device.context();
                 let queue = context.queue();
-                let mut cl_op = Operator::new(&ClDevice::new(context.clone()));
+                let mut cl_op = Operator::new(&ClDevice::new(context.clone(), Default::default()));
                 cpu_op.scheme(&dyn_args(ty::F64), 0).unwrap();
                 cl_op.scheme(&dyn_args(ty::F32), 0).unwrap();
 
@@ -184,7 +184,7 @@ mod test {
                     // for (seq_len, att_len) in [(1, 13)] {
                     // for (seq_len, att_len) in [(1, 1024), (1, 2048), (7, 2048)] {
                     let mut att = vec![0.0f64; nh * seq_len * att_len];
-                    rand::thread_rng().fill(&mut att[..]);
+                    rand::rng().fill(&mut att[..]);
                     let mut att_svm = context.malloc::<f32>(nh * seq_len * att_len);
                     let mut map = queue.map_mut(&mut att_svm, false);
                     let ([], mem, []) = (unsafe { map.align_to_mut::<f32>() }) else {

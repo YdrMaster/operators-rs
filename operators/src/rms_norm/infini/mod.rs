@@ -168,8 +168,8 @@ mod test {
 
             let mut x = vec![0.0f64; n * d];
             let mut w = vec![0.0f64; d];
-            rand::thread_rng().fill(&mut x[..]);
-            rand::thread_rng().fill(&mut w[..]);
+            rand::rng().fill(&mut x[..]);
+            rand::rng().fill(&mut w[..]);
             let x = x;
             let w = w;
 

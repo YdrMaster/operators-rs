@@ -238,7 +238,7 @@ mod test {
         let nh = 32;
         for (seq_len, att_len) in [(1, 511), (1, 2048), (7, 511), (7, 2048)] {
             let mut att = vec![0.0f64; nh * seq_len * att_len];
-            rand::thread_rng().fill(&mut att[..]);
+            rand::rng().fill(&mut att[..]);
 
             let att_ans = gpu.apply(|ctx| {
                 let stream = ctx.stream();

@@ -3,8 +3,8 @@ members = ["operators"]
 resolver = "2"
 
 [workspace.dependencies]
-clrt = { git = "https://github.com/InfiniTensor/clrt", rev = "aea447a" }
-search-cl-tools = { git = "https://github.com/InfiniTensor/clrt", rev = "aea447a" }
+clrt = { git = "https://github.com/InfiniTensor/clrt", rev = "f69b160" }
+search-cl-tools = { git = "https://github.com/InfiniTensor/clrt", rev = "f69b160" }
 
 infini-rt = { git = "https://github.com/InfiniTensor/infini-toolkit", rev = "e8362c3" }
 infini-op = { git = "https://github.com/InfiniTensor/infini-toolkit", rev = "e8362c3" }

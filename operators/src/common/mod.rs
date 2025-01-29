@@ -1,5 +1,6 @@
 mod blob;
 mod calculator;
+mod diversity;
 mod error;
 mod maybe_dyn;
 mod pool;
@@ -16,14 +17,9 @@ pub use tensor::TensorLayout;
 pub use unsigned::Unsigned;
 pub use workspace::Workspace;
 
+pub(crate) use diversity::{SchemeCacheSize, SchemeDiversity};
 pub(crate) use maybe_dyn::{get_static, static_from};
 pub(crate) use workspace::WorkspaceCollector;
-#[allow(dead_code)]
-pub(crate) enum SchemeDiversity {
-    Low,
-    Medium,
-    High,
-}
 
 pub mod utils {
     use super::{rank_not_support, shape_mismatch, type_mismatch, MaybeDyn, SchemeError};

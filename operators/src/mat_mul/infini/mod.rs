@@ -154,9 +154,9 @@ mod test {
             let mut a = vec![0.0f64; batch * m * k];
             let mut b = vec![0.0f64; batch * k * n];
             let mut c = vec![0.0f64; batch * m * n];
-            rand::thread_rng().fill(&mut a[..]);
-            rand::thread_rng().fill(&mut b[..]);
-            rand::thread_rng().fill(&mut c[..]);
+            rand::rng().fill(&mut a[..]);
+            rand::rng().fill(&mut b[..]);
+            rand::rng().fill(&mut c[..]);
             let a = a;
             let b = b;
 

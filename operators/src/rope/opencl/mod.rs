@@ -232,7 +232,7 @@ mod test {
 
                 let context = device.context();
                 let queue = context.queue();
-                let mut cl_op = Operator::new(&ClDevice::new(context.clone()));
+                let mut cl_op = Operator::new(&ClDevice::new(context.clone(), Default::default()));
                 cpu_op.scheme(&dyn_args(F64, U32), 0).unwrap();
                 cl_op.scheme(&dyn_args(F32, U32), 0).unwrap();
 
@@ -241,7 +241,7 @@ mod test {
                 let dh = 64;
 
                 let mut t = vec![0.0f64; NT * nh * dh];
-                rand::thread_rng().fill(&mut t[..]);
+                rand::rng().fill(&mut t[..]);
                 let p: [u32; NT] = [0];
                 let mut t_svm = context.malloc::<f32>(NT * nh * dh);
                 let mut p_svm = context.malloc::<u32>(7);

@@ -177,7 +177,7 @@ mod test {
 
                 let context = device.context();
                 let queue = context.queue();
-                let mut cl_op = Operator::new(&ClDevice::new(context.clone()));
+                let mut cl_op = Operator::new(&ClDevice::new(context.clone(), Default::default()));
 
                 for k in 2..=12 {
                     let n = 5;
@@ -188,8 +188,8 @@ mod test {
 
                     let mut x = vec![0.0f64; n * d];
                     let mut w = vec![0.0f64; d];
-                    rand::thread_rng().fill(&mut x[..]);
-                    rand::thread_rng().fill(&mut w[..]);
+                    rand::rng().fill(&mut x[..]);
+                    rand::rng().fill(&mut w[..]);
 
                     let mut x_svm = context.malloc::<f32>(n * d);
                     let mut w_svm = context.malloc::<f32>(d);

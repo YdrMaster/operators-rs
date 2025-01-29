@@ -159,7 +159,7 @@ mod test {
 
                 let context = device.context();
                 let queue = context.queue();
-                let mut cl_op = Operator::new(&ClDevice::new(context.clone()));
+                let mut cl_op = Operator::new(&ClDevice::new(context.clone(), Default::default()));
                 cpu_op.scheme(&dyn_args(F64), 0).unwrap();
                 cl_op.scheme(&dyn_args(F32), 0).unwrap();
 
@@ -169,8 +169,8 @@ mod test {
                 let d = 5632;
                 let mut gate = vec![0.0f64; n * d];
                 let mut up = vec![0.0f64; n * d];
-                rand::thread_rng().fill(&mut gate[..]);
-                rand::thread_rng().fill(&mut up[..]);
+                rand::rng().fill(&mut gate[..]);
+                rand::rng().fill(&mut up[..]);
                 let up = up;
 
                 let mut gate_svm = context.malloc::<f32>(n * d);

@@ -87,9 +87,9 @@ mod test {
         let mut k = vec![0.0f64; nkvh * att * dh];
         let mut v = vec![0.0f64; nkvh * att * dh];
         let o = vec![0.0f64; nh * seq * dh];
-        rand::thread_rng().fill(&mut q[..]);
-        rand::thread_rng().fill(&mut k[..]);
-        rand::thread_rng().fill(&mut v[..]);
+        rand::rng().fill(&mut q[..]);
+        rand::rng().fill(&mut k[..]);
+        rand::rng().fill(&mut v[..]);
         let k = k;
         let v = v;
 

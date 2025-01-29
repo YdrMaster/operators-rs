@@ -232,8 +232,8 @@ mod test {
         let mut d = vec![0.1f64; b * m * n];
         let mut s = vec![0.1f64; k * n];
         let i: Vec<u32> = (0..=m).cycle().take(m * b).map(|x| x as u32).collect(); // 收集结果到 Vec 中
-        rand::thread_rng().fill(&mut d[..]);
-        rand::thread_rng().fill(&mut s[..]);
+        rand::rng().fill(&mut d[..]);
+        rand::rng().fill(&mut s[..]);
         let data_ans = gpu.apply(|ctx| {
             let stream = ctx.stream();
             let mut d = cast_load(&d, f16::from_f64, &stream);

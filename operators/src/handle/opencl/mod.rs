@@ -1,12 +1,17 @@
-use crate::{Alloc, Hardware, Pool, QueueAlloc, QueueOf};
+use crate::{Alloc, Hardware, Pool, QueueAlloc, QueueOf, SchemeCacheSize, SchemeDiversity};
 use clrt::{BuildError, CommandQueue, Context, Kernel, Program, SvmBlob, SvmByte};
+use lru::LruCache;
 use std::{
     collections::HashMap,
     ffi::{CStr, CString},
+    hash::Hash,
+    sync::Mutex,
 };
 
-#[repr(transparent)]
-pub struct ClDevice(Context);
+pub struct ClDevice {
+    ctx: Context,
+    cache_size: SchemeCacheSize,
+}
 
 impl Hardware for ClDevice {
     type Byte = SvmByte;
@@ -15,13 +20,21 @@ impl Hardware for ClDevice {
 
 impl ClDevice {
     #[inline]
-    pub fn new(context: Context) -> Self {
-        Self(context)
+    pub fn new(context: Context, cache_size: SchemeCacheSize) -> Self {
+        Self {
+            ctx: context,
+            cache_size,
+        }
     }
 
     #[inline]
     pub(crate) fn context(&self) -> &Context {
-        &self.0
+        &self.ctx
+    }
+
+    #[inline]
+    pub fn new_cache<K: Hash + Eq, V>(&self, level: SchemeDiversity) -> Mutex<LruCache<K, V>> {
+        self.cache_size.new_cache(level)
     }
 }
 

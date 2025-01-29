@@ -188,7 +188,7 @@ mod test {
 
                 let context = device.context();
                 let queue = context.queue();
-                let cl_op = Operator::new(&ClDevice::new(context.clone()));
+                let cl_op = Operator::new(&ClDevice::new(context.clone(), Default::default()));
 
                 let batch = 4;
                 let k = 9;
@@ -198,9 +198,9 @@ mod test {
                     let mut b = vec![0.0f64; batch * k * n];
                     let mut c = vec![0.0f64; batch * m * n];
 
-                    rand::thread_rng().fill(&mut a[..]);
-                    rand::thread_rng().fill(&mut b[..]);
-                    rand::thread_rng().fill(&mut c[..]);
+                    rand::rng().fill(&mut a[..]);
+                    rand::rng().fill(&mut b[..]);
+                    rand::rng().fill(&mut c[..]);
 
                     let a = a;
                     let b = b;

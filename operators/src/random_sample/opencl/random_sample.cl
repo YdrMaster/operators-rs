@@ -1,72 +1,89 @@
 #define CL_TARGET_OPENCL_VERSION 200
 #pragma OPENCL EXTENTION cl_khr_fp16 : enable
-#define TILE_SIZE 256
+
+#ifndef Tval
+#define Tval float
+#endif
+
+// assert: GROUP_SIZE is power of 2
+#ifndef GROUP_SIZE
+#define GROUP_SIZE 1024
+#endif
+
+typedef unsigned int Tidx;
 
 typedef struct {
-    unsigned int idx;
-    float val;
+    Tidx idx;
+    Tval val;
 } KVPair;
 
-__kernel void argmax_step1(
-    __global float *input,
-    const int n) {
+void argmax_local(local KVPair *kv_pairs, KVPair reg) {
+    Tidx const l_idx = get_local_id(0);
 
-    int global_id = get_global_id(0);
-    int local_id = get_local_id(0);
-    int group_id = get_group_id(0);
-    int local_size = get_local_size(0);
-
-    __local float local_max_value[TILE_SIZE];
-    __local int local_max_index[TILE_SIZE];
-
-    local_max_value[local_id] = (global_id < n) ? *(input + global_id) : -1;
-    local_max_index[local_id] = (global_id < n) ? global_id : -1;
+    kv_pairs[l_idx] = reg;
     barrier(CLK_LOCAL_MEM_FENCE);
 
-    for (int offset = local_size / 2; offset > 0; offset /= 2) {
-        if (local_id < offset) {
-            if (local_max_value[local_id] < local_max_value[local_id + offset]) {
-                local_max_value[local_id] = local_max_value[local_id + offset];
-                local_max_index[local_id] = local_max_index[local_id + offset];
-            }
+    for (Tidx stride = GROUP_SIZE >> 1; stride > 0; stride >>= 1) {
+        if (l_idx < stride) {
+            local KVPair
+                *a = kv_pairs + l_idx,
+                *b = kv_pairs + l_idx + stride;
+            if (b->val > a->val) *a = *b;
         }
         barrier(CLK_LOCAL_MEM_FENCE);
-    }
-    if (local_id == 0) {
-        *(input + (global_id / 256)) = local_max_value[0];
-        *(input + TILE_SIZE + (global_id / 256)) = local_max_index[0];
     }
 }
 
-__kernel void argmax_step2(
-    __global float *input,
-    __global KVPair *kvpair,
-    const int n) {
+kernel void argmax_build_pairs(
+    global Tval const *input,
+    global KVPair *output,
+    Tidx const n,
+    Tval init) {
 
-    int global_id = get_global_id(0);
-    int local_id = get_local_id(0);
-    int group_id = get_group_id(0);
-    int local_size = get_local_size(0);
+    Tidx const
+        g_idx = get_global_id(0),
+        g_len = get_global_size(0),
+        l_idx = get_local_id(0);
 
-    __local float local_max_value[TILE_SIZE];
-    __local int local_max_index[TILE_SIZE];
-
-    local_max_value[local_id] = (global_id < n) ? *(input + global_id) : -1;
-    local_max_index[local_id] = (global_id < n) ? *(input + TILE_SIZE + local_id) : -1;
-    barrier(CLK_LOCAL_MEM_FENCE);
-
-    for (int offset = local_size / 2; offset > 0; offset /= 2) {
-        if (local_id < offset) {
-            if (local_max_value[local_id] < local_max_value[local_id + offset]) {
-                local_max_value[local_id] = local_max_value[local_id + offset];
-                local_max_index[local_id] = local_max_index[local_id + offset];
-            }
-        }
-        barrier(CLK_LOCAL_MEM_FENCE);
+    // register: 每个线程可能处理多个数据，汇总到寄存器中
+    // NOTICE 为保证线程利用率，每个线程应该处理至少 2 个数据
+    KVPair reg = {-1, init};
+    for (Tidx i = g_idx; i < n; i += g_len) {
+        Tval const val = input[i];
+        if (val > reg.val) reg = (KVPair) {i, val};
     }
 
-    if (local_id == 0) {
-        kvpair[0].val = local_max_value[0];
-        kvpair[0].idx = local_max_index[0];
+    // local memory: 每个工作组在工作组内存中实现规约
+    local KVPair kv_pairs[GROUP_SIZE];
+    argmax_local(kv_pairs, reg);
+
+    // 最终结果写回 global
+    if (l_idx == 0) output[g_idx / GROUP_SIZE] = *kv_pairs;
+}
+
+kernel void argmax_reduce(
+    global KVPair const *pairs,
+    global KVPair *output,
+    Tidx const n,
+    Tval init) {
+
+    Tidx const
+        g_idx = get_global_id(0),
+        g_len = get_global_size(0),
+        l_idx = get_local_id(0);
+
+    // register: 每个线程可能处理多个数据，汇总到寄存器中
+    // NOTICE 为保证线程利用率，每个线程应该处理至少 2 个数据
+    KVPair reg = {-1, init};
+    for (Tidx i = g_idx; i < n; i += g_len) {
+        KVPair const pair = pairs[i];
+        if (pair.val > reg.val) reg = pair;
     }
+
+    // local memory: 每个工作组在工作组内存中实现规约
+    local KVPair kv_pairs[GROUP_SIZE];
+    argmax_local(kv_pairs, reg);
+
+    // 最终结果写回 global
+    if (l_idx == 0) *output = *kv_pairs;
 }
