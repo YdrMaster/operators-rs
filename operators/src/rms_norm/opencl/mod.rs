@@ -164,7 +164,7 @@ mod test {
             test_utils::{Diff, ErrorCollector},
             Operator as _,
         };
-        use clrt::{Invalid, Platform};
+        use clrt::Platform;
         use digit_layout::types as ty;
         use rand::Rng;
         use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
@@ -194,9 +194,8 @@ mod test {
                     let mut x_svm = context.malloc::<f32>(n * d);
                     let mut w_svm = context.malloc::<f32>(d);
 
-                    let mut map = queue.map_mut(&mut x_svm, Invalid);
-                    let ([], mem, []) = (unsafe { map.write_only_slice().align_to_mut::<f32>() })
-                    else {
+                    let mut map = queue.map_mut(&mut x_svm, false);
+                    let ([], mem, []) = (unsafe { map.align_to_mut::<f32>() }) else {
                         panic!()
                     };
                     for (dst, src) in zip(mem, &x) {
@@ -204,9 +203,8 @@ mod test {
                     }
                     queue.unmap(map);
 
-                    let mut map = queue.map_mut(&mut w_svm, Invalid);
-                    let ([], mem, []) = (unsafe { map.write_only_slice().align_to_mut::<f32>() })
-                    else {
+                    let mut map = queue.map_mut(&mut w_svm, false);
+                    let ([], mem, []) = (unsafe { map.align_to_mut::<f32>() }) else {
                         panic!()
                     };
                     for (dst, src) in zip(mem, &w) {

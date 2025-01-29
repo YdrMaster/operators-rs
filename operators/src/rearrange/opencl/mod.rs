@@ -3,7 +3,7 @@ use crate::{
     opencl::{ClDevice, KernelCache, CL2_0},
     rank_not_support, ByteOf, LaunchError, QueueAlloc, SchemeError,
 };
-use clrt::{bindings::cl_int, Invalid};
+use clrt::bindings::cl_int;
 use std::ptr::copy_nonoverlapping;
 
 #[repr(transparent)]
@@ -53,9 +53,8 @@ impl crate::Operator for Operator {
             let ss = unsafe { std::slice::from_raw_parts(args.src_base, unit / 4) };
             let dd = unsafe { std::slice::from_raw_parts_mut(args.dst_base, unit / 4) };
 
-            let mut map_d = queue.map_mut(dd, Invalid);
-            let ([], d_ans, []) = (unsafe { map_d.write_only_slice().align_to_mut::<u32>() })
-            else {
+            let mut map_d = queue.map_mut(dd, false);
+            let ([], d_ans, []) = (unsafe { map_d.align_to_mut::<u32>() }) else {
                 panic!()
             };
 
@@ -213,7 +212,7 @@ mod test {
             opencl::ClDevice,
             Operator as _,
         };
-        use clrt::{Invalid, Platform};
+        use clrt::Platform;
         use digit_layout::types as ty;
         use ndarray_layout::{ArrayLayout, Endian::BigEndian};
         use rand::Rng;
@@ -267,9 +266,8 @@ mod test {
                 let mut s_svm = context.malloc::<u32>(nh * seq * dh * 2);
                 let mut d_svm = context.malloc::<u32>(nh * seq * dh);
 
-                let mut map = queue.map_mut(&mut s_svm, Invalid);
-                let ([], mem, []) = (unsafe { map.write_only_slice().align_to_mut::<u32>() })
-                else {
+                let mut map = queue.map_mut(&mut s_svm, false);
+                let ([], mem, []) = (unsafe { map.align_to_mut::<u32>() }) else {
                     panic!()
                 };
                 for (dst, src) in zip(mem, &src) {

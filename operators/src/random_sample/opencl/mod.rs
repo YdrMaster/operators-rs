@@ -121,7 +121,7 @@ fn test_compute() {
         opencl::ClDevice,
         Operator as _,
     };
-    use clrt::{Invalid, Platform};
+    use clrt::Platform;
     use digit_layout::types as ty;
     use rand::Rng;
     use std::{iter::zip, time::Instant};
@@ -141,31 +141,13 @@ fn test_compute() {
             let mut logits_svm = context.malloc::<f32>(n);
             let mut kv_pair_svm = context.malloc::<KVPair>(1);
 
-            let mut map = queue.map_mut(&mut logits_svm, Invalid);
-            let ([], mem, []) = (unsafe { map.write_only_slice().align_to_mut::<f32>() }) else {
+            let mut map = queue.map_mut(&mut logits_svm, false);
+            let ([], mem, []) = (unsafe { map.align_to_mut::<f32>() }) else {
                 panic!()
             };
             for (dst, src) in zip(mem, &logits) {
                 *dst = *src;
             }
-            queue.unmap(map);
-            std::thread::sleep(std::time::Duration::from_secs(1));
-
-            for (index, i) in logits.iter().enumerate() {
-                print!("{}: {} ", index + 1, i);
-            }
-            println!();
-            println!();
-
-            let map = queue.map(&mut logits_svm);
-            let ([], y_ans, []) = (unsafe { map.align_to::<f32>() }) else {
-                panic!()
-            };
-            for (index, i) in y_ans.iter().enumerate() {
-                print!("{}: {} ", index + 1, i);
-            }
-            println!();
-            println!();
             queue.unmap(map);
 
             let time = Instant::now();
@@ -200,7 +182,6 @@ fn test_compute() {
 
             println!("cl: {cl_time:?} / cpu: {cpu_time:?}");
             let map = queue.map(&mut kv_pair_svm);
-
             let ([], y_ans, []) = (unsafe { map.align_to::<KVPair>() }) else {
                 panic!()
             };

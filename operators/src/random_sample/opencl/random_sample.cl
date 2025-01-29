@@ -6,6 +6,7 @@ typedef struct {
     unsigned int idx;
     float val;
 } KVPair;
+
 __kernel void argmax_step1(
     __global float *input,
     const int n) {
@@ -36,6 +37,7 @@ __kernel void argmax_step1(
         *(input + TILE_SIZE + (global_id / 256)) = local_max_index[0];
     }
 }
+
 __kernel void argmax_step2(
     __global float *input,
     __global KVPair *kvpair,
@@ -52,7 +54,6 @@ __kernel void argmax_step2(
     local_max_value[local_id] = (global_id < n) ? *(input + global_id) : -1;
     local_max_index[local_id] = (global_id < n) ? *(input + TILE_SIZE + local_id) : -1;
     barrier(CLK_LOCAL_MEM_FENCE);
-
 
     for (int offset = local_size / 2; offset > 0; offset /= 2) {
         if (local_id < offset) {

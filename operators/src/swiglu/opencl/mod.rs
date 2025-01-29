@@ -148,7 +148,7 @@ mod test {
             opencl::ClDevice,
             test_utils::{Diff, ErrorCollector},
         };
-        use clrt::{Invalid, Platform};
+        use clrt::Platform;
         use rand::Rng;
         use std::{iter::zip, time::Instant};
 
@@ -176,18 +176,16 @@ mod test {
                 let mut gate_svm = context.malloc::<f32>(n * d);
                 let mut up_svm = context.malloc::<f32>(n * d);
 
-                let mut map = queue.map_mut(&mut gate_svm, Invalid);
-                let ([], mem, []) = (unsafe { map.write_only_slice().align_to_mut::<f32>() })
-                else {
+                let mut map = queue.map_mut(&mut gate_svm, false);
+                let ([], mem, []) = (unsafe { map.align_to_mut::<f32>() }) else {
                     panic!()
                 };
                 for (dst, src) in zip(mem, &gate) {
                     *dst = *src as _;
                 }
                 queue.unmap(map);
-                let mut map = queue.map_mut(&mut up_svm, Invalid);
-                let ([], mem, []) = (unsafe { map.write_only_slice().align_to_mut::<f32>() })
-                else {
+                let mut map = queue.map_mut(&mut up_svm, false);
+                let ([], mem, []) = (unsafe { map.align_to_mut::<f32>() }) else {
                     panic!()
                 };
                 for (dst, src) in zip(mem, &up) {

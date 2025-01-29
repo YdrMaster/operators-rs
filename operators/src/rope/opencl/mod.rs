@@ -5,7 +5,7 @@ use crate::{
     shape_not_support, strides_not_support, type_not_support, ByteOf, LaunchError, QueueAlloc,
     SchemeError,
 };
-use clrt::{bindings::cl_int, Invalid};
+use clrt::bindings::cl_int;
 use digit_layout::types::{F32, U32};
 use std::{alloc::Layout, iter::zip};
 
@@ -44,8 +44,8 @@ impl Rope<ClDevice> for Operator {
         let mut host = vec![0u32; _nt];
         fill_pos(host.as_mut_ptr().cast::<u32>(), _nt, _iter);
         let queue = _queue_alloc.queue();
-        let mut map = queue.map_mut(&mut blob, Invalid);
-        let ([], mem, []) = (unsafe { map.write_only_slice().align_to_mut::<u32>() }) else {
+        let mut map = queue.map_mut(&mut blob, false);
+        let ([], mem, []) = (unsafe { map.align_to_mut::<u32>() }) else {
             panic!()
         };
         for (dst, src) in zip(mem, &host) {
@@ -220,7 +220,7 @@ mod test {
             test_utils::{Diff, ErrorCollector},
             Operator as _,
         };
-        use clrt::{Invalid, Platform};
+        use clrt::Platform;
         use digit_layout::types as ty;
         use rand::Rng;
         use std::{iter::zip, time::Instant};
@@ -246,9 +246,8 @@ mod test {
                 let mut t_svm = context.malloc::<f32>(NT * nh * dh);
                 let mut p_svm = context.malloc::<u32>(7);
 
-                let mut map = queue.map_mut(&mut t_svm, Invalid);
-                let ([], mem, []) = (unsafe { map.write_only_slice().align_to_mut::<f32>() })
-                else {
+                let mut map = queue.map_mut(&mut t_svm, false);
+                let ([], mem, []) = (unsafe { map.align_to_mut::<f32>() }) else {
                     panic!()
                 };
                 for (dst, src) in zip(mem, &t) {
@@ -256,9 +255,8 @@ mod test {
                 }
                 queue.unmap(map);
 
-                let mut map = queue.map_mut(&mut p_svm, Invalid);
-                let ([], mem, []) = (unsafe { map.write_only_slice().align_to_mut::<u32>() })
-                else {
+                let mut map = queue.map_mut(&mut p_svm, false);
+                let ([], mem, []) = (unsafe { map.align_to_mut::<u32>() }) else {
                     panic!()
                 };
                 for (dst, src) in zip(mem, &p) {

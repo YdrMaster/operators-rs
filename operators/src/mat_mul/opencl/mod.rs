@@ -175,7 +175,7 @@ mod test {
             test_utils::{Diff, ErrorCollector},
             Operator as _,
         };
-        use clrt::{Invalid, Platform};
+        use clrt::Platform;
         use digit_layout::types::{F32, F64};
         use rand::Rng;
         use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
@@ -207,9 +207,8 @@ mod test {
                     let mut a_svm = context.malloc::<f32>(batch * m * k);
                     let mut b_svm = context.malloc::<f32>(batch * k * n);
 
-                    let mut map = queue.map_mut(&mut a_svm, Invalid);
-                    let ([], mem, []) = (unsafe { map.write_only_slice().align_to_mut::<f32>() })
-                    else {
+                    let mut map = queue.map_mut(&mut a_svm, false);
+                    let ([], mem, []) = (unsafe { map.align_to_mut::<f32>() }) else {
                         panic!()
                     };
                     for (dst, src) in zip(mem, &a) {
@@ -217,9 +216,8 @@ mod test {
                     }
                     queue.unmap(map);
 
-                    let mut map = queue.map_mut(&mut b_svm, Invalid);
-                    let ([], mem, []) = (unsafe { map.write_only_slice().align_to_mut::<f32>() })
-                    else {
+                    let mut map = queue.map_mut(&mut b_svm, false);
+                    let ([], mem, []) = (unsafe { map.align_to_mut::<f32>() }) else {
                         panic!()
                     };
                     for (dst, src) in zip(mem, &b) {
@@ -228,9 +226,8 @@ mod test {
                     queue.unmap(map);
 
                     let mut c_svm = context.malloc::<f32>(batch * m * n);
-                    let mut map = queue.map_mut(&mut c_svm, Invalid);
-                    let ([], mem, []) = (unsafe { map.write_only_slice().align_to_mut::<f32>() })
-                    else {
+                    let mut map = queue.map_mut(&mut c_svm, false);
+                    let ([], mem, []) = (unsafe { map.align_to_mut::<f32>() }) else {
                         panic!()
                     };
                     for (dst, src) in zip(mem, &c) {
