@@ -123,7 +123,7 @@ impl Scheme {
         const NAME: &str = "fused_softmax";
         const CODE: &str = include_str!("fused_softmax.cuh");
 
-        let mask = "AttentionCausualMask";
+        let mask = "AttentionCausalMask";
         let device = handle.device();
         let max_threads_block = device.block_limit().max_threads;
         let cc = device.compute_capability();

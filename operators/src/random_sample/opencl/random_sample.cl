@@ -7,7 +7,7 @@
 
 // assert: GROUP_SIZE is power of 2
 #ifndef GROUP_SIZE
-#define GROUP_SIZE 1024
+#define GROUP_SIZE 512
 #endif
 
 typedef unsigned int Tidx;
@@ -17,21 +17,24 @@ typedef struct {
     Tval val;
 } KVPair;
 
-void argmax_local(local KVPair *kv_pairs, KVPair reg) {
-    Tidx const l_idx = get_local_id(0);
+KVPair argmax_local(local KVPair *data, KVPair reg) {
+    Tidx const idx = get_local_id(0),
+               len = get_local_size(0);
 
-    kv_pairs[l_idx] = reg;
+    data[idx] = reg;
     barrier(CLK_LOCAL_MEM_FENCE);
 
-    for (Tidx stride = GROUP_SIZE >> 1; stride > 0; stride >>= 1) {
-        if (l_idx < stride) {
+    for (Tidx stride = len >> 1; stride; stride >>= 1) {
+        if (idx < stride) {
             local KVPair
-                *a = kv_pairs + l_idx,
-                *b = kv_pairs + l_idx + stride;
+                *a = data + idx,
+                *b = data + idx + stride;
             if (b->val > a->val) *a = *b;
         }
         barrier(CLK_LOCAL_MEM_FENCE);
     }
+
+    return data[0];
 }
 
 kernel void argmax_build_pairs(
@@ -55,10 +58,10 @@ kernel void argmax_build_pairs(
 
     // local memory: 每个工作组在工作组内存中实现规约
     local KVPair kv_pairs[GROUP_SIZE];
-    argmax_local(kv_pairs, reg);
+    reg = argmax_local(kv_pairs, reg);
 
     // 最终结果写回 global
-    if (l_idx == 0) output[g_idx / GROUP_SIZE] = *kv_pairs;
+    if (l_idx == 0) output[g_idx / GROUP_SIZE] = reg;
 }
 
 kernel void argmax_reduce(
@@ -82,8 +85,8 @@ kernel void argmax_reduce(
 
     // local memory: 每个工作组在工作组内存中实现规约
     local KVPair kv_pairs[GROUP_SIZE];
-    argmax_local(kv_pairs, reg);
+    reg = argmax_local(kv_pairs, reg);
 
     // 最终结果写回 global
-    if (l_idx == 0) *output = *kv_pairs;
+    if (l_idx == 0) *output = reg;
 }

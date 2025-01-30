@@ -1,6 +1,6 @@
 #include <cub/block/block_reduce.cuh>
 
-struct AttentionCausualMask {
+struct AttentionCausalMask {
     __forceinline__ __device__ bool
     operator()(int tok_id, int seq_len,
                int pos_id, int att_len) {

@@ -104,7 +104,7 @@ impl crate::Operator for Operator {
 
         let key = self.cache_kernel(dt, n);
         let n_pairs = n / key.group_size / 2;
-        let reduce_size = n_pairs.min(self.max_group_size);
+        let reduce_size = last_power_of_two(n_pairs.min(self.max_group_size));
 
         let (mut build_pairs, mut reduce) = {
             let mut cache = self.schemes.lock().unwrap();
@@ -168,7 +168,7 @@ impl Operator {
         // n = (global / group) x group x 2
         // - 每个线程至少处理 2 个元素；
         // - group_size 是不大于 n/2 且不大于 max_group_size 的 2 的幂；
-        let group_size = 1 << (usize::BITS - (n / 2).min(self.max_group_size).leading_zeros() - 1);
+        let group_size = last_power_of_two((n / 2).min(self.max_group_size));
 
         let key = SchemeKey { dt, group_size };
         let dt = match dt {
@@ -193,6 +193,11 @@ impl Operator {
         });
         key
     }
+}
+
+#[inline(always)]
+const fn last_power_of_two(n: usize) -> usize {
+    1 << (usize::BITS - n.leading_zeros() - 1)
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
