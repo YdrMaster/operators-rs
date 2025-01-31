@@ -17,7 +17,7 @@ typedef struct {
     Tval val;
 } KVPair;
 
-KVPair argmax_local(local KVPair *data, KVPair reg) {
+KVPair group_argmax(local KVPair *data, KVPair reg) {
     Tidx const idx = get_local_id(0),
                len = get_local_size(0);
 
@@ -58,7 +58,7 @@ kernel void argmax_build_pairs(
 
     // local memory: 每个工作组在工作组内存中实现规约
     local KVPair kv_pairs[GROUP_SIZE];
-    reg = argmax_local(kv_pairs, reg);
+    reg = group_argmax(kv_pairs, reg);
 
     // 最终结果写回 global
     if (l_idx == 0) output[g_idx / GROUP_SIZE] = reg;
@@ -85,7 +85,7 @@ kernel void argmax_reduce(
 
     // local memory: 每个工作组在工作组内存中实现规约
     local KVPair kv_pairs[GROUP_SIZE];
-    reg = argmax_local(kv_pairs, reg);
+    reg = group_argmax(kv_pairs, reg);
 
     // 最终结果写回 global
     if (l_idx == 0) *output = reg;
