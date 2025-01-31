@@ -4,7 +4,7 @@ use crate::{
     rank_not_support, ByteOf, LaunchError, QueueAlloc, SchemeError,
 };
 use clrt::bindings::cl_int;
-use std::ptr::copy_nonoverlapping;
+use std::slice::{from_raw_parts, from_raw_parts_mut};
 
 #[repr(transparent)]
 pub struct Operator(KernelCache);
@@ -46,30 +46,13 @@ impl crate::Operator for Operator {
         QA: QueueAlloc<Hardware = Self::Hardware>,
     {
         let scheme = Scheme::new(args)?;
-        if scheme.ndim() == 0 {
-            let unit = scheme.unit();
-            let queue = queue_alloc.queue();
-            let ss = unsafe { std::slice::from_raw_parts(args.src_base, unit / 4) };
-            let dd = unsafe { std::slice::from_raw_parts_mut(args.dst_base, unit / 4) };
-
-            let mut map_d = queue.map_mut(dd, false);
-            let ([], d_ans, []) = (unsafe { map_d.align_to_mut::<u32>() }) else {
-                panic!()
-            };
-
-            let map_s = queue.map(ss);
-            let ([], s_ans, []) = (unsafe { map_s.align_to::<u32>() }) else {
-                panic!()
-            };
-            unsafe {
-                copy_nonoverlapping(s_ans.as_ptr(), d_ans.as_mut_ptr(), unit / 4);
-            }
-            queue.unmap(map_s);
-            queue.unmap(map_d);
-
+        let unit = scheme.unit();
+        if scheme.count() == 1 {
+            let dst = unsafe { from_raw_parts_mut(args.dst_base, unit) };
+            let src = unsafe { from_raw_parts(args.src_base, unit) };
+            queue_alloc.queue().memcpy(dst, src, None);
             return Ok(());
         }
-        let unit = scheme.unit();
 
         struct Layout {
             r: u32,
