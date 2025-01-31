@@ -140,7 +140,7 @@ impl crate::Operator for Operator {
         let local_worksize = [nh_l as usize, dh as usize];
 
         let name = "rope_f32";
-        let mut kernel = self.0.get_kernel(name).unwrap();
+        let mut kernel = self.0.take(name).unwrap();
 
         kernel
             .set_arg(0, t_base)
@@ -156,7 +156,7 @@ impl crate::Operator for Operator {
                 None,
             );
 
-        self.0.set_kernel(name, kernel);
+        self.0.put(name, kernel);
 
         Ok(())
     }

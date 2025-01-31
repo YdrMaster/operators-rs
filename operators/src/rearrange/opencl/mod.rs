@@ -1,4 +1,4 @@
-﻿use super::{args::Scheme, Args, Rearrange};
+use super::{args::Scheme, Args, Rearrange};
 use crate::{
     opencl::{ClDevice, KernelCache, CL2_0},
     rank_not_support, ByteOf, LaunchError, QueueAlloc, SchemeError,
@@ -32,8 +32,7 @@ impl crate::Operator for Operator {
         _max_workspace_size: usize,
     ) -> Result<usize, SchemeError> {
         let kernel_name = "rearrange";
-        self.0
-            .set_kernel(kernel_name, self.0.get_kernel(kernel_name).unwrap());
+        self.0.put(kernel_name, self.0.take(kernel_name).unwrap());
         Ok(0)
     }
 
@@ -141,7 +140,7 @@ impl crate::Operator for Operator {
         let global_worksize = [(r * c * (unit_size as u32)) as usize];
         let local_worksize = [local_worksize_y];
 
-        let mut kernel = self.0.get_kernel(name).unwrap();
+        let mut kernel = self.0.take(name).unwrap();
 
         let unit = unit as i32;
         let dst_rs = dst_rs / unit;
@@ -166,7 +165,7 @@ impl crate::Operator for Operator {
                 None,
             );
 
-        self.0.set_kernel(name, kernel);
+        self.0.put(name, kernel);
         Ok(())
     }
 }

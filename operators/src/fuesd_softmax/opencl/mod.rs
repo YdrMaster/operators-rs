@@ -1,18 +1,18 @@
 ﻿use super::{args::Meta, Args, FusedSoftmax};
 use crate::{
     get_static,
-    opencl::{ClDevice, KernelCache, CL2_0},
+    opencl::{ClDevice, CodeGen, KernelCache, CL2_0},
     type_not_support, ByteOf, LaunchError, QueueAlloc, SchemeError,
 };
-use clrt::bindings::cl_int;
-use digit_layout::types::F32;
+use clrt::bindings::cl_uint;
+use digit_layout::types as Ty;
 
-#[repr(transparent)]
-pub struct Operator(KernelCache);
+pub struct Operator {
+    group_size: usize,
+    kernel: KernelCache,
+}
 
 impl FusedSoftmax<ClDevice> for Operator {}
-
-const MAX_THREADS_PER_BLOCK: usize = 512;
 
 impl crate::Operator for Operator {
     type Hardware = ClDevice;
@@ -20,11 +20,21 @@ impl crate::Operator for Operator {
     type Args = Args<ClDevice>;
 
     fn new(node: &Self::TopoNode) -> Self {
-        Self(KernelCache::new(
-            node.context(),
-            include_str!("fuesd_softmax.cl"),
-            CL2_0,
-        ))
+        let ctx = node.context();
+        let group_size = ctx
+            .devices()
+            .iter()
+            .map(|d| d.max_group_size())
+            .min()
+            .unwrap()
+            / 2; // 直接用最大 group 可能导致资源不足
+        let src = CodeGen::new(include_str!("fuesd_softmax.cl"))
+            .define("GROUP_SIZE", group_size)
+            .to_string();
+        Self {
+            group_size,
+            kernel: KernelCache::new(ctx, &src, CL2_0),
+        }
     }
 
     fn scheme(
@@ -32,83 +42,57 @@ impl crate::Operator for Operator {
         _args: &Self::Args,
         _max_workspace_size: usize,
     ) -> Result<usize, SchemeError> {
-        let Meta { dt } = _args.meta()?;
-        let Args { att_layout, .. } = _args;
-
-        if dt != F32 {
-            return Err(type_not_support(""));
-        }
-
-        let &[att_len, ..] = att_layout.shape() else {
-            unreachable!()
-        };
-        let Some(att_len) = att_len.get_static() else {
-            return Ok(0);
-        };
-
-        let items_per_thread = att_len.div_ceil(MAX_THREADS_PER_BLOCK);
-        let kernel_name = match items_per_thread {
-            1 => "softmax_padding",
-            2..=16 => "softmax_folding",
-            _ => "softmax_general",
-        };
-
-        self.0
-            .set_kernel(kernel_name, self.0.get_kernel(kernel_name).unwrap());
         Ok(0)
     }
 
     fn launch<QA>(
         &self,
-        _args: &Self::Args,
+        args: &Self::Args,
         _workspace: &mut [ByteOf<Self::Hardware>],
-        _queue_alloc: &QA,
+        queue_alloc: &QA,
     ) -> Result<(), LaunchError>
     where
         QA: QueueAlloc<Hardware = Self::Hardware>,
     {
-        let Meta { dt } = _args.meta()?;
+        let Meta { dt } = args.meta()?;
         let Args {
             att_layout,
             att_base,
-        } = _args;
+        } = args;
         let &[nh, seq_len, att_len] = att_layout.shape() else {
             unreachable!()
         };
-        if dt != F32 {
+
+        if dt != Ty::F32 {
             return Err(type_not_support("").into());
         }
         get_static! {
             nh seq_len att_len
         }
 
-        let items_per_thread = att_len.div_ceil(MAX_THREADS_PER_BLOCK);
+        let items_per_thread = att_len.div_ceil(self.group_size);
         let (name, local_worksize_y) = match items_per_thread {
             1 => ("softmax_padding", att_len),
-            2..=16 => ("softmax_folding", MAX_THREADS_PER_BLOCK),
-            _ => ("softmax_general", MAX_THREADS_PER_BLOCK),
+            2..=16 => ("softmax_folding", self.group_size),
+            _ => ("softmax_general", self.group_size),
         };
         let localsize = local_worksize_y.next_power_of_two(); //for padding block reduce
 
-        let global_workoffset = [0];
-        let global_worksize = [(nh * seq_len * localsize) as usize];
-        let local_worksize = [localsize];
-
-        let mut kernel = self.0.get_kernel(name).unwrap();
+        let mut kernel = self.kernel.take(name).unwrap();
 
         kernel
             .set_arg(0, att_base)
-            .set_arg(1, seq_len as cl_int)
-            .set_arg(2, att_len as cl_int)
+            .set_arg(1, seq_len as cl_uint)
+            .set_arg(2, att_len as cl_uint)
             .launch(
-                &global_workoffset,
-                &global_worksize,
-                &local_worksize,
-                _queue_alloc.queue(),
+                &[0],
+                &[nh * seq_len * localsize],
+                &[localsize],
+                queue_alloc.queue(),
                 None,
             );
 
-        self.0.set_kernel(name, kernel);
+        self.kernel.put(name, kernel);
         Ok(())
     }
 }

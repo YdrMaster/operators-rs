@@ -4,6 +4,7 @@ use lru::LruCache;
 use std::{
     collections::HashMap,
     ffi::{CStr, CString},
+    fmt,
     hash::Hash,
     sync::Mutex,
 };
@@ -76,6 +77,34 @@ pub(crate) struct KernelCache {
 
 pub(crate) const CL2_0: &CStr = c"-cl-std=CL2.0";
 
+pub struct CodeGen {
+    code: &'static str,
+    defines: Vec<(&'static str, String)>,
+}
+
+impl CodeGen {
+    pub fn new(code: &'static str) -> Self {
+        Self {
+            code,
+            defines: Default::default(),
+        }
+    }
+
+    pub fn define(&mut self, name: &'static str, value: impl ToString) -> &mut Self {
+        self.defines.push((name, value.to_string()));
+        self
+    }
+}
+
+impl fmt::Display for CodeGen {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (name, value) in &self.defines {
+            writeln!(f, "#define {} {}", name, value)?
+        }
+        write!(f, "{}", self.code)
+    }
+}
+
 impl KernelCache {
     pub fn new(ctx: &Context, src: &str, opts: &CStr) -> Self {
         let program = match ctx.build_from_source(src, opts) {
@@ -101,14 +130,14 @@ impl KernelCache {
         Self { program, kernels }
     }
 
-    pub fn get_kernel(&self, name: &str) -> Option<Kernel> {
+    pub fn take(&self, name: &str) -> Option<Kernel> {
         self.kernels
             .get(name)?
             .pop()
             .or_else(|| self.program.get_kernel(CString::new(name).unwrap()))
     }
 
-    pub fn set_kernel(&self, name: &str, kernel: Kernel) {
+    pub fn put(&self, name: &str, kernel: Kernel) {
         self.kernels.get(name).unwrap().push(kernel)
     }
 }

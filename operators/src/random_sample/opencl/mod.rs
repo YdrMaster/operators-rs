@@ -3,7 +3,7 @@
 use super::{args::Meta, Args, Indices, KVPair, RandomSample};
 use crate::{
     get_static,
-    opencl::{ClDevice, KernelCache, CL2_0},
+    opencl::{ClDevice, CodeGen, KernelCache, CL2_0},
     strides_not_support, ByteOf, LaunchError, QueueAlloc,
     SchemeDiversity::Low as LowDiversity,
     SchemeError, Workspace,
@@ -109,8 +109,8 @@ impl crate::Operator for Operator {
         let (mut build_pairs, mut reduce) = {
             let mut cache = self.schemes.lock().unwrap();
             let program = cache.get(&key).unwrap();
-            let build_pairs = program.get_kernel("argmax_build_pairs").unwrap();
-            let reduce = program.get_kernel("argmax_reduce").unwrap();
+            let build_pairs = program.take("argmax_build_pairs").unwrap();
+            let reduce = program.take("argmax_reduce").unwrap();
             (build_pairs, reduce)
         };
 
@@ -159,6 +159,11 @@ impl crate::Operator for Operator {
                 );
         }
 
+        let mut cache = self.schemes.lock().unwrap();
+        let program = cache.get(&key).unwrap();
+        program.put("argmax_build_pairs", build_pairs);
+        program.put("argmax_reduce", reduce);
+
         Ok(())
     }
 }
@@ -169,27 +174,18 @@ impl Operator {
         // - 每个线程至少处理 2 个元素；
         // - group_size 是不大于 n/2 且不大于 max_group_size 的 2 的幂；
         let group_size = last_power_of_two((n / 2).min(self.max_group_size));
-
         let key = SchemeKey { dt, group_size };
-        let dt = match dt {
-            Ty::F32 => "float",
-            Ty::F16 => "half",
-            _ => unimplemented!(),
-        };
         self.schemes.lock().unwrap().get_or_insert(key, || {
-            const CODE: &str = include_str!("random_sample.cl");
-            KernelCache::new(
-                &self.ctx,
-                &format!(
-                    "
-#define Tval {dt}
-#define GROUP_SIZE {group_size}
-
-{CODE}
-            "
-                ),
-                CL2_0,
-            )
+            let dt = match dt {
+                Ty::F32 => "float",
+                Ty::F16 => "half",
+                _ => unimplemented!(),
+            };
+            let src = CodeGen::new(include_str!("random_sample.cl"))
+                .define("Tval", dt)
+                .define("GROUP_SIZE", group_size)
+                .to_string();
+            KernelCache::new(&self.ctx, &src, CL2_0)
         });
         key
     }

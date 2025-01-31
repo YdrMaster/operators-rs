@@ -49,8 +49,7 @@ kernel void softmax_padding(
 
     Tidx local_id = get_local_id(0),
          group_id = get_group_id(0),
-         global_id = group_id * att_len + local_id,
-         local_size = get_local_size(0);
+         global_id = group_id * att_len + local_id;
 
     float thread_data, max_val = -FLT_MAX, sum_val = 0;
 

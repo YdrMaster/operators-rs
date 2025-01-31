@@ -1,4 +1,4 @@
-﻿use super::{args::Meta, Args, RmsNorm};
+use super::{args::Meta, Args, RmsNorm};
 use crate::{
     get_static,
     opencl::{ClDevice, KernelCache, CL2_0},
@@ -43,8 +43,7 @@ impl crate::Operator for Operator {
             _ => "rms_norm_general",
         };
 
-        self.0
-            .set_kernel(kernel_name, self.0.get_kernel(kernel_name).unwrap());
+        self.0.put(kernel_name, self.0.take(kernel_name).unwrap());
         Ok(0)
     }
 
@@ -87,7 +86,7 @@ impl crate::Operator for Operator {
         let global_worksize = [(n * local_worksize_y) as usize];
         let local_worksize = [local_worksize_y];
 
-        let mut kernel = self.0.get_kernel(name).unwrap();
+        let mut kernel = self.0.take(name).unwrap();
         _queue_alloc.queue().finish();
 
         kernel
@@ -109,7 +108,7 @@ impl crate::Operator for Operator {
         );
         _queue_alloc.queue().finish();
 
-        self.0.set_kernel(name, kernel);
+        self.0.put(name, kernel);
         Ok(())
     }
 }

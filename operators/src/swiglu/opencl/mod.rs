@@ -84,7 +84,7 @@ impl crate::Operator for Operator {
         let global_worksize = [n as usize, d as usize];
         let local_worksize = [1, local_worksize_y];
 
-        let mut kernel = self.0.get_kernel(name).unwrap();
+        let mut kernel = self.0.take(name).unwrap();
 
         kernel
             .set_arg(0, gate_base)
@@ -99,7 +99,7 @@ impl crate::Operator for Operator {
                 None,
             );
 
-        self.0.set_kernel(name, kernel);
+        self.0.put(name, kernel);
         Ok(())
     }
 }

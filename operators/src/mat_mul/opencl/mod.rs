@@ -102,7 +102,7 @@ impl crate::Operator for Operator {
             local_worksize = [1, local_worksize_y];
         }
 
-        let mut kernel = self.0.get_kernel(name).unwrap();
+        let mut kernel = self.0.take(name).unwrap();
         let queue = _queue_alloc.queue();
         kernel
             .set_arg(0, a)
@@ -130,7 +130,7 @@ impl crate::Operator for Operator {
                 queue,
                 None,
             );
-        self.0.set_kernel(name, kernel);
+        self.0.put(name, kernel);
         Ok(())
     }
 }
