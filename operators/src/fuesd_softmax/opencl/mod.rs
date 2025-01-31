@@ -2,15 +2,26 @@
 use crate::{
     get_static,
     opencl::{ClDevice, CodeGen, KernelCache, CL2_0},
-    type_not_support, ByteOf, LaunchError, QueueAlloc, SchemeError,
+    strides_not_support, ByteOf, LaunchError, QueueAlloc,
+    SchemeDiversity::Low as LowDiversity,
+    SchemeError,
 };
-use clrt::bindings::cl_uint;
-use digit_layout::types as Ty;
+use clrt::{
+    bindings::{cl_int, cl_uint},
+    Context,
+};
+use digit_layout::{types as Ty, DigitLayout};
+use lru::LruCache;
+use std::sync::Mutex;
 
 pub struct Operator {
-    group_size: usize,
-    kernel: KernelCache,
+    ctx: Context,
+    max_group_size: usize,
+    schemes: Mutex<LruCache<DigitLayout, KernelCache>>,
 }
+
+/// block size = 512 x 8 -> context = 4k
+const ITEMS_THREAD: usize = 8;
 
 impl FusedSoftmax<ClDevice> for Operator {}
 
@@ -20,28 +31,28 @@ impl crate::Operator for Operator {
     type Args = Args<ClDevice>;
 
     fn new(node: &Self::TopoNode) -> Self {
-        let ctx = node.context();
-        let group_size = ctx
+        let ctx = node.context().clone();
+        let max_group_size = ctx
             .devices()
             .iter()
             .map(|d| d.max_group_size())
             .min()
             .unwrap()
             / 2; // 直接用最大 group 可能导致资源不足
-        let src = CodeGen::new(include_str!("fuesd_softmax.cl"))
-            .define("GROUP_SIZE", group_size)
-            .to_string();
         Self {
-            group_size,
-            kernel: KernelCache::new(ctx, &src, CL2_0),
+            ctx,
+            max_group_size,
+            schemes: node.new_cache(LowDiversity),
         }
     }
 
     fn scheme(
         &mut self,
-        _args: &Self::Args,
+        args: &Self::Args,
         _max_workspace_size: usize,
     ) -> Result<usize, SchemeError> {
+        let Meta { dt } = args.meta()?;
+        self.cache_kernel(dt);
         Ok(0)
     }
 
@@ -55,6 +66,8 @@ impl crate::Operator for Operator {
         QA: QueueAlloc<Hardware = Self::Hardware>,
     {
         let Meta { dt } = args.meta()?;
+        self.cache_kernel(args.att_layout.dt());
+
         let Args {
             att_layout,
             att_base,
@@ -62,39 +75,80 @@ impl crate::Operator for Operator {
         let &[nh, seq_len, att_len] = att_layout.shape() else {
             unreachable!()
         };
+        let &[sh, ss, sa] = att_layout.strides() else {
+            unreachable!()
+        };
 
-        if dt != Ty::F32 {
-            return Err(type_not_support("").into());
-        }
         get_static! {
             nh seq_len att_len
+            sh ss      sa
         }
 
-        let items_per_thread = att_len.div_ceil(self.group_size);
-        let (name, local_worksize_y) = match items_per_thread {
-            1 => ("softmax_padding", att_len),
-            2..=16 => ("softmax_folding", self.group_size),
-            _ => ("softmax_general", self.group_size),
+        let unit = dt.nbytes() as isize;
+        if sa != unit {
+            return Err(strides_not_support("").into());
         };
-        let localsize = local_worksize_y.next_power_of_two(); //for padding block reduce
 
-        let mut kernel = self.kernel.take(name).unwrap();
+        let group_size = last_power_of_two(att_len.min(self.max_group_size));
+        let items_thread = att_len.div_ceil(group_size);
 
-        kernel
+        let name = if items_thread <= ITEMS_THREAD {
+            "softmax_register"
+        } else {
+            "softmax_global"
+        };
+
+        let mut softmax = {
+            let mut cache = self.schemes.lock().unwrap();
+            let program = cache.get(&dt).unwrap();
+            let kernel = program.take(name).unwrap();
+            kernel
+        };
+
+        softmax
             .set_arg(0, att_base)
             .set_arg(1, seq_len as cl_uint)
             .set_arg(2, att_len as cl_uint)
+            .set_arg(3, (sh / unit) as cl_int)
+            .set_arg(4, (ss / unit) as cl_int)
             .launch(
-                &[0],
-                &[nh * seq_len * localsize],
-                &[localsize],
+                &[0, 0],
+                &[group_size * seq_len, nh],
+                &[group_size, 1],
                 queue_alloc.queue(),
                 None,
             );
 
-        self.kernel.put(name, kernel);
+        let mut cache = self.schemes.lock().unwrap();
+        let program = cache.get(&dt).unwrap();
+        program.put(name, softmax);
+
         Ok(())
     }
+}
+
+impl Operator {
+    fn cache_kernel(&self, dt: DigitLayout) {
+        self.schemes.lock().unwrap().get_or_insert(dt, || {
+            let dt_a = match dt {
+                Ty::F32 => "float",
+                Ty::F16 => "half",
+                _ => unimplemented!(),
+            };
+            let src = CodeGen::new(include_str!("fused_softmax.cl"))
+                .define("Tval", dt_a)
+                .define("GROUP_SIZE", self.max_group_size)
+                .define("ITEMS_THREAD", ITEMS_THREAD)
+                .define("MASK", "causal_mask")
+                .to_string();
+            KernelCache::new(&self.ctx, &src, CL2_0)
+        });
+    }
+}
+
+#[inline(always)]
+const fn last_power_of_two(n: usize) -> usize {
+    1 << (usize::BITS - n.leading_zeros() - 1)
 }
 
 #[cfg(test)]
@@ -165,8 +219,6 @@ mod test {
                     (7, 20443),
                     (7, 20480),
                 ] {
-                    // for (seq_len, att_len) in [(1, 13)] {
-                    // for (seq_len, att_len) in [(1, 1024), (1, 2048), (7, 2048)] {
                     let mut att = vec![0.0f64; nh * seq_len * att_len];
                     rand::rng().fill(&mut att[..]);
                     let mut att_svm = context.malloc::<f32>(nh * seq_len * att_len);
@@ -198,6 +250,7 @@ mod test {
                         )
                         .unwrap();
                     let cpu_time = time.elapsed();
+                    println!("cl: {cl_time:?} / cpu: {cpu_time:?}");
 
                     let map = queue.map(&mut att_svm);
                     let ([], mem, []) = (unsafe { map.align_to::<f32>() }) else {
@@ -213,7 +266,7 @@ mod test {
 
                     let mut ec = ErrorCollector::new(f32::EPSILON as f64, 1e-3);
                     diff.into_iter().for_each(|diff| ec.push(diff));
-                    println!("cl: {cl_time:?} / cpu: {cpu_time:?}");
+                    println!("{ec}");
 
                     let (out, count) = ec.summary();
                     assert!(out * 1000 <= count);
