@@ -1,4 +1,4 @@
-﻿use super::{args::SchemeLayout, Args, MatMul};
+use super::{args::SchemeLayout, Args, MatMul};
 use crate::{
     opencl::{ClDevice, KernelCache, CL2_0},
     ByteOf, LaunchError, QueueAlloc, SchemeError,
@@ -75,20 +75,13 @@ impl crate::Operator for Operator {
         let (lhs_cs, lhs_rs) = if a_trans { (1, a_ld) } else { (a_ld, 1) };
         let (rhs_cs, rhs_rs) = if b_trans { (1, b_ld) } else { (b_ld, 1) };
 
-        let global_workoffset = [0, 0];
-        let mut name = "";
-        let mut global_worksize = [1, 1];
-        let mut local_worksize = [1, 1];
-
         let mn = m * n;
         let items_per_thread = mn.div_ceil(MAX_THREADS_PER_BLOCK);
         let local_worksize_y = match items_per_thread {
             1 => mn,
             _ => MAX_THREADS_PER_BLOCK,
         };
-        name = "general_gemm_f32";
-        global_worksize = [batch, mn];
-        local_worksize = [1, local_worksize_y];
+        let name = "general_gemm_f32";
 
         let mut kernel = self.0.take(name).unwrap();
         let queue = _queue_alloc.queue();
@@ -111,13 +104,7 @@ impl crate::Operator for Operator {
             .set_arg(15, k as cl_int)
             .set_arg(16, alpha)
             .set_arg(17, beta) //;
-            .launch(
-                &global_workoffset,
-                &global_worksize,
-                &local_worksize,
-                queue,
-                None,
-            );
+            .launch(&[0, 0], &[batch, mn], &[1, local_worksize_y], queue, None);
         self.0.put(name, kernel);
         Ok(())
     }
