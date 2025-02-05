@@ -80,27 +80,15 @@ impl crate::Operator for Operator {
         let mut global_worksize = [1, 1];
         let mut local_worksize = [1, 1];
 
-        if n == 1 {
-            if m % 32 == 0 {
-                name = "gemv_f32";
-                global_worksize = [m, n * batch];
-                local_worksize = [32, 1];
-            } else {
-                name = "gemv_f32v2";
-                global_worksize = [m, n * k * batch];
-                local_worksize = [1, k];
-            }
-        } else if n != 1 {
-            let mn = m * n;
-            let items_per_thread = mn.div_ceil(MAX_THREADS_PER_BLOCK);
-            let local_worksize_y = match items_per_thread {
-                1 => mn,
-                _ => MAX_THREADS_PER_BLOCK,
-            };
-            name = "general_gemm_f32";
-            global_worksize = [batch, mn];
-            local_worksize = [1, local_worksize_y];
-        }
+        let mn = m * n;
+        let items_per_thread = mn.div_ceil(MAX_THREADS_PER_BLOCK);
+        let local_worksize_y = match items_per_thread {
+            1 => mn,
+            _ => MAX_THREADS_PER_BLOCK,
+        };
+        name = "general_gemm_f32";
+        global_worksize = [batch, mn];
+        local_worksize = [1, local_worksize_y];
 
         let mut kernel = self.0.take(name).unwrap();
         let queue = _queue_alloc.queue();
