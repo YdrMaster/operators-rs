@@ -1,227 +1,70 @@
 #define CL_TARGET_OPENCL_VERSION 200
 #pragma OPENCL EXTENSION cl_khr_fp16 : enable
-#define BLOCK_SIZE 512
-#define TILE_SIZE 16
 
-__kernel void rms_norm_padding(
-    __global float *y,
-    const int y_stride,
-    __global const float *x,
-    const int x_stride,
-    __global const float *w,
-    const float epsilon) {
+#ifndef Ta
+#define Ta float
+#endif
 
-    //获取线程和块的索引
-    int global_id = get_global_id(0);
-    int local_id = get_local_id(0);
-    int group_id = get_group_id(0);
-    int local_size = get_local_size(0);
+#ifndef Tw
+#define Tw float
+#endif
 
-    //计算输入输出指针
-    int idx_x = group_id * x_stride + local_id;
-    int idx_y = group_id * y_stride + local_id;
+// assert: GROUP_SIZE is power of 2
+#ifndef GROUP_SIZE
+#define GROUP_SIZE 512
+#endif
 
-    //读取数据
-    float val_x = x[idx_x];
-    float val_w = w[local_id];
+#ifndef ITEMS_THREAD
+#define ITEMS_THREAD 1
+#endif
 
-    //申请内存 求平方
-    __local float squared[BLOCK_SIZE];
-    squared[local_id] = val_x * val_x;
-    barrier(CLK_LOCAL_MEM_FENCE);// 确保所有线程完成写入局部内存
+typedef unsigned int Tidx;
 
-    //规约求和(todo：处理local%2==1的情况)
-    for (int offset = local_size / 2; offset > 0; offset /= 2) {
-        if (local_id < offset) {
-            squared[local_id] += squared[local_id + offset];
-        }
-        barrier(CLK_LOCAL_MEM_FENCE);// 确保上一轮结束
-    }
-    //各块内线程规约求和   work_group_reduce_add:应该是opencl自带的规约函数,但是移动端GPU不支持
+float group_sum(local float *data, float reg) {
+    Tidx const idx = get_local_id(0),
+               len = get_local_size(0);
 
-    //求均方根
-    __local float rms;
-    if (local_id == 0) {
-        rms = native_rsqrt(squared[0] / local_size + epsilon);
-    }
-    barrier(CLK_LOCAL_MEM_FENCE);// 共享内存同步
-
-    //计算最终结果并存储
-    y[idx_y] = rms * val_x * val_w;
-}
-
-
-__kernel void rms_norm_folding(
-    __global float *y,
-    const int y_stride,
-    __global const float *x,
-    const int x_stride,
-    __global const float *w,
-    const float epsilon,
-    const int items_size) {
-
-    //获取线程和块的索引
-    int global_id = get_global_id(0);
-    int local_id = get_local_id(0);
-    int group_id = get_group_id(0);
-    int local_size = get_local_size(0);
-
-    //每个工作项实际处理的个数
-    int items = (items_size + local_size - 1) / local_size;
-
-    //计算输入输出指针
-    int idx_x = group_id * x_stride + local_id * items;
-    int idx_y = group_id * y_stride + local_id * items;
-    int idx_w = local_id * items;
-
-    //读取数据
-    float val_x[TILE_SIZE];
-    float val_w[TILE_SIZE];
-    for (int i = 0; i < items; i++) {
-        val_x[i] = (local_id * items + i < items_size) ? x[idx_x + i] : 0.0f;
-        val_w[i] = (local_id * items + i < items_size) ? w[idx_w + i] : 0.0f;
-    }
-
-    //各线程求局部平方和
-    float squared = 0.0f;
-    for (int i = 0; i < items; i++) {
-        squared += val_x[i] * val_x[i];
-    }
-    //work_group_reduce_add 是 OpenCL 2.0 引入的一个内置函数，但并非所有 OpenCL 2.0 设备都支持它,手机上测试不支持;
-
-    //规约求和
-    __local float Ssquared[BLOCK_SIZE];
-    Ssquared[local_id] = squared;
+    data[idx] = reg;
     barrier(CLK_LOCAL_MEM_FENCE);
-    for (int offset = BLOCK_SIZE / 2; offset > 0; offset /= 2) {
-        if (local_id < offset) {
-            Ssquared[local_id] += Ssquared[local_id + offset];
-        }
+
+    for (Tidx stride = len >> 1; stride; stride >>= 1) {
+        if (idx < stride) data[idx] += data[idx + stride];
         barrier(CLK_LOCAL_MEM_FENCE);
     }
 
-    //求均方根
-    __local float rms;
-    if (local_id == 0) {
-        rms = native_rsqrt(Ssquared[0] / items_size + epsilon);
-    }
-    barrier(CLK_LOCAL_MEM_FENCE);
-
-    //计算最终结果并存储
-    for (int i = 0; i < items; i++) {
-        if (local_id * items + i < items_size)
-            y[idx_y + i] = rms * val_x[i] * val_w[i];
-    }
+    return data[0];
 }
 
-__kernel void rms_norm_padding_f16(
-    __global half *y,
-    const int y_stride,
-    __global const half *x,
-    const int x_stride,
-    __global const half *w,
-    const half epsilon) {
+kernel void rms_norm(
+    global Ta *y_,
+    int const y_stride,
+    global Ta const *x_,
+    int const x_stride,
+    global Tw const *w,
+    float const epsilon,
+    Tidx const d) {
 
-    //获取线程和块的索引
-    int global_id = get_global_id(0);
-    int local_id = get_local_id(0);
-    int group_id = get_group_id(0);
-    int local_size = get_local_size(0);
+    Tidx g_idx = get_group_id(0),
+         l_idx = get_local_id(0),
+         l_len = get_local_size(0);
+    global Ta
+        *y = y_ + g_idx * y_stride;
+    global Ta const
+        *x = x_ + g_idx * x_stride;
 
-    //计算输入输出指针
-    int idx_x = group_id * x_stride + local_id;
-    int idx_y = group_id * y_stride + local_id;
-
-    //读取数据
-    half val_x = x[idx_x];
-    half val_w = w[local_id];
-
-    //申请内存 求平方
-    __local half squared[BLOCK_SIZE];
-    squared[local_id] = val_x * val_x;
-    barrier(CLK_LOCAL_MEM_FENCE);// 确保所有线程完成写入局部内存
-
-    //规约求和(todo：处理local%2==1的情况)
-    for (int offset = local_size / 2; offset > 0; offset /= 2) {
-        if (local_id < offset) {
-            squared[local_id] += squared[local_id + offset];
-        }
-        barrier(CLK_LOCAL_MEM_FENCE);// 确保上一轮结束
-    }
-    //各块内线程规约求和   work_group_reduce_add:应该是opencl自带的规约函数,但是移动端GPU不支持
-
-    //求均方根
-    __local half rms;
-    if (local_id == 0) {
-        rms = native_rsqrt(squared[0] / local_size + epsilon);
-    }
-    barrier(CLK_LOCAL_MEM_FENCE);// 共享内存同步
-
-    //计算最终结果并存储
-    y[idx_y] = rms * val_x * val_w;
-}
-
-
-__kernel void rms_norm_folding_f16(
-    __global half *y,
-    const int y_stride,
-    __global const half *x,
-    const int x_stride,
-    __global const half *w,
-    const half epsilon,
-    const int items_size) {
-
-    //获取线程和块的索引
-    int global_id = get_global_id(0);
-    int local_id = get_local_id(0);
-    int group_id = get_group_id(0);
-    int local_size = get_local_size(0);
-
-    //每个工作项实际处理的个数
-    int items = (items_size + local_size - 1) / local_size;
-
-    //计算输入输出指针
-    int idx_x = group_id * x_stride + local_id * items;
-    int idx_y = group_id * y_stride + local_id * items;
-    int idx_w = local_id * items;
-
-    //读取数据
-    half val_x[TILE_SIZE];
-    half val_w[TILE_SIZE];
-    for (int i = 0; i < items; i++) {
-        val_x[i] = (local_id * items + i < items_size) ? x[idx_x + i] : 0.0f;
-        val_w[i] = (local_id * items + i < items_size) ? w[idx_w + i] : 0.0f;
-    }
-
-    //各线程求局部平方和
-    half squared = 0.0f;
-    for (int i = 0; i < items; i++)//TILE_SIZE即为items per thread
-    {
+    float
+        val_x[ITEMS_THREAD],
+        val_w[ITEMS_THREAD],
+        squared = 0;
+    for (Tidx i = 0, idx = l_idx; idx < d; ++i, idx += l_len) {
+        val_x[i] = x[idx];
+        val_w[i] = w[idx];
         squared += val_x[i] * val_x[i];
     }
-    //work_group_reduce_add 是 OpenCL 2.0 引入的一个内置函数，但并非所有 OpenCL 2.0 设备都支持它,手机上测试不支持;
 
-    //规约求和
-    __local half Ssquared[BLOCK_SIZE];
-    Ssquared[local_id] = squared;
-    barrier(CLK_LOCAL_MEM_FENCE);
-    for (int offset = BLOCK_SIZE / 2; offset > 0; offset /= 2) {
-        if (local_id < offset) {
-            Ssquared[local_id] += Ssquared[local_id + offset];
-        }
-        barrier(CLK_LOCAL_MEM_FENCE);
-    }
+    local float shared[GROUP_SIZE];
+    float rms = native_rsqrt(group_sum(shared, squared) / d + epsilon);
 
-    //求均方根
-    __local half rms;
-    if (local_id == 0) {
-        rms = native_rsqrt(Ssquared[0] / items_size + epsilon);
-    }
-    barrier(CLK_LOCAL_MEM_FENCE);
-
-    //计算最终结果并存储
-    for (int i = 0; i < items; i++) {
-        if (local_id * items + i < items_size)
-            y[idx_y + i] = rms * val_x[i] * val_w[i];
-    }
+    for (Tidx i = 0, idx = l_idx; idx < d; ++i, idx += l_len)
+        y[idx] = rms * val_x[i] * val_w[i];
 }

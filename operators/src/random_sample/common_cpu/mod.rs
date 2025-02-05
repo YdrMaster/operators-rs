@@ -51,18 +51,24 @@ impl crate::Operator for Operator {
         let &[s] = args.logits.strides() else {
             unreachable!()
         };
-        let unit = dt.nbytes() as isize;
-        if s.get_static().copied() != Some(unit) {
+        if s.get_static().copied() != Some(dt.nbytes() as isize) {
             return Err(strides_not_support("").into());
         }
 
         get_static!(n);
+        let Args {
+            kv_pair_base,
+            logits_base,
+            config,
+            seed,
+            ..
+        } = args;
 
         use digit_layout::types as ty;
-        let kv = if args.config.is_argmax() {
+        let kv = if config.is_argmax() {
             macro_rules! argmax {
                 ($ty:ty) => {
-                    argmax::<$ty>(args.logits_base, n).into_raw()
+                    argmax::<$ty>(*logits_base, n).into_raw()
                 };
             }
             match dt {
@@ -71,15 +77,14 @@ impl crate::Operator for Operator {
                 e => return Err(type_not_support(format!("{e} not support")).into()),
             }
         } else {
-            let SampleArgs {
+            let &SampleArgs {
                 temperature,
                 top_p,
                 top_k,
-            } = args.config;
+            } = config;
             macro_rules! random {
                 ($ty:ty) => {
-                    random::<$ty>(args.logits_base, n, temperature, top_p, top_k, args.seed)
-                        .into_raw()
+                    random::<$ty>(*logits_base, n, temperature, top_p, top_k, *seed).into_raw()
                 };
             }
             match dt {
@@ -88,7 +93,7 @@ impl crate::Operator for Operator {
                 e => return Err(type_not_support(format!("{e} not support")).into()),
             }
         };
-        unsafe { args.kv_pair_base.cast::<KVPair<()>>().write(kv) };
+        unsafe { kv_pair_base.cast::<KVPair<()>>().write(kv) };
 
         Ok(())
     }

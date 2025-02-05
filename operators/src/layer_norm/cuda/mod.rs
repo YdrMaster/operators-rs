@@ -309,9 +309,9 @@ mod test {
             let mut x = vec![1.0f64; n * d];
             let mut scale = vec![1.0f64; d];
             let mut bias = vec![1.0f64; d];
-            rand::thread_rng().fill(&mut x[..]);
-            rand::thread_rng().fill(&mut scale[..]);
-            rand::thread_rng().fill(&mut bias[..]);
+            rand::rng().fill(&mut x[..]);
+            rand::rng().fill(&mut scale[..]);
+            rand::rng().fill(&mut bias[..]);
             let data_ans = gpu.apply(|ctx| {
                 let stream = ctx.stream();
                 #[cfg(use_nvidia)]

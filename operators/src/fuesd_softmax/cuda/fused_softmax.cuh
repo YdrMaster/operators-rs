@@ -1,6 +1,6 @@
 #include <cub/block/block_reduce.cuh>
 
-struct AttentionCausualMask {
+struct AttentionCausalMask {
     __forceinline__ __device__ bool
     operator()(int tok_id, int seq_len,
                int pos_id, int att_len) {
@@ -17,11 +17,11 @@ template<unsigned int BLOCK_SIZE, class Tdata, class Tmask>
 static __device__ void block_padding(
     Tdata *__restrict__ att,
     Tmask mask,
-    unsigned int const token_idx,
+    unsigned int const tok_id,
     unsigned int const seq_len) {
 
     auto att_idx = threadIdx.x, att_len = blockDim.x;
-    auto thread_data = mask(token_idx, seq_len, att_idx, att_len)
+    auto thread_data = mask(tok_id, seq_len, att_idx, att_len)
                            ? float(att[att_idx])
                            : -__FLT_MAX__;
 
@@ -50,7 +50,7 @@ template<unsigned int BLOCK_SIZE, class Tdata, class Tmask>
 static __device__ void block_folding(
     Tdata *__restrict__ att,
     Tmask mask,
-    unsigned int const token_idx,
+    unsigned int const tok_id,
     unsigned int const seq_len,
     unsigned int const att_len) {
     // num items per thread
@@ -69,7 +69,7 @@ static __device__ void block_folding(
     float thread_max = -__FLT_MAX__;
     for (unsigned int i = 0; i < local; ++i) {
         auto att_idx = thread_offset + i;
-        auto val = att_idx < att_len && mask(token_idx, seq_len, att_idx, att_len)
+        auto val = att_idx < att_len && mask(tok_id, seq_len, att_idx, att_len)
                        ? float(att[i])
                        : -__FLT_MAX__;
         thread_data[i * blockDim.x] = val;
@@ -115,9 +115,9 @@ static __forceinline__ __device__ void padding(
     int const stride_y,
     int const stride_x) {
     auto offset = blockIdx.x * stride_x + blockIdx.y * stride_y + blockIdx.z * stride_z,
-         token_idx = blockIdx.x,
+         tok_id = blockIdx.x,
          seq_len = gridDim.x;
-    block_padding<BLOCK_SIZE>(att + offset, mask, token_idx, seq_len);
+    block_padding<BLOCK_SIZE>(att + offset, mask, tok_id, seq_len);
 }
 
 template<unsigned int BLOCK_SIZE, class Tdata, class Tmask>
@@ -129,7 +129,7 @@ static __forceinline__ __device__ void folding(
     int const stride_y,
     int const stride_x) {
     auto offset = blockIdx.x * stride_x + blockIdx.y * stride_y + blockIdx.z * stride_z,
-         token_idx = blockIdx.x,
+         tok_id = blockIdx.x,
          seq_len = gridDim.x;
-    block_folding<BLOCK_SIZE>(att + offset, mask, token_idx, seq_len, att_len);
+    block_folding<BLOCK_SIZE>(att + offset, mask, tok_id, seq_len, att_len);
 }

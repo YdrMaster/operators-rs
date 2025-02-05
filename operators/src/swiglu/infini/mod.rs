@@ -141,8 +141,8 @@ mod test {
 
         let mut gate = vec![0.0f64; n * d];
         let mut up = vec![0.0f64; n * d];
-        rand::thread_rng().fill(&mut gate[..]);
-        rand::thread_rng().fill(&mut up[..]);
+        rand::rng().fill(&mut gate[..]);
+        rand::rng().fill(&mut up[..]);
         let up = up;
 
         let gate_ans = {

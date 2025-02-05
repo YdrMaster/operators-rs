@@ -1,4 +1,4 @@
-﻿use std::{
+use std::{
     alloc::{alloc, dealloc, Layout},
     ptr::null_mut,
     sync::atomic::{
@@ -30,10 +30,9 @@ impl<T: Unpin> Pool<T> {
 
     #[inline]
     fn update(&self, current: *mut Item<T>, new: *mut Item<T>) -> Option<*mut Item<T>> {
-        match self.0.compare_exchange_weak(current, new, Release, Acquire) {
-            Ok(_) => None,
-            Err(current) => Some(current),
-        }
+        self.0
+            .compare_exchange_weak(current, new, Release, Acquire)
+            .err()
     }
 
     pub fn push(&self, value: T) {

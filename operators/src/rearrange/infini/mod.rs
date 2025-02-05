@@ -125,7 +125,7 @@ mod test {
         dev_op.scheme(&dyn_args(dt), 0).unwrap();
 
         let mut src = vec![0u32; nh * seq * dh];
-        rand::thread_rng().fill(&mut src[..]);
+        rand::rng().fill(&mut src[..]);
 
         let ele = dt.nbytes();
         let s_src = ArrayLayout::<3>::new_contiguous(&[nh, seq, dh], BigEndian, ele);

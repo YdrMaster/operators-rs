@@ -29,7 +29,7 @@ impl InfiniNode {
     }
 
     fn new(indices: &[c_uint], ty: DeviceType) -> Vec<Self> {
-        let confused = unsafe { std::mem::transmute(ty) };
+        let confused: infini_rt::DeviceType = unsafe { std::mem::transmute(ty) };
         if let &[id] = indices {
             vec![Self {
                 rank: 0,

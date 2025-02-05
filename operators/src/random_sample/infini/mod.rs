@@ -110,7 +110,7 @@ fn test_compute() {
         .unwrap();
 
     let mut logits = vec![0.0f32; n];
-    rand::thread_rng().fill(&mut logits[..]);
+    rand::rng().fill(&mut logits[..]);
 
     // argmax
     {

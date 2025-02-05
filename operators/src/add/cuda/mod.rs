@@ -189,8 +189,8 @@ mod test {
         let mut c = vec![0.0f64; len];
         let mut a = vec![0.1f64; len];
         let mut b = vec![0.1f64; len];
-        rand::thread_rng().fill(&mut a[..]);
-        rand::thread_rng().fill(&mut b[..]);
+        rand::rng().fill(&mut a[..]);
+        rand::rng().fill(&mut b[..]);
         let data_ans = gpu.apply(|ctx| {
             let stream = ctx.stream();
             #[cfg(use_nvidia)]

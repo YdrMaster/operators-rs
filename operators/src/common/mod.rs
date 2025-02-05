@@ -1,5 +1,6 @@
 mod blob;
 mod calculator;
+mod diversity;
 mod error;
 mod maybe_dyn;
 mod pool;
@@ -16,20 +17,15 @@ pub use tensor::TensorLayout;
 pub use unsigned::Unsigned;
 pub use workspace::Workspace;
 
+pub(crate) use diversity::{SchemeCacheSize, SchemeDiversity};
 pub(crate) use maybe_dyn::{get_static, static_from};
 pub(crate) use workspace::WorkspaceCollector;
-#[allow(dead_code)]
-pub(crate) enum SchemeDiversity {
-    Low,
-    Medium,
-    High,
-}
 
 pub mod utils {
     use super::{rank_not_support, shape_mismatch, type_mismatch, MaybeDyn, SchemeError};
     use digit_layout::DigitLayout;
 
-    #[cfg(use_cuda)]
+    #[cfg(any(use_cuda, use_cl))]
     #[inline]
     pub(crate) const fn gcd(mut a: usize, mut b: usize) -> usize {
         while b != 0 {
@@ -113,6 +109,10 @@ pub(crate) mod test_utils {
 
         pub fn summary(self) -> (usize, usize) {
             (self.outliers.len(), self.count)
+        }
+
+        pub fn outliers(&self) -> &[usize] {
+            &self.outliers
         }
     }
 

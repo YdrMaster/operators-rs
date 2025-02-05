@@ -99,11 +99,11 @@ mod test {
         let o = vec![0.0f64; nh * seq * dh];
         let mut k_cache = vec![0.0f64; nkvh * (pos + seq) * dh];
         let mut v_cache = vec![0.0f64; nkvh * (pos + seq) * dh];
-        rand::thread_rng().fill(&mut q[..]);
-        rand::thread_rng().fill(&mut k[..]);
-        rand::thread_rng().fill(&mut v[..]);
-        rand::thread_rng().fill(&mut k_cache[..]);
-        rand::thread_rng().fill(&mut v_cache[..]);
+        rand::rng().fill(&mut q[..]);
+        rand::rng().fill(&mut k[..]);
+        rand::rng().fill(&mut v[..]);
+        rand::rng().fill(&mut k_cache[..]);
+        rand::rng().fill(&mut v_cache[..]);
         let k = k;
         let v = v;
 

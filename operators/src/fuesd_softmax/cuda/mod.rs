@@ -123,7 +123,7 @@ impl Scheme {
         const NAME: &str = "fused_softmax";
         const CODE: &str = include_str!("fused_softmax.cuh");
 
-        let mask = "AttentionCausualMask";
+        let mask = "AttentionCausalMask";
         let device = handle.device();
         let max_threads_block = device.block_limit().max_threads;
         let cc = device.compute_capability();
@@ -238,7 +238,7 @@ mod test {
         let nh = 32;
         for (seq_len, att_len) in [(1, 511), (1, 2048), (7, 511), (7, 2048)] {
             let mut att = vec![0.0f64; nh * seq_len * att_len];
-            rand::thread_rng().fill(&mut att[..]);
+            rand::rng().fill(&mut att[..]);
 
             let att_ans = gpu.apply(|ctx| {
                 let stream = ctx.stream();

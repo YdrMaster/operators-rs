@@ -171,7 +171,7 @@ mod test {
         let d = 2048;
 
         let mut data = vec![0.0f64; n * d];
-        rand::thread_rng().fill(&mut data[..]);
+        rand::rng().fill(&mut data[..]);
 
         let data_ans = gpu.apply(|ctx| {
             let stream = ctx.stream();
