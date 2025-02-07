@@ -6,7 +6,6 @@ use crate::{
 use cublas::cublas;
 use cuda::AsRaw;
 use digit_layout::types::F16;
-use half::f16;
 use std::{ffi::c_void, sync::Arc};
 
 pub struct Operator {
@@ -84,12 +83,10 @@ impl crate::Operator for Operator {
         let c = c_base.cast::<c_void>();
         let a = a.cast::<c_void>();
         let b = b.cast::<c_void>();
-        let alpha = f16::from_f32(alpha);
-        let beta = f16::from_f32(beta);
         #[cfg(use_nvidia)]
-        let compute_type = cublas::bindings::cublasComputeType_t::CUBLAS_COMPUTE_16F;
+        let compute_type = cublas::bindings::cublasComputeType_t::CUBLAS_COMPUTE_32F;
         #[cfg(use_iluvatar)]
-        let compute_type = cublas::bindings::cudaDataType_t::CUDA_R_16F;
+        let compute_type = cublas::bindings::cudaDataType_t::CUDA_R_32F;
 
         self.handle.cublas(queue_alloc.queue(), |handle| {
             cublas!(cublasGemmStridedBatchedEx(
@@ -107,7 +104,7 @@ impl crate::Operator for Operator {
                 m as _,
                 n as _,
                 k as _,
-                ((&alpha) as *const f16).cast(),
+                ((&alpha) as *const f32).cast(),
                 a,
                 cudaDataType_t::CUDA_R_16F,
                 a_ld as _,
@@ -116,7 +113,7 @@ impl crate::Operator for Operator {
                 cudaDataType_t::CUDA_R_16F,
                 b_ld as _,
                 b_stride as _,
-                ((&beta) as *const f16).cast(),
+                ((&beta) as *const f32).cast(),
                 c,
                 cudaDataType_t::CUDA_R_16F,
                 c_ld as _,
