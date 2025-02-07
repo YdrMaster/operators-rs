@@ -106,7 +106,7 @@ fn compile(handle: &Arc<Handle>, dt: DigitLayout) -> Arc<ModuleBox> {
     const CODE: &str = include_str!("add.cuh");
     let cc = handle.device().compute_capability();
     let ty = dt_name(dt);
-    handle.compile_kernel(&format!("add_{ty}"), cc, || {
+    handle.compile_kernel(format!("add_{ty}"), cc, || {
         format!(
             r#"{CODE}
 
