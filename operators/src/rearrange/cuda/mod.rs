@@ -1,9 +1,11 @@
 use super::{args::Scheme, Args, Rearrange};
+use crate::cuda::AsParam;
 use crate::{
     cuda::{Gpu, Handle, ModuleBox},
     rank_not_support, ByteOf, LaunchError, QueueAlloc, SchemeError,
 };
 use itertools::Itertools;
+use std::iter::repeat;
 use std::{ffi::CString, sync::Arc};
 struct Layout {
     r: u32,
@@ -13,6 +15,26 @@ struct Layout {
     src_rs: i32,
     src_cs: i32,
 }
+
+const ARRAY_SIZE: usize = 7;
+
+type ArrayType = i32;
+struct ArrayStruct([ArrayType; ARRAY_SIZE]);
+
+impl ArrayStruct {
+    fn new(element: impl Iterator<Item = ArrayType>, default: ArrayType) -> Option<Self> {
+        let mut array = [default; ARRAY_SIZE];
+        for (i, v) in element.into_iter().enumerate() {
+            if i >= ARRAY_SIZE {
+                return None;
+            }
+            array[i] = v;
+        }
+        Some(Self(array))
+    }
+}
+//TODO 需要检查正确性
+impl AsParam for ArrayStruct {}
 
 pub struct Operator {
     _handle: Arc<Handle>,
@@ -116,29 +138,30 @@ impl crate::Operator for Operator {
         // 发现读取的最大连续内存和写入的最大连续内存
 
         // 发现最大的1 thread 处理的数据量
-        let scheme_update = scheme.distribute_unit((0..=8).rev().map(|n| (1 << n)));
+        let scheme_update = scheme.distribute_unit((0..=5).rev().map(|n| (1 << n)));
 
         let src_strides = scheme_update.src_strides();
         let dst_strides = scheme_update.dst_strides();
         let shape = scheme_update.shape().collect::<Vec<_>>();
         let unit = scheme_update.unit();
+        let ndim = scheme_update.ndim();
 
-        // 计算写入的最大连续内存
-        let mut max_dst_contiguous = unit;
-        let mut max_dst_contiguous_index = scheme_update.ndim();
-        for i in (0..scheme_update.ndim()).rev() {
-            if dst_strides[i] as usize == max_dst_contiguous {
-                max_dst_contiguous *= shape[i];
-                max_dst_contiguous_index = i;
-            } else {
-                break;
-            }
-        }
+        // // 计算写入的最大连续内存
+        // let mut max_dst_contiguous = unit;
+        // let mut max_dst_contiguous_index = scheme_update.ndim();
+        // for i in (0..scheme_update.ndim()).rev() {
+        //     if dst_strides[i] as usize == max_dst_contiguous {
+        //         max_dst_contiguous *= shape[i];
+        //         max_dst_contiguous_index = i;
+        //     } else {
+        //         break;
+        //     }
+        // }
 
-        // 计算读取的最大连续内存
+        // // 计算读取的最大连续内存
 
-        let mut max_src_contiguous = unit;
-        let mut max_src_contiguous_index = scheme_update.ndim();
+        // let mut max_src_contiguous = unit;
+        // let mut max_src_contiguous_index = scheme_update.ndim();
 
         //src strides 降序 index
         let src_strides_desc_idx = (0..scheme_update.ndim())
@@ -147,197 +170,187 @@ impl crate::Operator for Operator {
             .map(|(i, _)| i)
             .collect::<Vec<_>>();
 
-        for i in (0..scheme_update.ndim()).rev() {
-            if src_strides[src_strides_desc_idx[i]] as usize == max_src_contiguous {
-                max_src_contiguous *= shape[src_strides_desc_idx[i]];
-                max_src_contiguous_index = i;
+        // for i in (0..scheme_update.ndim()).rev() {
+        //     if src_strides[src_strides_desc_idx[i]] as usize == max_src_contiguous {
+        //         max_src_contiguous *= shape[src_strides_desc_idx[i]];
+        //         max_src_contiguous_index = i;
+        //     } else {
+        //         break;
+        //     }
+        // }
+
+        //切分维度，分成grid处理的维度和block处理的维度，与dst的维度相对应
+        let mut block_dim_choose = repeat(false).take(ndim).collect::<Vec<_>>();
+        let mut src_choose_idx = ndim;
+        let mut dst_choose_idx = ndim;
+
+        let mut block_elements = 1;
+        let mut block_src_elements = 1;
+        let mut block_dst_elements = 1;
+
+        //TODO 需要优化
+        let block_size = 512;
+
+        loop {
+            //优先选择dst
+            if block_src_elements > block_dst_elements {
+                //选择dst
+                let idx = if dst_choose_idx == 0 {
+                    break;
+                } else {
+                    dst_choose_idx - 1
+                };
+
+                if block_dim_choose[idx] {
+                    dst_choose_idx -= 1;
+                    continue;
+                }
+
+                if block_elements * shape[idx] <= block_size {
+                    block_dim_choose[idx] = true;
+                    block_dst_elements *= shape[idx];
+                    block_elements *= shape[idx];
+                    dst_choose_idx -= 1;
+                } else {
+                    break;
+                }
             } else {
-                break;
+                //选择src
+                let idx = if src_choose_idx == 0 {
+                    break;
+                } else {
+                    src_strides_desc_idx[src_choose_idx - 1]
+                };
+
+                if block_dim_choose[idx] {
+                    dst_choose_idx -= 1;
+                    continue;
+                }
+                if block_elements * shape[src_strides_desc_idx[src_choose_idx - 1]] <= block_size {
+                    block_dim_choose[idx] = true;
+                    src_choose_idx -= 1;
+                    block_src_elements *= shape[idx];
+
+                    block_elements *= shape[idx];
+                } else {
+                    break;
+                }
             }
         }
 
-        // 检查源数据和目标数据的连续性
-        let src_continuous = if max_src_contiguous_index == scheme.ndim() {
-            false
-        } else {
-            shape[*src_strides_desc_idx.last().unwrap()] >= self.warp_size
-        };
-        let dst_continuous = if max_dst_contiguous_index == scheme.ndim() {
-            false
-        } else {
-            *shape.last().unwrap() >= self.warp_size
-        };
+        println!("block_dim_choose: {:?}", block_dim_choose);
 
-        // 决定是否使用共享内存优化
-        let _use_shared_memory = src_continuous || dst_continuous;
+        //TODO 需要支持对单个维度的切分
+        if src_choose_idx == ndim || dst_choose_idx == ndim {
+            panic!("rearrange not support this scheme");
+        }
 
-        let use_shared_memory = true;
+        //填充block_len，block_stride，grid_len，grid_stride
+        macro_rules! fill_array {
+            ($input:expr, $default:expr, for_block) => {
+                ArrayStruct::new(
+                    $input
+                        .iter()
+                        .zip(block_dim_choose.iter())
+                        .filter_map(|(len, is_choose)| {
+                            if *is_choose {
+                                Some(*len as ArrayType)
+                            } else {
+                                None
+                            }
+                        }),
+                    $default,
+                )
+            };
+
+            ($input:expr, $default:expr, for_grid) => {
+                ArrayStruct::new(
+                    $input
+                        .iter()
+                        .zip(block_dim_choose.iter())
+                        .filter_map(|(len, is_choose)| {
+                            if !*is_choose {
+                                Some(*len as ArrayType)
+                            } else {
+                                None
+                            }
+                        }),
+                    $default,
+                )
+            };
+        }
+
+        let block_len = fill_array!(shape, 1, for_block).unwrap();
+        let src_block_stride = fill_array!(src_strides, 0, for_block).unwrap();
+        let dst_block_stride = fill_array!(dst_strides, 0, for_block).unwrap();
+        let grid_len = fill_array!(shape, 1, for_grid).unwrap();
+
+        let src_grid_stride = fill_array!(src_strides, 0, for_grid).unwrap();
+        let dst_grid_stride = fill_array!(dst_strides, 0, for_grid).unwrap();
+
         //----------------------------------------------------------------------
-
-        let layout = match scheme_update.ndim() {
-            0 => unreachable!(),
-            1 => {
-                let &[dst_cs] = scheme_update.dst_strides() else {
-                    unreachable!()
-                };
-                let &[src_cs] = scheme_update.src_strides() else {
-                    unreachable!()
-                };
-                Layout {
-                    r: 1,
-                    c: scheme_update.shape().next().unwrap() as _,
-                    dst_rs: 0,
-                    dst_cs: dst_cs as _,
-                    src_rs: 0,
-                    src_cs: src_cs as _,
-                }
-            }
-            2 => {
-                let mut shape = scheme_update.shape();
-                let r = shape.next().unwrap();
-                let c = shape.next().unwrap();
-                let &[dst_rs, dst_cs] = scheme_update.dst_strides() else {
-                    unreachable!()
-                };
-                let &[src_rs, src_cs] = scheme_update.src_strides() else {
-                    unreachable!()
-                };
-
-                unsafe {
-                    if IS_INVERSE {
-                        Layout {
-                            r: c as _,
-                            c: r as _,
-                            dst_rs: dst_cs as _,
-                            dst_cs: dst_rs as _,
-                            src_rs: src_cs as _,
-                            src_cs: src_rs as _,
-                        }
-                    } else {
-                        Layout {
-                            r: r as _,
-                            c: c as _,
-                            dst_rs: dst_rs as _,
-                            dst_cs: dst_cs as _,
-                            src_rs: src_rs as _,
-                            src_cs: src_cs as _,
-                        }
-                    }
-                }
-            }
-            _ => Err(rank_not_support("rearrange not support ndim > 2 on NV GPU"))?,
-        };
-
-        // println!(
-        //     "layout: r={}, c={}, dst_rs={}, dst_cs={}, src_rs={}, src_cs={}",
-        //     layout.r, layout.c, layout.dst_rs, layout.dst_cs, layout.src_rs, layout.src_cs
-        // );
 
         let name = CString::new(NAME).unwrap();
 
-        let warps = self.max_warps_block as u32;
-        let grid = (
-            layout.c.div_ceil(self.warp_size as u32),
-            layout.r.div_ceil(self.warp_size as u32),
-        );
-        let block = if use_shared_memory {
-            // 使用32x32的block大小
-            (32, 32)
-        } else {
-            (self.warp_size as u32, warps)
-        };
+        let grid = shape
+            .iter()
+            .zip(block_dim_choose.iter())
+            .filter_map(|(len, is_choose)| {
+                if !*is_choose {
+                    Some(*len as ArrayType)
+                } else {
+                    None
+                }
+            })
+            .product::<ArrayType>() as u32;
+        let block = block_size as u32;
 
-        let unit = unit as i32;
-        let dst_rs = layout.dst_rs / unit;
-        let dst_cs = layout.dst_cs / unit;
-        let src_rs = layout.src_rs / unit;
-        let src_cs = layout.src_cs / unit;
-
-        let sub_size = 32 as u32;
+        let unit = unit as usize;
 
         let params = cuda::params![
             args.dst_base,
-            dst_rs,
-            dst_cs,
             args.src_base,
-            src_rs,
-            src_cs,
-            layout.r,
-            layout.c,
-            sub_size, // sub_size_x
-            sub_size, // sub_size_y
-            unit      // bytes_per_thread
+            block_len,        // 各维度的长度
+            src_block_stride, // 源tensor在各维度上的步长(bytes)
+            dst_block_stride, // 目标tensor在各维度上的步长(bytes)
+            grid_len,         // 各维度的长度
+            src_grid_stride,  // 源tensor在各维度上的步长(bytes)
+            dst_grid_stride,  // 源tensor在各维度上的步长(bytes)
+            unit              // bytes_per_thread
         ];
 
-        let shared_memory_size = if use_shared_memory {
-            // 计算共享内存大小：32x32 的块大小 * 每个元素的字节数
-            32 * 32 * (unit as usize)
-        } else {
-            0
-        };
-
-        self.module.launch(
-            &name,
-            grid,
-            block,
-            params.as_ptr(),
-            shared_memory_size,
-            queue_alloc.queue(),
-        );
+        self.module
+            .launch(&name, grid, block, params.as_ptr(), 0, queue_alloc.queue());
         Ok(())
     }
 }
 
 fn format_code() -> String {
     format!(
-        r#"{CODE}
+        r#"#define ARRAY_SIZE {ARRAY_SIZE}
+        {CODE}
 
 extern "C" __global__ void {NAME}(
     void       *__restrict__ dst,
-    int const rsa,
-    int const csa,
     void const *__restrict__ src,
-    int const rsb,
-    int const csb,
-    unsigned int const nrows,
-    unsigned int const ncols,
-    unsigned int const sub_size_x,
-    unsigned int const sub_size_y,
-    unsigned int const bytes_per_thread
+    ArrayStruct block_len,            // 各维度的长度
+    ArrayStruct src_block_stride,     // 源tensor在各维度上的步长(bytes)
+    ArrayStruct dst_block_stride,     // 目标tensor在各维度上的步长(bytes)
+    ArrayStruct grid_len,             // 各维度的长度
+    ArrayStruct src_grid_stride,      // 源tensor在各维度上的步长(bytes)
+    ArrayStruct dst_grid_stride,      // 目标tensor在各维度上的步长(bytes)
+    unsigned int const unit_size      // 每个元素的字节数
 ){{
-    // 当 rsa == rsb 且 csa == csb 时，说明是直接拷贝模式
-    if (rsa == rsb && csa == csb) {{
-        const unsigned int total_elements = nrows * ncols;
-        switch (bytes_per_thread) {{
-            case  1: rearrange_direct_copy<uchar1 >(dst, src, total_elements, bytes_per_thread); break;
-            case  2: rearrange_direct_copy<uchar2 >(dst, src, total_elements, bytes_per_thread); break;
-            case  4: rearrange_direct_copy<float1 >(dst, src, total_elements, bytes_per_thread); break;
-            case  8: rearrange_direct_copy<float2 >(dst, src, total_elements, bytes_per_thread); break;
-            case 16: rearrange_direct_copy<float4 >(dst, src, total_elements, bytes_per_thread); break;
-            case 32: rearrange_direct_copy<double4>(dst, src, total_elements, bytes_per_thread); break;
-            case 64: rearrange_direct_copy<double4>(dst, src, total_elements, bytes_per_thread); break;
-            case 128: rearrange_direct_copy<double4>(dst, src, total_elements, bytes_per_thread); break;
-            case 256: rearrange_direct_copy<double4>(dst, src, total_elements, bytes_per_thread); break;
-        }}
-        return;
-    }}
-
-    // 原有的重排模式
-    if (bytes_per_thread <= 32) {{
-        switch (bytes_per_thread) {{
-            case  1: rearrange_shared<uchar1 >(dst, rsa, csa, src, rsb, csb, nrows, ncols, sub_size_x, sub_size_y); break;
-            case  2: rearrange_shared<uchar2 >(dst, rsa, csa, src, rsb, csb, nrows, ncols, sub_size_x, sub_size_y); break;
-            case  4: rearrange_shared<float1 >(dst, rsa, csa, src, rsb, csb, nrows, ncols, sub_size_x, sub_size_y); break;
-            case  8: rearrange_shared<float2 >(dst, rsa, csa, src, rsb, csb, nrows, ncols, sub_size_x, sub_size_y); break;
-            case 16: rearrange_shared<float4 >(dst, rsa, csa, src, rsb, csb, nrows, ncols, sub_size_x, sub_size_y); break;
-            case 32: rearrange_shared<double4>(dst, rsa, csa, src, rsb, csb, nrows, ncols, sub_size_x, sub_size_y); break;
-        }}
-    }} else {{
-        switch (bytes_per_thread) {{
-            case  64: rearrange_large_unit<double4>(dst, rsa, csa, src, rsb, csb, nrows, ncols, sub_size_x, sub_size_y, bytes_per_thread); break;
-            case 128: rearrange_large_unit<double4>(dst, rsa, csa, src, rsb, csb, nrows, ncols, sub_size_x, sub_size_y, bytes_per_thread); break;
-            case 256: rearrange_large_unit<double4>(dst, rsa, csa, src, rsb, csb, nrows, ncols, sub_size_x, sub_size_y, bytes_per_thread); break;
-        }}
+    switch (unit_size) {{
+        case  1: rearrange_1<uchar1 >(dst, src, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
+        case  2: rearrange_1<uchar2 >(dst, src, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
+        case  4: rearrange_1<float1 >(dst, src, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
+        case  8: rearrange_1<float2 >(dst, src, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
+        case 16: rearrange_1<float4 >(dst, src, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
+        case 32: rearrange_1<double4>(dst, src, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
+        // case 64: rearrange_1<double4>(dst, src, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
+        // case 128: rearrange_1<double4>(dst, src, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
+        // case 256: rearrange_1<double4>(dst, src, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
     }}
 }}
 "#
@@ -407,10 +420,12 @@ mod test {
     fn test_compute() {
         use super::super::common_cpu::Operator as RefOp;
         use crate::common_cpu::{Cpu, ThisThread};
+        use crate::rearrange::cuda::format_code;
         use cuda::memcpy_d2h;
         use ndarray_layout::{ArrayLayout, Endian::BigEndian};
         use rand::Rng;
-
+        let code = format_code();
+        std::fs::write("rearrange.cu", code).unwrap();
         let Some(gpu) = Gpu::init() else {
             return;
         };
@@ -422,23 +437,29 @@ mod test {
         cpu_op.scheme(&dyn_args(dt), 0).unwrap();
         gpu_op.scheme(&dyn_args(dt), 0).unwrap();
 
-        let nh = 4342;
-        let seq = 143;
-        let dh = 8;
+        let nh = 16;
+        let seq = 2343;
+        let dh = 32;
         let mut src = vec![0u32; nh * seq * dh];
         rand::rng().fill(&mut src[..]);
 
         let ele = dt.nbytes();
         let s_src = ArrayLayout::<3>::new_contiguous(&[nh, seq, dh], BigEndian, ele);
         let s_dst =
-            ArrayLayout::<3>::new_contiguous(&[seq, nh, dh], BigEndian, ele).transpose(&[1, 0]);
+            ArrayLayout::<3>::new_contiguous(&[dh, seq, nh], BigEndian, ele).transpose(&[2, 1, 0]);
 
+        println!("s_src: {:?}", s_src.shape());
+        println!("s_dst: {:?}", s_dst.shape());
+        println!("s_src strides: {:?}", s_src.strides());
+
+        println!("s_dst strides: {:?}", s_dst.strides());
         let dst_ans = gpu.apply(|ctx| {
             let stream = ctx.stream();
             #[cfg(use_nvidia)]
             let rt = &stream;
             #[cfg(use_iluvatar)]
             let rt = ctx;
+
             let src = rt.from_host(&src);
             let mut dst = rt.malloc::<u8>(src.len());
 
