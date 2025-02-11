@@ -9,11 +9,6 @@
 #define Tw float
 #endif
 
-// assert: GROUP_SIZE is power of 2
-#ifndef GROUP_SIZE
-#define GROUP_SIZE 512
-#endif
-
 #ifndef ITEMS_THREAD
 #define ITEMS_THREAD 1
 #endif

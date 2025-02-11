@@ -139,7 +139,6 @@ impl Operator {
             };
             let src = CodeGen::new(include_str!("fused_softmax.cl"))
                 .define("Tval", dt_a)
-                .define("GROUP_SIZE", self.max_group_size)
                 .define("ITEMS_THREAD", ITEMS_THREAD)
                 .define("MASK", "causal_mask")
                 .to_string();

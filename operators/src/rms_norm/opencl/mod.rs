@@ -143,7 +143,6 @@ impl Operator {
             let src = CodeGen::new(include_str!("rms_norm.cl"))
                 .define("Ta", dt_a)
                 .define("Tw", dt_w)
-                .define("GROUP_SIZE", group_size)
                 .define("ITEMS_THREAD", items_thread)
                 .to_string();
             KernelCache::new(&self.ctx, &src, CL2_0)

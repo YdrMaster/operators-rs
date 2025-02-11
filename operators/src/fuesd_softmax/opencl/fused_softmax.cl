@@ -5,11 +5,6 @@
 #define Tval float
 #endif
 
-// assert: GROUP_SIZE is power of 2
-#ifndef GROUP_SIZE
-#define GROUP_SIZE 512
-#endif
-
 #ifndef ITEMS_THREAD
 #define ITEMS_THREAD 8
 #endif
@@ -64,7 +59,6 @@ kernel void softmax_register(
 
     barrier(CLK_LOCAL_MEM_FENCE);
     float const k = 1 / work_group_reduce_add(sum_);
-    ;
 
     for (Tidx i = 0, idx = l_idx; idx < att_len; ++i, idx += l_len)
         att[idx] = data[i] * k;

@@ -25,8 +25,8 @@ __kernel void general_gemm(__global Tval *A, __global Tval *B, __global Tval *C,
     Tval valueA = 0.0f;
     Tval valueB = 0.0f;
     float value = 0.0f;
-    for (int i = 0; i < K; i++) {
 
+    for (int i = 0; i < K; i++) {
         valueA = *(A + g_idx * as + row_id * ars + i * acs);
         valueB = *(B + g_idx * bs + i * brs + col_id * bcs);
         value += MUL(valueA, valueB);
