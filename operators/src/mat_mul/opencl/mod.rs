@@ -1,16 +1,22 @@
 use super::{args::SchemeLayout, Args, MatMul};
 use crate::{
-    opencl::{ClDevice, KernelCache, CL2_0},
-    ByteOf, LaunchError, QueueAlloc, SchemeError,
+    opencl::{ClDevice, CodeGen, KernelCache, CL2_0},
+    ByteOf, LaunchError, QueueAlloc,
+    SchemeDiversity::Low as LowDiversity,
+    SchemeError,
 };
-use clrt::bindings::cl_int;
+use clrt::{bindings::cl_int, Context};
+use digit_layout::{types as Ty, DigitLayout};
+use lru::LruCache;
+use std::sync::Mutex;
 
-#[repr(transparent)]
-pub struct Operator(KernelCache);
+pub struct Operator {
+    ctx: Context,
+    max_group_size: usize,
+    schemes: Mutex<LruCache<SchemeKey, KernelCache>>,
+}
 
 impl MatMul<ClDevice> for Operator {}
-
-const MAX_THREADS_PER_BLOCK: usize = 512;
 
 impl crate::Operator for Operator {
     type Hardware = ClDevice;
@@ -18,11 +24,19 @@ impl crate::Operator for Operator {
     type Args = Args<ClDevice>;
 
     fn new(node: &Self::TopoNode) -> Self {
-        Self(KernelCache::new(
-            node.context(),
-            include_str!("mat_mul.cl"),
-            CL2_0,
-        ))
+        let ctx = node.context().clone();
+        let max_group_size = ctx
+            .devices()
+            .iter()
+            .map(|d| d.max_group_size())
+            .min()
+            .unwrap()
+            / 2;
+        Self {
+            ctx,
+            max_group_size,
+            schemes: node.new_cache(LowDiversity),
+        }
     }
 
     fn scheme(
@@ -43,6 +57,7 @@ impl crate::Operator for Operator {
         QA: QueueAlloc<Hardware = Self::Hardware>,
     {
         let SchemeLayout {
+            dt,
             ab_swap,
             a_trans,
             b_trans,
@@ -76,16 +91,19 @@ impl crate::Operator for Operator {
         let (rhs_cs, rhs_rs) = if b_trans { (1, b_ld) } else { (b_ld, 1) };
 
         let mn = m * n;
-        let items_per_thread = mn.div_ceil(MAX_THREADS_PER_BLOCK);
-        let local_worksize_y = match items_per_thread {
-            1 => mn,
-            _ => MAX_THREADS_PER_BLOCK,
-        };
-        let name = "general_gemm_f32";
 
-        let mut kernel = self.0.take(name).unwrap();
+        let (key, groupsize) = self.cache_kernel(dt, m, n);
+        let mut matmul = self
+            .schemes
+            .lock()
+            .unwrap()
+            .get(&key)
+            .unwrap()
+            .take("general_gemm")
+            .unwrap();
+
         let queue = _queue_alloc.queue();
-        kernel
+        matmul
             .set_arg(0, a)
             .set_arg(1, b)
             .set_arg(2, c_base)
@@ -103,11 +121,57 @@ impl crate::Operator for Operator {
             .set_arg(14, n as cl_int)
             .set_arg(15, k as cl_int)
             .set_arg(16, alpha)
-            .set_arg(17, beta) //;
-            .launch(&[0, 0], &[batch, mn], &[1, local_worksize_y], queue, None);
-        self.0.put(name, kernel);
+            .set_arg(17, beta)
+            .launch(
+                &[0, 0],
+                &[batch as usize, mn as usize],
+                &[1 as usize, groupsize as usize],
+                queue,
+                None,
+            );
+        let mut cache = self.schemes.lock().unwrap();
+        let program = cache.get(&key).unwrap();
+        program.put("general_gemm", matmul);
         Ok(())
     }
+}
+
+impl Operator {
+    fn cache_kernel(&self, dt: DigitLayout, m: usize, n: usize) -> (SchemeKey, usize) {
+        let mn = m * n;
+        let items_per_thread = mn.div_ceil(self.max_group_size);
+        let group_size = match items_per_thread {
+            1 => mn,
+            _ => self.max_group_size,
+        };
+        let key = SchemeKey { dt, m, n };
+        self.schemes.lock().unwrap().get_or_insert(key, || {
+            let dt = match dt {
+                Ty::F32 => "float",
+                Ty::F16 => "half",
+                _ => unimplemented!(),
+            };
+            let src = match dt {
+                "float" => CodeGen::new(include_str!("mat_mul.cl"))
+                    .define("Tval", dt)
+                    .to_string(),
+                "half" => CodeGen::new(include_str!("mat_mul.cl"))
+                    .define("Tval", dt)
+                    .define("USE_HALF", true)
+                    .to_string(), // 只有 F16 类型时才定义 USE_HALF
+                _ => unimplemented!(),
+            };
+            KernelCache::new(&self.ctx, &src, CL2_0)
+        });
+        (key, group_size)
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+struct SchemeKey {
+    dt: DigitLayout,
+    m: usize,
+    n: usize,
 }
 
 #[cfg(test)]

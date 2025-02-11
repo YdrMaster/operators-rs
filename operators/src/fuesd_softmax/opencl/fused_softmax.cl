@@ -5,11 +5,6 @@
 #define Tval float
 #endif
 
-// assert: GROUP_SIZE is power of 2
-#ifndef GROUP_SIZE
-#define GROUP_SIZE 512
-#endif
-
 #ifndef ITEMS_THREAD
 #define ITEMS_THREAD 8
 #endif
@@ -19,36 +14,6 @@
 #endif
 
 typedef unsigned int Tidx;
-
-float group_max(local float *data, float reg) {
-    Tidx const idx = get_local_id(0),
-               len = get_local_size(0);
-
-    data[idx] = reg;
-    barrier(CLK_LOCAL_MEM_FENCE);
-
-    for (Tidx stride = len >> 1; stride; stride >>= 1) {
-        if (idx < stride) data[idx] = fmax(data[idx], data[idx + stride]);
-        barrier(CLK_LOCAL_MEM_FENCE);
-    }
-
-    return data[0];
-}
-
-float group_sum(local float *data, float reg) {
-    Tidx const idx = get_local_id(0),
-               len = get_local_size(0);
-
-    data[idx] = reg;
-    barrier(CLK_LOCAL_MEM_FENCE);
-
-    for (Tidx stride = len >> 1; stride; stride >>= 1) {
-        if (idx < stride) data[idx] += data[idx + stride];
-        barrier(CLK_LOCAL_MEM_FENCE);
-    }
-
-    return data[0];
-}
 
 bool causal_mask(Tidx tok_id, Tidx seq_len,
                  Tidx pos_id, Tidx att_len) {
@@ -85,8 +50,7 @@ kernel void softmax_register(
         max_ = fmax(max_, data[i]);
     }
 
-    local float shared[GROUP_SIZE];
-    max_ = group_max(shared, max_);
+    max_ = work_group_reduce_max(max_);
 
     for (Tidx i = 0, idx = l_idx; idx < att_len; ++i, idx += l_len) {
         data[i] = exp(data[i] - max_);
@@ -94,7 +58,7 @@ kernel void softmax_register(
     }
 
     barrier(CLK_LOCAL_MEM_FENCE);
-    float const k = 1 / group_sum(shared, sum_);
+    float const k = 1 / work_group_reduce_add(sum_);
 
     for (Tidx i = 0, idx = l_idx; idx < att_len; ++i, idx += l_len)
         att[idx] = data[i] * k;
@@ -124,8 +88,7 @@ kernel void softmax_global(
         max_ = fmax(max_, data);
     }
 
-    local float shared[GROUP_SIZE];
-    max_ = group_max(shared, max_);
+    max_ = work_group_reduce_max(max_);
 
     for (Tidx i = 0, idx = l_idx; idx < att_len; ++i, idx += l_len) {
         float const data = exp(att[idx] - max_);
@@ -134,7 +97,7 @@ kernel void softmax_global(
     }
 
     barrier(CLK_LOCAL_MEM_FENCE);
-    float const k = 1 / group_sum(shared, sum_);
+    float const k = 1 / work_group_reduce_add(sum_);
 
     for (Tidx i = 0, idx = l_idx; idx < att_len; ++i, idx += l_len)
         att[idx] *= k;

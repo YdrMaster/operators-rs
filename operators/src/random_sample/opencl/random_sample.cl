@@ -1,5 +1,5 @@
 #define CL_TARGET_OPENCL_VERSION 200
-#pragma OPENCL EXTENTION cl_khr_fp16 : enable
+#pragma OPENCL EXTENSION cl_khr_fp16 : enable
 
 #ifndef Tval
 #define Tval float
@@ -41,7 +41,7 @@ kernel void argmax_build_pairs(
     global Tval const *input,
     global KVPair *output,
     Tidx const n,
-    Tval init) {
+    float init) {
 
     Tidx const
         g_idx = get_global_id(0),
@@ -50,7 +50,7 @@ kernel void argmax_build_pairs(
 
     // register: 每个线程可能处理多个数据，汇总到寄存器中
     // NOTICE 为保证线程利用率，每个线程应该处理至少 2 个数据
-    KVPair reg = {-1, init};
+    KVPair reg = {-1, (Tval) init};
     for (Tidx i = g_idx; i < n; i += g_len) {
         Tval const val = input[i];
         if (val > reg.val) reg = (KVPair) {i, val};
@@ -68,7 +68,7 @@ kernel void argmax_reduce(
     global KVPair const *pairs,
     global KVPair *output,
     Tidx const n,
-    Tval init) {
+    float init) {
 
     Tidx const
         g_idx = get_global_id(0),
@@ -77,7 +77,7 @@ kernel void argmax_reduce(
 
     // register: 每个线程可能处理多个数据，汇总到寄存器中
     // NOTICE 为保证线程利用率，每个线程应该处理至少 2 个数据
-    KVPair reg = {-1, init};
+    KVPair reg = {-1, (Tval) init};
     for (Tidx i = g_idx; i < n; i += g_len) {
         KVPair const pair = pairs[i];
         if (pair.val > reg.val) reg = pair;

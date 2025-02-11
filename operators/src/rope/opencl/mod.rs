@@ -1,18 +1,22 @@
 ﻿use super::{args::Meta, fill_pos, Args, Rope, Seq, SinCosTable};
 use crate::{
     get_static,
-    opencl::{ClDevice, KernelCache, CL2_0},
-    shape_not_support, strides_not_support, type_not_support, ByteOf, LaunchError, QueueAlloc,
+    opencl::{ClDevice, CodeGen, KernelCache, CL2_0},
+    shape_not_support, strides_not_support, ByteOf, LaunchError, QueueAlloc,
+    SchemeDiversity::Low as LowDiversity,
     SchemeError,
 };
-use clrt::bindings::cl_int;
-use digit_layout::types::{F32, U32};
+use clrt::{bindings::cl_int, Context};
+use digit_layout::{types as Ty, DigitLayout};
+use lru::LruCache;
+use std::sync::Mutex;
 use std::{alloc::Layout, iter::zip};
 
-#[repr(transparent)]
-pub struct Operator(KernelCache);
-
-const MAX_THREADS_PER_BLOCK: usize = 512;
+pub struct Operator {
+    ctx: Context,
+    max_group_size: usize,
+    schemes: Mutex<LruCache<SchemeKey, KernelCache>>,
+}
 
 impl Rope<ClDevice> for Operator {
     fn build_sincos<QA>(
@@ -40,19 +44,39 @@ impl Rope<ClDevice> for Operator {
         I: IntoIterator<Item = Seq>,
         QA: QueueAlloc<Hardware = Self::Hardware>,
     {
-        let mut blob = _queue_alloc.alloc(Layout::array::<u32>(_nt).unwrap().size());
-        let mut host = vec![0u32; _nt];
-        fill_pos(host.as_mut_ptr().cast::<u32>(), _nt, _iter);
-        let queue = _queue_alloc.queue();
-        let mut map = queue.map_mut(&mut blob, false);
-        let ([], mem, []) = (unsafe { map.align_to_mut::<u32>() }) else {
-            panic!()
-        };
-        for (dst, src) in zip(mem, &host) {
-            *dst = *src as _;
+        match _dt {
+            Ty::U32 => {
+                let mut blob = _queue_alloc.alloc(Layout::array::<u32>(_nt).unwrap().size());
+                let mut host = vec![0u32; _nt];
+                fill_pos(host.as_mut_ptr().cast::<u32>(), _nt, _iter);
+                let queue = _queue_alloc.queue();
+                let mut map = queue.map_mut(&mut blob, false);
+                let ([], mem, []) = (unsafe { map.align_to_mut::<u32>() }) else {
+                    panic!()
+                };
+                for (dst, src) in zip(mem, &host) {
+                    *dst = *src as _;
+                }
+                queue.unmap(map);
+                blob
+            }
+            Ty::U64 => {
+                let mut blob = _queue_alloc.alloc(Layout::array::<u64>(_nt).unwrap().size());
+                let mut host = vec![0u64; _nt];
+                fill_pos(host.as_mut_ptr().cast::<u32>(), _nt, _iter);
+                let queue = _queue_alloc.queue();
+                let mut map = queue.map_mut(&mut blob, false);
+                let ([], mem, []) = (unsafe { map.align_to_mut::<u64>() }) else {
+                    panic!()
+                };
+                for (dst, src) in zip(mem, &host) {
+                    *dst = *src as _;
+                }
+                queue.unmap(map);
+                blob
+            }
+            _ => panic!("Unsupported digit layout type"),
         }
-        queue.unmap(map);
-        blob
     }
 }
 
@@ -62,11 +86,19 @@ impl crate::Operator for Operator {
     type Args = Args<ClDevice>;
 
     fn new(node: &Self::TopoNode) -> Self {
-        Self(KernelCache::new(
-            node.context(),
-            include_str!("rope.cl"),
-            CL2_0,
-        ))
+        let ctx = node.context().clone();
+        let max_group_size = ctx
+            .devices()
+            .iter()
+            .map(|d| d.max_group_size())
+            .min()
+            .unwrap()
+            / 2;
+        Self {
+            ctx,
+            max_group_size,
+            schemes: node.new_cache(LowDiversity),
+        }
     }
 
     fn scheme(
@@ -81,7 +113,7 @@ impl crate::Operator for Operator {
         &self,
         args: &Self::Args,
         _workspace: &mut [ByteOf<Self::Hardware>],
-        _queue_alloc: &QA,
+        queue_alloc: &QA,
     ) -> Result<(), LaunchError>
     where
         QA: QueueAlloc<Hardware = Self::Hardware>,
@@ -89,10 +121,6 @@ impl crate::Operator for Operator {
         let Meta {
             dt_t, dt_p, nt, dh, ..
         } = args.meta()?;
-
-        if dt_t != F32 || dt_p != U32 {
-            return Err(type_not_support("").into());
-        }
 
         let Args {
             t_layout,
@@ -119,7 +147,7 @@ impl crate::Operator for Operator {
         }
 
         let unit = dt_t.nbytes() as isize;
-        if sd != unit || sp != size_of::<u32>() as isize {
+        if sd != unit || sp != dt_p.nbytes() as isize {
             return Err(strides_not_support("").into());
         };
 
@@ -127,39 +155,82 @@ impl crate::Operator for Operator {
         let st = (st / unit / 2) as i32;
         let sh = (sh / unit / 2) as i32;
 
-        if MAX_THREADS_PER_BLOCK % dh != 0 {
+        if self.max_group_size % dh != 0 {
             return Err(shape_not_support("").into());
         }
 
-        let max_nh_l = (MAX_THREADS_PER_BLOCK / dh).min(nh);
+        let max_nh_l = (self.max_group_size / dh).min(nh);
         let nh_l = (1..=max_nh_l).rev().find(|nhl| nh % nhl == 0).unwrap();
         let nh_h = nh / nh_l;
 
-        let global_workoffset = [0, 0];
-        let global_worksize = [(nt * nh_l) as usize, (nh_h * dh) as usize];
-        let local_worksize = [nh_l as usize, dh as usize];
+        let key = self.cache_kernel(dt_t, dt_p);
+        let mut rope = self
+            .schemes
+            .lock()
+            .unwrap()
+            .get(&key)
+            .unwrap()
+            .take("rope")
+            .unwrap();
 
-        let name = "rope_f32";
-        let mut kernel = self.0.take(name).unwrap();
-
-        kernel
-            .set_arg(0, t_base)
+        rope.set_arg(0, t_base)
             .set_arg(1, st as cl_int)
             .set_arg(2, sh as cl_int)
             .set_arg(3, p_base)
             .set_arg(4, theta)
             .launch(
-                &global_workoffset,
-                &global_worksize,
-                &local_worksize,
-                _queue_alloc.queue(),
+                &[0, 0],
+                &[(nt * nh_l) as usize, (nh_h * dh) as usize],
+                &[nh_l as usize, dh as usize],
+                queue_alloc.queue(),
                 None,
             );
 
-        self.0.put(name, kernel);
+        let mut cache = self.schemes.lock().unwrap();
+        let program = cache.get(&key).unwrap();
+        program.put("rope", rope);
 
         Ok(())
     }
+}
+
+impl Operator {
+    fn cache_kernel(&self, dt_t: DigitLayout, dt_p: DigitLayout) -> SchemeKey {
+        let key = SchemeKey { dt_t, dt_p };
+        self.schemes.lock().unwrap().get_or_insert(key, || {
+            let dt_t = match dt_t {
+                Ty::F32 => "float2",
+                Ty::F16 => "half2",
+                _ => unimplemented!(),
+            };
+            let dt_p = match dt_p {
+                Ty::U64 => "unsigned long",
+                Ty::U32 => "unsigned int",
+                _ => unimplemented!(),
+            };
+
+            let src = match dt_t {
+                "float2" => CodeGen::new(include_str!("rope.cl"))
+                    .define("Tval", dt_t)
+                    .define("Tpos", dt_p)
+                    .to_string(),
+                "half2" => CodeGen::new(include_str!("rope.cl"))
+                    .define("Tval", dt_t)
+                    .define("Tpos", dt_p)
+                    .define("USE_HALF", true)
+                    .to_string(), // 只有 F16 类型时才定义 USE_HALF
+                _ => unimplemented!(),
+            };
+            KernelCache::new(&self.ctx, &src, CL2_0)
+        });
+        key
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+struct SchemeKey {
+    dt_t: DigitLayout,
+    dt_p: DigitLayout,
 }
 
 #[cfg(test)]
