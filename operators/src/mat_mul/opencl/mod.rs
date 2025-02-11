@@ -122,13 +122,7 @@ impl crate::Operator for Operator {
             .set_arg(15, k as cl_int)
             .set_arg(16, alpha)
             .set_arg(17, beta)
-            .launch(
-                &[0, 0],
-                &[batch as usize, mn as usize],
-                &[1 as usize, groupsize as usize],
-                queue,
-                None,
-            );
+            .launch(&[0, 0], &[batch, mn], &[1, groupsize], queue, None);
         let mut cache = self.schemes.lock().unwrap();
         let program = cache.get(&key).unwrap();
         program.put("general_gemm", matmul);
