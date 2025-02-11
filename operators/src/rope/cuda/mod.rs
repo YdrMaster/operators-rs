@@ -127,7 +127,7 @@ impl crate::Operator for Operator {
         let unit = dt_t.nbytes() as isize;
         if sd != unit || sp != dt_p.nbytes() as isize {
             return Err(strides_not_support("").into());
-        };
+        }
 
         let dh = dh / 2;
         let st = (st / unit / 2) as i32;

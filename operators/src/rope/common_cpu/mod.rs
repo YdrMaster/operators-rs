@@ -1,5 +1,8 @@
 use super::{args::Meta, fill_pos, Args, Rope, Seq, SinCosTable};
-use crate::{common_cpu::Cpu, get_static, ByteOf, LaunchError, QueueAlloc, SchemeError, Unsigned};
+use crate::{
+    common_cpu::Cpu, get_static, strides_not_support, ByteOf, LaunchError, QueueAlloc, SchemeError,
+    Unsigned,
+};
 use digit_layout::{types as ty, DigitLayout};
 use half::f16;
 
@@ -92,6 +95,9 @@ impl crate::Operator for Operator {
             st sh sd
             sp
         }
+        if sd != dt_t.nbytes() as isize {
+            return Err(strides_not_support("").into());
+        }
 
         macro_rules! calculate {
             ($t:ty, $p:ty) => {
@@ -101,7 +107,6 @@ impl crate::Operator for Operator {
                     dh,
                     st,
                     sh,
-                    sd,
                     sp,
                     theta: *theta,
                     t_base: t_base.cast(),
@@ -133,7 +138,6 @@ struct Scheme<A, P> {
     dh: usize,
     st: isize,
     sh: isize,
-    sd: isize,
     sp: isize,
     theta: f32,
     t_base: *mut A,
@@ -206,24 +210,32 @@ where
     P: Position<A::Calculation> + Sync + Copy,
 {
     fn calculate(&self) {
-        let nt = self.nt as isize;
-        let nh = self.nh as isize;
-        let dh = self.dh as isize / 2;
+        let &Self {
+            nt,
+            nh,
+            dh,
+            st,
+            sh,
+            sp,
+            theta,
+            t_base,
+            p_base,
+        } = self;
+        let nt = nt as isize;
+        let nh = nh as isize;
+        let dh = dh as isize / 2;
+        let sd = size_of::<[A; 2]>() as isize;
 
         for i in 0..nt {
-            let p = unsafe { *self.p_base.byte_offset(i * self.sp) };
-            (0..dh).for_each(|k| {
-                for j in 0..nh {
-                    let pair = unsafe {
-                        &mut *self
-                            .t_base
-                            .byte_offset(i * self.st + j * self.sh + k * self.sd * 2)
-                            .cast::<[A; 2]>()
-                    };
-                    let (sin, cos) = p.freq_sin_cos(k, dh, self.theta);
+            let t = unsafe { t_base.byte_offset(i * st).cast::<[A; 2]>() };
+            let p = unsafe { *p_base.byte_offset(i * sp) };
+            for j in 0..nh {
+                for k in 0..dh {
+                    let pair = unsafe { &mut *t.byte_offset(j * sh + k * sd) };
+                    let (sin, cos) = p.freq_sin_cos(k, dh, theta);
                     A::calculate(pair, sin, cos)
                 }
-            })
+            }
         }
     }
 }
