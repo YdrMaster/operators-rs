@@ -1,32 +1,37 @@
 #define CL_TARGET_OPENCL_VERSION 200
 #pragma OPENCL EXTENSION cl_khr_fp16 : enable
-#define TILE_SIZE 32
-#define K_SIZE 64
-#define BLOCKSIZE 512
 
-__kernel void general_gemm_f32(__global float *A, __global float *B, __global float *C,
-                               int as, int ars, int acs, int bs, int brs, int bcs,
-                               int cs, int crs, int ccs, int batch,
-                               int M, int N, int K, float alpha, float beta) {
-    int localid_x = get_local_id(0);
-    int localid_y = get_local_id(1);
-    int global_id_x = get_global_id(0);
-    int global_id_y = get_global_id(1);
-    int row_id = global_id_y / N;
-    int cow_id = global_id_y % N;
+#ifndef Tval
+#define Tval float
+#endif
 
-    float valueA = 0.0f;
-    float valueB = 0.0f;
+#ifdef USE_HALF
+#define MUL(valueA, valueB) (float) (valueA * valueB)
+#define SCAL(beta, p, alpha, value) (half)(beta * (float) (*p) + alpha * value)
+#else
+#define MUL(valueA, valueB) valueA *valueB
+#define SCAL(beta, p, alpha, value) beta *(*p) + alpha *value
+#endif
+
+__kernel void general_gemm(__global Tval *A, __global Tval *B, __global Tval *C,
+                           int as, int ars, int acs, int bs, int brs, int bcs,
+                           int cs, int crs, int ccs, int batch,
+                           int M, int N, int K, float alpha, float beta) {
+    int g_idx = get_global_id(0);
+    int g_idy = get_global_id(1);
+    int row_id = g_idy / N;
+    int col_id = g_idy % N;
+
+    Tval valueA = 0.0f;
+    Tval valueB = 0.0f;
     float value = 0.0f;
     for (int i = 0; i < K; i++) {
 
-        valueA = *(A + global_id_x * as + row_id * ars + i * acs);
-        valueB = *(B + global_id_x * bs + i * brs + cow_id * bcs);
-
-        value += valueA * valueB;
+        valueA = *(A + g_idx * as + row_id * ars + i * acs);
+        valueB = *(B + g_idx * bs + i * brs + col_id * bcs);
+        value += MUL(valueA, valueB);
     }
 
-    __global float *p = C + global_id_x * cs + row_id * crs + cow_id * ccs;
-    float valueC = *p;
-    *p = beta * valueC + alpha * value;
+    __global Tval *p = C + g_idx * cs + row_id * crs + col_id * ccs;
+    *p = SCAL(beta, p, alpha, value);
 }

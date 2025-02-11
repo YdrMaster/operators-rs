@@ -20,21 +20,6 @@
 
 typedef unsigned int Tidx;
 
-float group_sum(local float *data, float reg) {
-    Tidx const idx = get_local_id(0),
-               len = get_local_size(0);
-
-    data[idx] = reg;
-    barrier(CLK_LOCAL_MEM_FENCE);
-
-    for (Tidx stride = len >> 1; stride; stride >>= 1) {
-        if (idx < stride) data[idx] += data[idx + stride];
-        barrier(CLK_LOCAL_MEM_FENCE);
-    }
-
-    return data[0];
-}
-
 kernel void rms_norm(
     global Ta *y_,
     int const y_stride,
@@ -62,8 +47,7 @@ kernel void rms_norm(
         squared += val_x[i] * val_x[i];
     }
 
-    local float shared[GROUP_SIZE];
-    float rms = native_rsqrt(group_sum(shared, squared) / d + epsilon);
+    float rms = native_rsqrt(work_group_reduce_add(squared) / d + epsilon);
 
     for (Tidx i = 0, idx = l_idx; idx < d; ++i, idx += l_len)
         y[idx] = rms * val_x[i] * val_w[i];
