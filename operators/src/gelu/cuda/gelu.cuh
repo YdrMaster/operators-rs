@@ -1,4 +1,6 @@
-constexpr static float M_SQRT1_2 = .707106781186547524401;
+#ifndef M_SQRT1_2
+#define M_SQRT1_2 .707106781186547524401f
+#endif
 template<class Tdata>
 static __device__ void gelu(
     Tdata *__restrict__ data) {

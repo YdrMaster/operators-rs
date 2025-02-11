@@ -1,4 +1,4 @@
-﻿use super::{args::SchemeLayout, Args, MatMul};
+use super::{args::SchemeLayout, Args, MatMul};
 use crate::{
     opencl::{ClDevice, CodeGen, KernelCache, CL2_0},
     ByteOf, LaunchError, QueueAlloc,
@@ -93,12 +93,14 @@ impl crate::Operator for Operator {
         let mn = m * n;
 
         let (key, groupsize) = self.cache_kernel(dt, m, n);
-        let mut matmul = {
-            let mut cache = self.schemes.lock().unwrap();
-            let program = cache.get(&key).unwrap();
-            let kernel = program.take("general_gemm").unwrap();
-            kernel
-        };
+        let mut matmul = self
+            .schemes
+            .lock()
+            .unwrap()
+            .get(&key)
+            .unwrap()
+            .take("general_gemm")
+            .unwrap();
 
         let queue = _queue_alloc.queue();
         matmul

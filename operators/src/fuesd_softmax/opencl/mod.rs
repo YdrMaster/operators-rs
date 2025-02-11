@@ -1,4 +1,4 @@
-﻿use super::{args::Meta, Args, FusedSoftmax};
+use super::{args::Meta, Args, FusedSoftmax};
 use crate::{
     get_static,
     opencl::{ClDevice, CodeGen, KernelCache, CL2_0},
@@ -98,12 +98,14 @@ impl crate::Operator for Operator {
             "softmax_global"
         };
 
-        let mut softmax = {
-            let mut cache = self.schemes.lock().unwrap();
-            let program = cache.get(&dt).unwrap();
-            let kernel = program.take(name).unwrap();
-            kernel
-        };
+        let mut softmax = self
+            .schemes
+            .lock()
+            .unwrap()
+            .get(&dt)
+            .unwrap()
+            .take(name)
+            .unwrap();
 
         softmax
             .set_arg(0, att_base)

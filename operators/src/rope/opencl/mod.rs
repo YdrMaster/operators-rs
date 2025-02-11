@@ -164,12 +164,14 @@ impl crate::Operator for Operator {
         let nh_h = nh / nh_l;
 
         let key = self.cache_kernel(dt_t, dt_p);
-        let mut rope = {
-            let mut cache = self.schemes.lock().unwrap();
-            let program = cache.get(&key).unwrap();
-            let kernel = program.take("rope").unwrap();
-            kernel
-        };
+        let mut rope = self
+            .schemes
+            .lock()
+            .unwrap()
+            .get(&key)
+            .unwrap()
+            .take("rope")
+            .unwrap();
 
         rope.set_arg(0, t_base)
             .set_arg(1, st as cl_int)

@@ -93,12 +93,15 @@ impl crate::Operator for Operator {
 
         let (key, group_size) = self.cache_kernel(dt, d);
 
-        let mut swiglu = {
-            let mut cache = self.schemes.lock().unwrap();
-            let program = cache.get(&key).unwrap();
-            let kernel = program.take("swiglu").unwrap();
-            kernel
-        };
+        let mut swiglu = self
+            .schemes
+            .lock()
+            .unwrap()
+            .get(&key)
+            .unwrap()
+            .take("swiglu")
+            .unwrap();
+
         swiglu
             .set_arg(0, gate_base)
             .set_arg(1, (sg) as cl_int)

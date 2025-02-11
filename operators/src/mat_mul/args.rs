@@ -82,7 +82,7 @@ impl<H: Hardware> Args<H> {
             return Err(shape_mismatch("Inconsistent batch sizes"));
         }
         // 确认 c 列优先
-        let ab_swap = if c.rs == 1 {
+        let ab_swap = if c.rs == 1 && c.cs != 1 {
             // Nothing to do
             false
         } else if c.cs == 1 {

@@ -123,13 +123,15 @@ impl crate::Operator for Operator {
             ))?,
         };
         let unit_size = unit / 4;
-        let key = self.cache_kernel(unit_size);
-        let mut rearrange = {
-            let mut cache = self.schemes.lock().unwrap();
-            let program = cache.get(&key).unwrap();
-            let kernel = program.take("rearrange").unwrap();
-            kernel
-        };
+        let (key, group_size) = self.cache_kernel(unit_size);
+        let mut rearrange = self
+            .schemes
+            .lock()
+            .unwrap()
+            .get(&key)
+            .unwrap()
+            .take("rearrange")
+            .unwrap();
 
         let unit = unit as i32;
         let dst_rs = dst_rs / unit;
@@ -149,7 +151,7 @@ impl crate::Operator for Operator {
             .launch(
                 &[0],
                 &[(r * c * (unit_size as u32)) as usize],
-                &[key.group_size],
+                &[group_size],
                 queue_alloc.queue(),
                 None,
             );
@@ -162,25 +164,24 @@ impl crate::Operator for Operator {
 }
 
 impl Operator {
-    fn cache_kernel(&self, unit_size: usize) -> SchemeKey {
+    fn cache_kernel(&self, unit_size: usize) -> (SchemeKey, usize) {
         let items_per_thread = unit_size.div_ceil(self.max_group_size);
         let group_size = match items_per_thread {
             1 => unit_size,
             _ => self.max_group_size,
         };
-        let key = SchemeKey { group_size };
-
+        let key = SchemeKey { unit_size };
         self.schemes.lock().unwrap().get_or_insert(key, || {
             let src = CodeGen::new(include_str!("rearrange.cl")).to_string();
             KernelCache::new(&self.ctx, &src, CL2_0)
         });
-        key
+        (key, group_size)
     }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 struct SchemeKey {
-    group_size: usize,
+    unit_size: usize,
 }
 
 #[cfg(test)]

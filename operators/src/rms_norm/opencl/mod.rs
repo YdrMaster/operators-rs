@@ -88,12 +88,14 @@ impl crate::Operator for Operator {
 
         let (key, group_size) = self.cache_kernel(dt_a, dt_w, d);
 
-        let mut rms_norm = {
-            let mut cache = self.schemes.lock().unwrap();
-            let program = cache.get(&key).unwrap();
-            let kernel = program.take("rms_norm").unwrap();
-            kernel
-        };
+        let mut rms_norm = self
+            .schemes
+            .lock()
+            .unwrap()
+            .get(&key)
+            .unwrap()
+            .take("rms_norm")
+            .unwrap();
 
         let unit = dt_a.nbytes() as isize;
         rms_norm
