@@ -1,5 +1,13 @@
 #include <cub/block/block_reduce.cuh>
 
+struct AttentionNonMask {
+    __forceinline__ __device__ bool
+    operator()(int tok_id, int seq_len,
+               int pos_id, int att_len) {
+        return true;
+    }
+};
+
 struct AttentionCausalMask {
     __forceinline__ __device__ bool
     operator()(int tok_id, int seq_len,

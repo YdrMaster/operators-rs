@@ -1,7 +1,10 @@
 ﻿use infini_op::{infiniop, AsRaw, Descriptor};
 
 use super::{args::Meta, Args, FusedSoftmax};
-use crate::{get_static, infini::Device, ByteOf, LaunchError, QueueAlloc, SchemeError, Workspace};
+use crate::{
+    fuesd_softmax::args::AttnMask, get_static, infini::Device, ByteOf, LaunchError, QueueAlloc,
+    SchemeError, Workspace,
+};
 
 pub struct Operator(Device);
 
@@ -37,9 +40,13 @@ impl crate::Operator for Operator {
     {
         let Meta { dt } = args.meta()?;
         let Args {
+            att_mask,
             att_layout,
             att_base,
         } = args;
+        if !matches!(att_mask, AttnMask::Causal) {
+            todo!()
+        }
         let &[nh, seq_len, att_len] = att_layout.shape() else {
             unreachable!()
         };
@@ -82,7 +89,7 @@ impl crate::Operator for Operator {
 
 #[cfg(test)]
 mod test {
-    use super::{Args, Device, Operator};
+    use super::{Args, AttnMask, Device, Operator};
     use crate::{Hardware, Operator as _, TensorLayout};
     use digit_layout::{types as ty, DigitLayout};
 
@@ -90,6 +97,7 @@ mod test {
         use crate::dyn_;
         use std::ptr::null_mut;
         Args {
+            att_mask: AttnMask::Causal,
             att_layout: TensorLayout::new_dyn(dt, &[dyn_(); 3], &[dyn_(); 3]),
             att_base: null_mut(),
         }
@@ -103,6 +111,7 @@ mod test {
         att_base: *mut H::Byte,
     ) -> Args<H> {
         Args {
+            att_mask: AttnMask::Causal,
             att_layout: TensorLayout::new_contiguous(dt, &[nh, seq_len, att_len]),
             att_base,
         }

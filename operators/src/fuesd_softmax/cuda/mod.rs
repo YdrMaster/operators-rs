@@ -1,4 +1,7 @@
-﻿use super::{args::Meta, Args, FusedSoftmax};
+﻿use super::{
+    args::{AttnMask, Meta},
+    Args, FusedSoftmax,
+};
 use crate::{
     cuda::{Gpu, Handle, ModuleBox},
     get_static, strides_not_support, type_not_support, ByteOf, LaunchError, QueueAlloc,
@@ -6,6 +9,7 @@ use crate::{
 };
 use digit_layout::types::F16;
 use std::{
+    collections::HashMap,
     ffi::{c_float, CString},
     mem::size_of,
     sync::Arc,
@@ -13,7 +17,7 @@ use std::{
 
 pub struct Operator {
     _handle: Arc<Handle>,
-    scheme: Scheme,
+    scheme: HashMap<AttnMask, Scheme>,
 }
 
 impl FusedSoftmax<Gpu> for Operator {}
@@ -26,7 +30,10 @@ impl crate::Operator for Operator {
     fn new(node: &Self::TopoNode) -> Self {
         Self {
             _handle: node.0.clone(),
-            scheme: Scheme::new(&node.0),
+            scheme: [AttnMask::Causal]
+                .map(|mask| (mask, Scheme::new(&node.0, mask)))
+                .into_iter()
+                .collect(),
         }
     }
 
@@ -54,6 +61,7 @@ impl crate::Operator for Operator {
     {
         let Meta { dt } = args.meta()?;
         let Args {
+            att_mask,
             att_layout,
             att_base,
         } = args;
@@ -78,16 +86,17 @@ impl crate::Operator for Operator {
             return Err(strides_not_support("").into());
         };
 
+        let scheme = &self.scheme[att_mask];
         let grid_dims = (nh as u32, seq_len as u32);
-        let block_size = self.scheme.max_threads_block as u32;
+        let block_size = scheme.max_threads_block as u32;
         let sh = (sh / unit) as i32;
         let ss = (ss / unit) as i32;
         let att_len = att_len as u32;
         let params = cuda::params![att_base, 0i32, sh, ss, att_len];
 
         if att_len <= block_size {
-            self.scheme.module.launch(
-                &self.scheme.padding,
+            scheme.module.launch(
+                &scheme.padding,
                 grid_dims,
                 att_len,
                 params.as_ptr(),
@@ -97,8 +106,8 @@ impl crate::Operator for Operator {
         } else {
             let num_items_thread = att_len.div_ceil(block_size);
             let smem = (num_items_thread * block_size) as usize;
-            self.scheme.module.launch(
-                &self.scheme.folding,
+            scheme.module.launch(
+                &scheme.folding,
                 grid_dims,
                 block_size,
                 params.as_ptr(),
@@ -119,11 +128,14 @@ struct Scheme {
 }
 
 impl Scheme {
-    fn new(handle: &Arc<Handle>) -> Self {
+    fn new(handle: &Arc<Handle>, mask: AttnMask) -> Self {
         const NAME: &str = "fused_softmax";
         const CODE: &str = include_str!("fused_softmax.cuh");
 
-        let mask = "AttentionCausalMask";
+        let mask = match mask {
+            AttnMask::None => "AttentionNonMask",
+            AttnMask::Causal => "AttentionCausalMask",
+        };
         let device = handle.device();
         let max_threads_block = device.block_limit().max_threads;
         let cc = device.compute_capability();
@@ -169,7 +181,7 @@ extern "C" __global__ void {folding}(
 
 #[cfg(test)]
 mod test {
-    use super::{Args, Gpu, Operator};
+    use super::{Args, AttnMask, Gpu, Operator};
     use crate::{Hardware, Operator as _, TensorLayout};
     use digit_layout::{types as ty, DigitLayout};
 
@@ -177,6 +189,7 @@ mod test {
         use crate::dyn_;
         use std::ptr::null_mut;
         Args {
+            att_mask: AttnMask::Causal,
             att_layout: TensorLayout::new_dyn(dt, &[dyn_(); 3], &[dyn_(); 3]),
             att_base: null_mut(),
         }
@@ -190,6 +203,7 @@ mod test {
         att_base: *mut H::Byte,
     ) -> Args<H> {
         Args {
+            att_mask: AttnMask::Causal,
             att_layout: TensorLayout::new_contiguous(dt, &[nh, seq_len, att_len]),
             att_base,
         }
@@ -206,11 +220,13 @@ mod test {
         op.scheme(&dyn_args(ty::F16), 0).unwrap();
 
         gpu.apply(|ctx| {
-            println!("============================");
-            println!("{}", op.scheme.padding.to_str().unwrap());
-            println!("{}", op.scheme.module.load(&op.scheme.padding, ctx).info());
-            println!("{}", op.scheme.folding.to_str().unwrap());
-            println!("{}", op.scheme.module.load(&op.scheme.folding, ctx).info());
+            for (mask, scheme) in op.scheme {
+                println!("{mask:?}============================");
+                println!("{}", scheme.padding.to_str().unwrap());
+                println!("{}", scheme.module.load(&scheme.padding, ctx).info());
+                println!("{}", scheme.folding.to_str().unwrap());
+                println!("{}", scheme.module.load(&scheme.folding, ctx).info());
+            }
         })
     }
 

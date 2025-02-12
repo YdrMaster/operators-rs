@@ -2,7 +2,6 @@
 mod operator;
 
 pub use args::Args;
-pub(crate) use args::Meta;
 
 crate::op_trait!(Attention);
 

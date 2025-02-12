@@ -3,8 +3,16 @@ use digit_layout::DigitLayout;
 use std::ptr::null_mut;
 
 pub struct Args<H: Hardware> {
+    pub att_mask: AttnMask,
     pub att_layout: TensorLayout,
     pub att_base: MutPtr<H>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[repr(u8)]
+pub enum AttnMask {
+    None,
+    Causal,
 }
 
 pub(super) struct Meta {
@@ -12,8 +20,9 @@ pub(super) struct Meta {
 }
 
 impl<H: Hardware> Args<H> {
-    pub fn new_null(att_layout: TensorLayout) -> Self {
+    pub fn new_null(att_mask: AttnMask, att_layout: TensorLayout) -> Self {
         Self {
+            att_mask,
             att_layout,
             att_base: null_mut(),
         }

@@ -1,4 +1,5 @@
 ﻿use crate::{
+    fuesd_softmax::AttnMask,
     utils::{dim_distinct, rank_error, type_distinct},
     ConstPtr, Hardware, MaybeDyn, MutPtr, SchemeError, TensorLayout,
 };
@@ -23,6 +24,7 @@ pub struct Args<H: Hardware> {
     pub v_cache_layout: TensorLayout,
     pub v_cache_base: MutPtr<H>,
 
+    pub mask: AttnMask,
     pub pos: MaybeDyn<usize>,
 }
 
@@ -36,6 +38,7 @@ pub(super) struct Meta {
 }
 
 impl<H: Hardware> Args<H> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new_null(
         q_layout: TensorLayout,
         k_layout: TensorLayout,
@@ -43,6 +46,7 @@ impl<H: Hardware> Args<H> {
         o_layout: TensorLayout,
         k_cache_layout: TensorLayout,
         v_cache_layout: TensorLayout,
+        mask: AttnMask,
         pos: MaybeDyn<usize>,
     ) -> Self {
         use std::ptr::{null, null_mut};
@@ -59,6 +63,7 @@ impl<H: Hardware> Args<H> {
             k_cache_base: null_mut(),
             v_cache_layout,
             v_cache_base: null_mut(),
+            mask,
             pos,
         }
     }

@@ -21,6 +21,7 @@ mod test {
             TensorLayout::new_dyn(dt, &[nh.into(), seq.into(), dh.into()], &[dyn_(); 3]),
             TensorLayout::new_dyn(dt, &[nh.into(), seq.into(), dh.into()], &[dyn_(); 3]),
             TensorLayout::new_dyn(dt, &[nh.into(), seq.into(), dh.into()], &[dyn_(); 3]),
+            crate::fuesd_softmax::AttnMask::Causal,
             pos.into(),
         )
     }
@@ -46,13 +47,14 @@ mod test {
             o_layout: TensorLayout::new_contiguous(dt, &[nh, seq, dh]),
             k_cache_layout: TensorLayout::new_contiguous(dt, &[nkvh, seq + pos, dh]),
             v_cache_layout: TensorLayout::new_contiguous(dt, &[nkvh, seq + pos, dh]),
-            pos: pos.into(),
             q_base,
             k_base,
             v_base,
             o_base,
             k_cache_base,
             v_cache_base,
+            mask: crate::fuesd_softmax::AttnMask::Causal,
+            pos: pos.into(),
         }
     }
 

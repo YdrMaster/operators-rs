@@ -2,24 +2,21 @@ impl_op!(cuda, Gpu);
 
 #[cfg(test)]
 mod test {
-    use super::{
-        super::{args::Meta, Args},
-        Operator,
-    };
+    use super::{super::Args, Operator};
     use crate::{cuda::Gpu, ByteOf, Hardware, Operator as _, TensorLayout};
     use digit_layout::{types as ty, DigitLayout};
 
     fn dyn_args<H: Hardware>(dt: DigitLayout, nh: usize, seq: usize, att: usize) -> Args<H> {
         use crate::dyn_;
-        Meta {
+        Args::new_null(
+            crate::fuesd_softmax::AttnMask::Causal,
             dt,
-            nh: nh.into(),
-            nkvh: dyn_(),
-            seq: seq.into(),
-            att: att.into(),
-            dh: dyn_(),
-        }
-        .into()
+            nh.into(),
+            dyn_(),
+            seq.into(),
+            att.into(),
+            dyn_(),
+        )
     }
 
     fn args<H: Hardware>(
@@ -43,6 +40,7 @@ mod test {
             k_base,
             v_base,
             o_base,
+            mask: crate::fuesd_softmax::AttnMask::Causal,
         }
     }
 

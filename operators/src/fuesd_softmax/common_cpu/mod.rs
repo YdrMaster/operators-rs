@@ -1,4 +1,7 @@
-﻿use super::{args::Meta, Args, FusedSoftmax};
+﻿use super::{
+    args::{AttnMask, Meta},
+    Args, FusedSoftmax,
+};
 use crate::{common_cpu::Cpu, get_static, ByteOf, LaunchError, QueueAlloc, SchemeError};
 use half::f16;
 
@@ -36,6 +39,7 @@ impl crate::Operator for Operator {
     {
         let Meta { dt } = args.meta()?;
         let Args {
+            att_mask,
             att_layout,
             att_base,
         } = args;
@@ -62,7 +66,7 @@ impl crate::Operator for Operator {
                     sa,
                     att_base: att_base.cast(),
                 }
-                .calculate()
+                .calculate(*att_mask)
             };
         }
 
@@ -91,7 +95,7 @@ unsafe impl<T> Send for Scheme<T> {}
 unsafe impl<T> Sync for Scheme<T> {}
 
 impl<T> Scheme<T> {
-    fn loop_(&self, f: impl Sync + Fn(isize, *mut T)) {
+    fn loop_(&self, mask: AttnMask, f: impl Sync + Fn(isize, *mut T)) {
         let nh = self.nh as isize;
         let seq_len = self.seq_len as isize;
         let att_len = self.att_len as isize;
@@ -99,7 +103,10 @@ impl<T> Scheme<T> {
         for j in 0..seq_len {
             (0..nh).for_each(|i| {
                 let att = unsafe { self.att_base.byte_offset(i * self.sh + j * self.ss) };
-                let causal = att_len - seq_len + j + 1;
+                let causal = match mask {
+                    AttnMask::None => att_len,
+                    AttnMask::Causal => att_len - seq_len + j + 1,
+                };
                 f(causal, att);
             })
         }
@@ -107,9 +114,9 @@ impl<T> Scheme<T> {
 }
 
 impl Scheme<f16> {
-    fn calculate(&self) {
+    fn calculate(&self, mask: AttnMask) {
         let att_len = self.att_len as isize;
-        self.loop_(|causal, att| {
+        self.loop_(mask, |causal, att| {
             let att = |k| unsafe { &mut *att.byte_offset(k * self.sa) };
 
             let max = (0..causal)
@@ -137,9 +144,9 @@ impl Scheme<f16> {
 }
 
 impl Scheme<f32> {
-    fn calculate(&self) {
+    fn calculate(&self, mask: AttnMask) {
         let att_len = self.att_len as isize;
-        self.loop_(|causal, att| {
+        self.loop_(mask, |causal, att| {
             let att = |k| unsafe { &mut *att.byte_offset(k * self.sa) };
 
             let max = *(0..causal).map(att).max_by(|a, b| a.total_cmp(b)).unwrap();
@@ -161,9 +168,9 @@ impl Scheme<f32> {
 }
 
 impl Scheme<f64> {
-    fn calculate(&self) {
+    fn calculate(&self, mask: AttnMask) {
         let att_len = self.att_len as isize;
-        self.loop_(|causal, att| {
+        self.loop_(mask, |causal, att| {
             let att = |k| unsafe { &mut *att.byte_offset(k * self.sa) };
 
             let max = *(0..causal).map(att).max_by(|a, b| a.total_cmp(b)).unwrap();

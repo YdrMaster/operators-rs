@@ -1,5 +1,6 @@
 use super::{args::Meta, Args, FusedSoftmax};
 use crate::{
+    fuesd_softmax::args::AttnMask,
     get_static,
     opencl::{ClDevice, CodeGen, KernelCache, CL2_0},
     strides_not_support, ByteOf, LaunchError, QueueAlloc,
@@ -69,9 +70,13 @@ impl crate::Operator for Operator {
         self.cache_kernel(args.att_layout.dt());
 
         let Args {
+            att_mask,
             att_layout,
             att_base,
         } = args;
+        if !matches!(*att_mask, AttnMask::Causal) {
+            todo!()
+        }
         let &[nh, seq_len, att_len] = att_layout.shape() else {
             unreachable!()
         };
@@ -154,7 +159,7 @@ const fn last_power_of_two(n: usize) -> usize {
 
 #[cfg(test)]
 mod test {
-    use super::Args;
+    use super::{Args, AttnMask};
     use crate::{Hardware, TensorLayout};
     use digit_layout::DigitLayout;
 
@@ -162,6 +167,7 @@ mod test {
         use crate::dyn_;
         use std::ptr::null_mut;
         Args {
+            att_mask: AttnMask::Causal,
             att_layout: TensorLayout::new_dyn(dt, &[dyn_(); 3], &[dyn_(); 3]),
             att_base: null_mut(),
         }
@@ -175,6 +181,7 @@ mod test {
         att_base: *mut H::Byte,
     ) -> Args<H> {
         Args {
+            att_mask: AttnMask::Causal,
             att_layout: TensorLayout::new_contiguous(dt, &[nh, seq_len, att_len]),
             att_base,
         }

@@ -8,6 +8,6 @@ pub mod infini;
 pub mod opencl;
 
 mod args;
-pub use args::Args;
+pub use args::{Args, AttnMask};
 
 crate::op_trait!(FusedSoftmax);

@@ -65,20 +65,10 @@ where
             dyn_()
         };
 
-        wc.push_sub(
-            self.attention.scheme(
-                &attention::Meta {
-                    dt,
-                    nh,
-                    nkvh,
-                    seq,
-                    att,
-                    dh,
-                }
-                .into(),
-                max_workspace_size,
-            )?,
-        );
+        wc.push_sub(self.attention.scheme(
+            &attention::Args::new_null(args.mask, dt, nh, nkvh, seq, att, dh),
+            max_workspace_size,
+        )?);
 
         Ok(wc.cauculate(max_workspace_size))
     }
@@ -108,6 +98,7 @@ where
             k_cache_base,
             v_cache_layout,
             v_cache_base,
+            mask,
             pos,
         } = args;
 
@@ -176,6 +167,7 @@ where
         assert_eq!(v_layout.offset(), 0);
         self.attention.launch(
             &attention::Args {
+                mask: *mask,
                 q_layout: q_layout.clone(),
                 q_base: *q_base,
                 k_layout: TensorLayout::new(dt, k_layout.shape(), k_layout.strides()),
