@@ -189,7 +189,7 @@ impl crate::Operator for Operator {
         let mut block_dst_elements = 1;
 
         //TODO 需要优化
-        let block_size = 512;
+        let block_size = 256;
 
         loop {
             //优先选择dst
@@ -280,6 +280,7 @@ impl crate::Operator for Operator {
             };
         }
 
+        let block_dim = block_dim_choose.iter().filter(|&&x| x == true).count() as u32;
         let block_len = fill_array!(shape, 1, for_block).unwrap();
         let src_block_stride = fill_array!(src_strides, 0, for_block).unwrap();
         let dst_block_stride = fill_array!(dst_strides, 0, for_block).unwrap();
@@ -310,6 +311,7 @@ impl crate::Operator for Operator {
         let params = cuda::params![
             args.dst_base,
             args.src_base,
+            block_dim,
             block_len,        // 各维度的长度
             src_block_stride, // 源tensor在各维度上的步长(bytes)
             dst_block_stride, // 目标tensor在各维度上的步长(bytes)
@@ -333,24 +335,25 @@ fn format_code() -> String {
 extern "C" __global__ void {NAME}(
     void       *__restrict__ dst,
     void const *__restrict__ src,
-    ArrayStruct block_len,            // 各维度的长度
-    ArrayStruct src_block_stride,     // 源tensor在各维度上的步长(bytes)
-    ArrayStruct dst_block_stride,     // 目标tensor在各维度上的步长(bytes)
-    ArrayStruct grid_len,             // 各维度的长度
-    ArrayStruct src_grid_stride,      // 源tensor在各维度上的步长(bytes)
-    ArrayStruct dst_grid_stride,      // 目标tensor在各维度上的步长(bytes)
-    unsigned int const unit_size      // 每个元素的字节数
+    const int block_dim,                   // block维度数量
+    const ArrayStruct block_len,           // 各维度的长度
+    const ArrayStruct src_block_stride,    // 源tensor在各维度上的步长(bytes)
+    const ArrayStruct dst_block_stride,    // 目标tensor在各维度上的步长(bytes)
+    const ArrayStruct grid_len,            // 各维度的长度
+    const ArrayStruct src_grid_stride,     // 源tensor在各维度上的步长(bytes)
+    const ArrayStruct dst_grid_stride,     // 目标tensor在各维度上的步长(bytes)
+    unsigned int const unit_size     // 每个元素的字节数
 ){{
     switch (unit_size) {{
-        case  1: rearrange_1<uchar1 >(dst, src, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
-        case  2: rearrange_1<uchar2 >(dst, src, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
-        case  4: rearrange_1<float1 >(dst, src, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
-        case  8: rearrange_1<float2 >(dst, src, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
-        case 16: rearrange_1<float4 >(dst, src, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
-        case 32: rearrange_1<double4>(dst, src, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
-        // case 64: rearrange_1<double4>(dst, src, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
-        // case 128: rearrange_1<double4>(dst, src, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
-        // case 256: rearrange_1<double4>(dst, src, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
+        case  1: rearrange_1<uchar1 >(dst, src, block_dim, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
+        case  2: rearrange_1<uchar2 >(dst, src, block_dim, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
+        case  4: rearrange_1<float1 >(dst, src, block_dim, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
+        case  8: rearrange_1<float2 >(dst, src, block_dim, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
+        case 16: rearrange_1<float4 >(dst, src, block_dim, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
+        case 32: rearrange_1<double4>(dst, src, block_dim, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
+        // case 64: rearrange_1<double4>(dst, src, block_dim, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
+        // case 128: rearrange_1<double4>(dst, src, block_dim, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
+        // case 256: rearrange_1<double4>(dst, src, block_dim, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
     }}
 }}
 "#
@@ -430,7 +433,7 @@ mod test {
             return;
         };
 
-        let dt = ty::U32;
+        let dt = ty::U64;
 
         let mut cpu_op = RefOp::new(&Cpu);
         let mut gpu_op = Operator::new(&gpu);
@@ -438,9 +441,9 @@ mod test {
         gpu_op.scheme(&dyn_args(dt), 0).unwrap();
 
         let nh = 16;
-        let seq = 2343;
-        let dh = 32;
-        let mut src = vec![0u32; nh * seq * dh];
+        let seq = 3343;
+        let dh = 16;
+        let mut src = vec![0u64; nh * seq * dh];
         rand::rng().fill(&mut src[..]);
 
         let ele = dt.nbytes();
@@ -464,6 +467,27 @@ mod test {
             let mut dst = rt.malloc::<u8>(src.len());
 
             let start_event = stream.record();
+
+            stream.bench(
+                |_, stream| {
+                    gpu_op
+                        .launch(
+                            &args(
+                                dt,
+                                &[nh, seq, dh],
+                                s_src.strides(),
+                                s_dst.strides(),
+                                src.as_ptr().cast(),
+                                dst.as_mut_ptr().cast(),
+                            ),
+                            &mut [],
+                            stream,
+                        )
+                        .unwrap();
+                },
+                5,
+                1,
+            );
             gpu_op
                 .launch(
                     &args(
@@ -482,12 +506,13 @@ mod test {
             end_event.synchronize();
             let time = end_event.elapse_from(&start_event);
             println!("time: {time:?}");
-            let mut host = vec![0u32; nh * seq * dh];
+
+            let mut host = vec![0u64; nh * seq * dh];
             memcpy_d2h(&mut host, &dst);
             host
         });
 
-        let mut dst_ref = vec![0u32; seq * nh * dh];
+        let mut dst_ref = vec![0u64; nh * seq * dh];
         cpu_op
             .launch(
                 &args(
