@@ -45,7 +45,7 @@ impl<H: Hardware> Args<H> {
         };
         let dst = ArrayLayout::<2>::new(shape, strides, 0);
         let &[dst] = dst
-            .merge(0..dst.ndim())
+            .merge_be(0, dst.ndim())
             .ok_or(strides_not_support(""))?
             .shape()
         else {
@@ -60,7 +60,7 @@ impl<H: Hardware> Args<H> {
         };
         let src = ArrayLayout::<2>::new(shape, strides, 0);
         let &[src] = src
-            .merge(0..src.ndim())
+            .merge_be(0, src.ndim())
             .ok_or(strides_not_support(""))?
             .shape()
         else {
