@@ -10,7 +10,7 @@
 #endif
 
 #ifdef USE_HALF
-#define LOAD_DATA(ptr) vload_half2(0, ptr)
+#define LOAD_DATA(ptr) vload_half2(0, (__global half *) ptr)
 #define STORE_DATA(ptr, val) vstore_half2(val, 0, (__global half *) ptr)
 #else
 #define LOAD_DATA(ptr) (*ptr)
