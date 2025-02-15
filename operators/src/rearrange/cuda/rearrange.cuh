@@ -200,22 +200,16 @@ static __device__ void rearrange_1(
     __shared__ int shared_dst_offset;
     
     if (threadIdx.x == 0) {  // 只让0号线程计算
-        // 计算当前block在grid中的全局索引
-        int block_idx[ARRAY_SIZE];
-        int remaining = blockIdx.x;
-        #pragma unroll
-        for (int i = ARRAY_SIZE - 1; i >= 0; i--) {
-            block_idx[i] = remaining % grid_len.a[i];
-            remaining /= grid_len.a[i];
-        }
-        
         // 计算当前block处理的数据在src和dst中的基础偏移(bytes)
         int src_offset = 0;
         int dst_offset = 0;
+        int remaining = blockIdx.x;
         #pragma unroll
-        for (int i = 0; i < ARRAY_SIZE; i++) {
-            src_offset += block_idx[i] * src_grid_stride.a[i];
-            dst_offset += block_idx[i] * dst_grid_stride.a[i];
+        for (int i = ARRAY_SIZE - 1; i >= 0; i--) {
+            int idx = remaining % grid_len.a[i];
+            remaining /= grid_len.a[i];
+            src_offset += idx * src_grid_stride.a[i];
+            dst_offset += idx * dst_grid_stride.a[i];
         }
         
         // 将结果存入共享内存
@@ -230,47 +224,31 @@ static __device__ void rearrange_1(
     int src_offset = shared_src_offset;
     int dst_offset = shared_dst_offset;
 
-    // 计算线程在block内的局部索引
-    int thread_idx[ARRAY_SIZE];
-    int remaining = threadIdx.x;  // 重新声明 remaining 变量
-    // #pragma unroll
+    int remaining = threadIdx.x;
     for (int i = ARRAY_SIZE - 1; i > 0; i--) {
-
-        // TODO 增加提前截止判断还是很有效的提升
-        if (block_len.a[i] == 1) {
-            thread_idx[i] = 0;
-        } else {
-            thread_idx[i] = remaining % block_len.a[i];
+        
+        if (block_len.a[i] != 1) {
+            int idx = remaining % block_len.a[i];
             remaining /= block_len.a[i];
-        }
-        // thread_idx[i] = remaining % block_len.a[i];
-        // remaining /= block_len.a[i];
-
-        // 如果线程索引超出了block的范围，则不执行
-        //TODO 增添成一次性判断的方式，需要进行判断
-        if (thread_idx[i] >= block_len.a[i]) {
+            if (idx >= block_len.a[i]) {
             return;
+            }
+
+            // 计算偏移量
+            src_offset += idx * src_block_stride.a[i];
+            dst_offset += idx * dst_block_stride.a[i];
         }
+
+        // 检查范围
+        
     }
-    thread_idx[0] = remaining;
-    if (thread_idx[0] >= block_len.a[0]) {
+
+    // 单独处理第一个维度
+    if (remaining >= block_len.a[0]) {
         return;
     }
-
-
-    // 计算线程访问的最终字节偏移
-    // #pragma unroll
-    // TODO i < 的上限需要是常数，不然会去访问local内存，大幅降低速度
-    for (int i = 0; i < ARRAY_SIZE; i++) {
-
-        // TODO 这个好像没啥提升
-        // if (i >= block_dim) {
-        //     break;
-        // }
-        src_offset += thread_idx[i] * src_block_stride.a[i];
-        dst_offset += thread_idx[i] * dst_block_stride.a[i];
-
-    }
+    src_offset += remaining * src_block_stride.a[0];
+    dst_offset += remaining * dst_block_stride.a[0];
 
     // 执行数据拷贝，注意offset已经是字节偏移，需要转换为元素偏移
     const int elements_per_thread = unit_size / sizeof(Tmem);
