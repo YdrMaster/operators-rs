@@ -18,6 +18,7 @@ pub mod random_sample;
 pub mod rearrange;
 pub mod rms_norm;
 pub mod rope;
+pub mod scale;
 pub mod swiglu;
 
 pub use common::*;
