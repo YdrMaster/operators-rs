@@ -53,9 +53,9 @@ impl<H: Hardware> Args<H> {
             q_base: null_mut(),
             k_layout: k_layout.clone(),
             k_base: null(),
-            v_layout: v_layout,
+            v_layout,
             v_base: null(),
-            o_layout: o_layout,
+            o_layout,
             o_base: null_mut(),
             mask,
         }

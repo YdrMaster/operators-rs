@@ -1,11 +1,23 @@
-use super::{args::Meta, fill_pos, Args, Rope, Seq, SinCosTable};
+use std::ptr::null;
+
+use super::{args::Meta, args::RopeType as R, fill_pos, Args, Rope, Seq, SinCosTable};
 use crate::{
     common_cpu::Cpu, get_static, strides_not_support, ByteOf, LaunchError, QueueAlloc, SchemeError,
     Unsigned,
 };
 use digit_layout::{types as ty, DigitLayout};
 use half::f16;
-
+#[derive(Copy, Clone)]
+enum SchemeType<T> {
+    Rope,
+    Long {
+        long: *const T,
+        short: *const T,
+        s: f32,
+        origin_pos: u32,
+    },
+    Yarn,
+}
 pub struct Operator;
 
 impl Rope<Cpu> for Operator {
@@ -78,6 +90,7 @@ impl crate::Operator for Operator {
             p_layout,
             p_base,
             theta,
+            rope_type,
             ..
         } = args;
         let &[_, nh, dh] = t_layout.shape() else {
@@ -99,33 +112,89 @@ impl crate::Operator for Operator {
             return Err(strides_not_support("").into());
         }
 
-        macro_rules! calculate {
-            ($t:ty, $p:ty) => {
-                Scheme::<$t, $p> {
-                    nt,
-                    nh,
-                    dh,
-                    st,
-                    sh,
-                    sp,
-                    theta: *theta,
-                    t_base: t_base.cast(),
-                    p_base: p_base.cast(),
+        match rope_type {
+            R::Rope | R::Dyn { .. } | R::Ntk { .. } => {
+                let theta = match rope_type {
+                    R::Rope => *theta,
+                    R::Dyn { s, a } => theta * (a * s - a + 1.),
+                    R::Ntk { s } => theta * s,
+                    _ => unreachable!(),
+                };
+                macro_rules! calculate {
+                    ($t:ty, $p:ty) => {
+                        Scheme::<$t, $p> {
+                            nt,
+                            nh,
+                            dh,
+                            st,
+                            sh,
+                            sp,
+                            theta,
+                            t_base: t_base.cast(),
+                            p_base: p_base.cast(),
+                            scheme_type: SchemeType::Rope,
+                        }
+                        .calculate()
+                    };
                 }
-                .calculate()
-            };
+
+                use digit_layout::types as ty;
+                match (dt_t, dt_p) {
+                    (ty::F16, ty::U32) => calculate!(f16, u32),
+                    (ty::F16, ty::U64) => calculate!(f16, u64),
+                    (ty::F32, ty::U32) => calculate!(f32, u32),
+                    (ty::F32, ty::U64) => calculate!(f32, u64),
+                    (ty::F64, ty::U32) => calculate!(f64, u32),
+                    (ty::F64, ty::U64) => calculate!(f64, u64),
+                    _ => todo!(),
+                }
+            }
+            R::Long {
+                long,
+                short,
+                max_pos,
+                origin_pos,
+            } => {
+                let s = 1.0
+                    + ((*max_pos as f32 / *origin_pos as f32).ln() / (*origin_pos as f32).ln())
+                        .sqrt();
+                macro_rules! calculate {
+                    ($t:ty, $p:ty) => {
+                        Scheme::<$t, $p> {
+                            nt,
+                            nh,
+                            dh,
+                            st,
+                            sh,
+                            sp,
+                            theta: *theta,
+                            t_base: t_base.cast(),
+                            p_base: p_base.cast(),
+                            scheme_type: SchemeType::Long {
+                                long: long.cast(),
+                                short: short.cast(),
+                                s,
+                                origin_pos: *origin_pos,
+                            },
+                        }
+                        .calculate()
+                    };
+                }
+
+                use digit_layout::types as ty;
+                match (dt_t, dt_p) {
+                    (ty::F16, ty::U32) => calculate!(f16, u32),
+                    (ty::F16, ty::U64) => calculate!(f16, u64),
+                    (ty::F32, ty::U32) => calculate!(f32, u32),
+                    (ty::F32, ty::U64) => calculate!(f32, u64),
+                    (ty::F64, ty::U32) => calculate!(f64, u32),
+                    (ty::F64, ty::U64) => calculate!(f64, u64),
+                    _ => todo!(),
+                }
+            }
+            _ => {}
         }
 
-        use digit_layout::types as ty;
-        match (dt_t, dt_p) {
-            (ty::F16, ty::U32) => calculate!(f16, u32),
-            (ty::F16, ty::U64) => calculate!(f16, u64),
-            (ty::F32, ty::U32) => calculate!(f32, u32),
-            (ty::F32, ty::U64) => calculate!(f32, u64),
-            (ty::F64, ty::U32) => calculate!(f64, u32),
-            (ty::F64, ty::U64) => calculate!(f64, u64),
-            _ => todo!(),
-        }
         Ok(())
     }
 }
@@ -142,15 +211,15 @@ struct Scheme<A, P> {
     theta: f32,
     t_base: *mut A,
     p_base: *const P,
+    scheme_type: SchemeType<A>,
 }
 
 unsafe impl<A, P> Send for Scheme<A, P> {}
 unsafe impl<A, P> Sync for Scheme<A, P> {}
-
 /// 激活值。
 trait Activation: Sized {
     /// 激活值类型决定计算类型。
-    type Calculation;
+    type Calculation: Copy;
     /// 计算流程。
     fn calculate(pair: &mut [Self; 2], sin: Self::Calculation, cos: Self::Calculation);
 }
@@ -187,15 +256,36 @@ impl Activation for f64 {
 }
 
 trait Position<Calculation> {
-    fn freq_sin_cos(self, k: isize, dh: isize, theta: f32) -> (Calculation, Calculation);
+    fn freq_sin_cos_rope(self, k: isize, dh: isize, theta: f32) -> (Calculation, Calculation);
+    fn freq_sin_cos_long(
+        self,
+        k: isize,
+        dh: isize,
+        theta: f32,
+        factor: Calculation,
+        s: f32,
+    ) -> (Calculation, Calculation);
 }
 
 macro_rules! impl_position {
     ($a:ty) => {
         impl<T: Unsigned> Position<$a> for T {
             #[inline]
-            fn freq_sin_cos(self, k: isize, dh: isize, theta: f32) -> ($a, $a) {
+            fn freq_sin_cos_rope(self, k: isize, dh: isize, theta: f32) -> ($a, $a) {
                 (self.val() as $a / (theta as $a).powf(k as $a / dh as $a)).sin_cos()
+            }
+            #[inline]
+            fn freq_sin_cos_long(
+                self,
+                k: isize,
+                dh: isize,
+                theta: f32,
+                factor: $a,
+                s: f32,
+            ) -> ($a, $a) {
+                let (sin, cos) =
+                    (self.val() as $a / (theta as $a).powf(k as $a / dh as $a) * factor).sin_cos();
+                (sin * s as $a, cos * s as $a)
             }
         }
     };
@@ -206,8 +296,8 @@ impl_position!(f64);
 
 impl<A, P> Scheme<A, P>
 where
-    A: Activation,
-    P: Position<A::Calculation> + Sync + Copy,
+    A: Activation + Copy,
+    P: Position<A::Calculation> + Sync + Copy + Unsigned,
 {
     fn calculate(&self) {
         let &Self {
@@ -220,6 +310,7 @@ where
             theta,
             t_base,
             p_base,
+            scheme_type,
         } = self;
         let nt = nt as isize;
         let nh = nh as isize;
@@ -229,10 +320,39 @@ where
         for i in 0..nt {
             let t = unsafe { t_base.byte_offset(i * st).cast::<[A; 2]>() };
             let p = unsafe { *p_base.byte_offset(i * sp) };
+            let factor = match scheme_type {
+                SchemeType::Long {
+                    long,
+                    short,
+                    origin_pos,
+                    ..
+                } => unsafe {
+                    if p.val() < origin_pos as usize {
+                        short.byte_offset(i * st).cast()
+                    } else {
+                        long.byte_offset(i * st).cast()
+                    }
+                },
+                _ => null(),
+            };
             for j in 0..nh {
                 for k in 0..dh {
                     let pair = unsafe { &mut *t.byte_offset(j * sh + k * sd) };
-                    let (sin, cos) = p.freq_sin_cos(k, dh, theta);
+                    let (sin, cos) = match scheme_type {
+                        SchemeType::Rope => p.freq_sin_cos_rope(k, dh, theta),
+                        SchemeType::Long {
+                            long,
+                            short,
+                            origin_pos,
+                            s,
+                        } => {
+                            let factor = unsafe { *factor };
+                            p.freq_sin_cos_long(k, dh, theta, factor, s)
+                        }
+                        _ => {
+                            todo!()
+                        }
+                    };
                     A::calculate(pair, sin, cos)
                 }
             }
