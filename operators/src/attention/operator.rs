@@ -65,7 +65,7 @@ where
         } = args;
 
         // 如果不能保证 nh seq att dh 已知，用任意值初始化算子
-        let (Some(&nh), Some(&seq), Some(&att), Some(&dh), Some(&dv)) = (
+        let (Some(&nh), Some(&seq), Some(&att), Some(&dh), Some(&_dv)) = (
             nh.get_static(),
             seq.get_static(),
             att.get_static(),
@@ -194,7 +194,7 @@ where
         let (att_buf, workspace) = workspace.split_at_mut(att_size);
 
         let head_group = nh / nkvh;
-        let (q_layout, qx_layout, q_base) = match qx {
+        let (_q_layout, qx_layout, q_base) = match qx {
             None => {
                 let q_layout = TensorLayout::new_contiguous(dt, &[nh, seq, dh]);
                 let qx_layout = TensorLayout::new_contiguous(dt, &[nkvh, head_group * seq, dh]);

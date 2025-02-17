@@ -1,9 +1,44 @@
-﻿use crate::{
+use crate::{
     type_not_support,
     utils::{dim_distinct, rank_error},
     ConstPtr, Hardware, MaybeDyn, MutPtr, SchemeError, TensorLayout,
 };
 use digit_layout::DigitLayout;
+
+pub enum RopeType<H: Hardware> {
+    // 以下枚举通用一个 Scheme
+    Rope,
+    Pi {
+        s: f32,
+    },
+    Ntk {
+        s: f32,
+    },
+    Dyn {
+        s: f32,
+        a: f32,
+    },
+
+    // 以下枚举通用一个 Scheme
+    NtkParts {
+        alpha: f32,
+        beta: f32,
+        l0: f32,
+        s: f32,
+    },
+    Yarn {
+        alpha: f32,
+        beta: f32,
+        l0: f32,
+        s: f32,
+    },
+    Long {
+        long: ConstPtr<H>,
+        short: ConstPtr<H>,
+        max_pos: u32,
+        origin_pos: u32,
+    },
+}
 
 pub struct Args<H: Hardware> {
     pub t_layout: TensorLayout,
@@ -15,6 +50,7 @@ pub struct Args<H: Hardware> {
     pub cos_layout: TensorLayout,
     pub cos_base: ConstPtr<H>,
     pub theta: f32,
+    pub rope_type: RopeType<H>,
 }
 
 pub(super) struct Meta {

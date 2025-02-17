@@ -184,7 +184,7 @@ extern "C" __global__ void {POS_U64}(
 #[cfg(test)]
 mod test {
     use super::{Args, Gpu, Operator, POS_U32, POS_U64};
-    use crate::{Hardware, Operator as _, TensorLayout};
+    use crate::{rope::args, Hardware, Operator as _, TensorLayout};
     use digit_layout::{
         types::{F16, F64, U32},
         DigitLayout,
@@ -203,6 +203,7 @@ mod test {
             cos_layout: TensorLayout::new_dyn(dt_t, &[dyn_(); 2], &[dyn_(); 2]),
             cos_base: null(),
             theta: 0.,
+            rope_type: args::RopeType::Rope,
         }
     }
 
@@ -227,6 +228,7 @@ mod test {
             cos_layout: TensorLayout::new_contiguous(dt_t, &[0, dh]),
             cos_base: null(),
             theta,
+            rope_type: args::RopeType::Rope,
         }
     }
 

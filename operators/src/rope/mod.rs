@@ -8,7 +8,7 @@ pub mod infini;
 pub mod opencl;
 
 mod args;
-pub use args::Args;
+pub use args::{Args, RopeType};
 
 crate::op_trait! { Rope
     /// 生成 sincos 表（[2, n, dh]）。
