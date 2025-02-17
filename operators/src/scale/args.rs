@@ -19,11 +19,7 @@ pub struct Args<H: Hardware> {
 }
 
 impl<H: Hardware> Args<H> {
-    pub fn new_null(
-        c_layout: TensorLayout,
-        a_layout: TensorLayout,
-        b_layout: TensorLayout,
-    ) -> Self {
+    pub fn new_null(c_layout: TensorLayout, a_layout: TensorLayout) -> Self {
         Self {
             c_layout,
             c_base: null_mut(),
@@ -97,6 +93,7 @@ impl Scheme {
             use Ordering::Equal as Eq;
             match c0.abs().cmp(&c1.abs()) {
                 Eq => match a0.abs().cmp(&a1.abs()) {
+                    Eq => d0.cmp(&d1),
                     ord => ord.reverse(),
                 },
                 ord => ord.reverse(),
@@ -120,7 +117,7 @@ impl Scheme {
         {
             let (idx, tail) = layout.split_at_mut(1 + ndim);
             let (c_, tail) = tail.split_at_mut(ndim);
-            let (a_, b_) = tail.split_at_mut(ndim);
+            let (a_, _b) = tail.split_at_mut(ndim);
             for (Dim { d, c, a }, idx, c_, a_) in
                 izip!(dims.into_iter().filter(|d| d.d != 1), &mut *idx, c_, a_)
             {

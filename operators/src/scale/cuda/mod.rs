@@ -1,16 +1,5 @@
-use super::{args::Scheme, Args, Scale};
-use crate::{
-    cuda::{dt_name, Gpu, Handle, ModuleBox},
-    shape_not_support, strides_not_support,
-    utils::{gcd, type_distinct},
-    ByteOf, LaunchError, QueueAlloc, SchemeDiversity, SchemeError,
-};
-use digit_layout::DigitLayout;
-use lru::LruCache;
-use std::{
-    ffi::{c_uint, CString},
-    sync::{Arc, Mutex},
-};
+use super::{Args, Scale};
+use crate::{cuda::Gpu, ByteOf, LaunchError, QueueAlloc, SchemeError};
 
 pub struct Operator {}
 impl Scale<Gpu> for Operator {}
@@ -20,17 +9,16 @@ impl crate::Operator for Operator {
     type TopoNode = Gpu;
     type Args = Args<Gpu>;
 
-    fn new(node: &Self::TopoNode) -> Self {
+    fn new(_node: &Self::TopoNode) -> Self {
         Self {}
     }
 
     #[inline]
     fn scheme(
         &mut self,
-        args: &Self::Args,
+        _args: &Self::Args,
         _max_workspace_size: usize,
     ) -> Result<usize, SchemeError> {
-        todo!();
         Ok(0)
     }
 
@@ -43,7 +31,6 @@ impl crate::Operator for Operator {
     where
         QA: QueueAlloc<Hardware = Self::Hardware>,
     {
-        todo!();
         Ok(())
     }
 }
