@@ -330,30 +330,28 @@ impl crate::Operator for Operator {
 fn format_code() -> String {
     format!(
         r#"#define ARRAY_SIZE {ARRAY_SIZE}
+        #define ARRAY_TYPE int
         {CODE}
 
 extern "C" __global__ void {NAME}(
     void       *__restrict__ dst,
     void const *__restrict__ src,
     const int block_dim,                   // block维度数量
-    const ArrayStruct block_len,           // 各维度的长度
-    const ArrayStruct src_block_stride,    // 源tensor在各维度上的步长(bytes)
-    const ArrayStruct dst_block_stride,    // 目标tensor在各维度上的步长(bytes)
-    const ArrayStruct grid_len,            // 各维度的长度
-    const ArrayStruct src_grid_stride,     // 源tensor在各维度上的步长(bytes)
-    const ArrayStruct dst_grid_stride,     // 目标tensor在各维度上的步长(bytes)
+    const ArrayStruct<ARRAY_SIZE, ARRAY_TYPE> block_len,           // 各维度的长度
+    const ArrayStruct<ARRAY_SIZE, ARRAY_TYPE> src_block_stride,    // 源tensor在各维度上的步长(bytes)
+    const ArrayStruct<ARRAY_SIZE, ARRAY_TYPE> dst_block_stride,    // 目标tensor在各维度上的步长(bytes)
+    const ArrayStruct<ARRAY_SIZE, ARRAY_TYPE> grid_len,            // 各维度的长度
+    const ArrayStruct<ARRAY_SIZE, ARRAY_TYPE> src_grid_stride,     // 源tensor在各维度上的步长(bytes)
+    const ArrayStruct<ARRAY_SIZE, ARRAY_TYPE> dst_grid_stride,     // 目标tensor在各维度上的步长(bytes)
     unsigned int const unit_size     // 每个元素的字节数
 ){{
     switch (unit_size) {{
-        case  1: rearrange_1<uchar1 >(dst, src, block_dim, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
-        case  2: rearrange_1<uchar2 >(dst, src, block_dim, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
-        case  4: rearrange_1<float1 >(dst, src, block_dim, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
-        case  8: rearrange_1<float2 >(dst, src, block_dim, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
-        case 16: rearrange_1<float4 >(dst, src, block_dim, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
-        case 32: rearrange_1<double4>(dst, src, block_dim, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
-        // case 64: rearrange_1<double4>(dst, src, block_dim, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
-        // case 128: rearrange_1<double4>(dst, src, block_dim, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
-        // case 256: rearrange_1<double4>(dst, src, block_dim, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
+        case  1: rearrange_1<uchar1 ,ARRAY_SIZE, ARRAY_TYPE>(dst, src, block_dim, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
+        case  2: rearrange_1<uchar2 ,ARRAY_SIZE, ARRAY_TYPE>(dst, src, block_dim, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
+        case  4: rearrange_1<float1 ,ARRAY_SIZE, ARRAY_TYPE>(dst, src, block_dim, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
+        case  8: rearrange_1<float2 ,ARRAY_SIZE, ARRAY_TYPE>(dst, src, block_dim, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
+        case 16: rearrange_1<float4 ,ARRAY_SIZE, ARRAY_TYPE>(dst, src, block_dim, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
+        case 32: rearrange_1<double4,ARRAY_SIZE, ARRAY_TYPE>(dst, src, block_dim, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
     }}
 }}
 "#

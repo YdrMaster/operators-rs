@@ -175,24 +175,26 @@ static __device__ void rearrange_direct_copy(
 #define ARRAY_SIZE 7
 #endif
 
-
+#ifndef ARRAY_TYPE
 #define ARRAY_TYPE int  // 使用int替代int32_t
+#endif
 
+template<int ArrSize, typename ArrayType>
 struct ArrayStruct {
-    ARRAY_TYPE a[ARRAY_SIZE];
+    ArrayType a[ArrSize];
 };
 
-template<class Tmem>
+template<class Tmem, int ArrSize, typename ArrayType>
 static __device__ void rearrange_1(
     void *__restrict__ dst,
     void const *__restrict__ src,
     unsigned int const block_dim,
-    const ArrayStruct block_len,            // 各维度的长度
-    const ArrayStruct src_block_stride,     // 源tensor在各维度上的步长(bytes)
-    const ArrayStruct dst_block_stride,     // 目标tensor在各维度上的步长(bytes)
-    const ArrayStruct grid_len,             // 各维度的长度
-    const ArrayStruct src_grid_stride,      // 源tensor在各维度上的步长(bytes)
-    const ArrayStruct dst_grid_stride,      // 目标tensor在各维度上的步长(bytes)
+    const ArrayStruct<ArrSize, ArrayType> block_len,            // 各维度的长度
+    const ArrayStruct<ArrSize, ArrayType> src_block_stride,     // 源tensor在各维度上的步长(bytes)
+    const ArrayStruct<ArrSize, ArrayType> dst_block_stride,     // 目标tensor在各维度上的步长(bytes)
+    const ArrayStruct<ArrSize, ArrayType> grid_len,             // 各维度的长度
+    const ArrayStruct<ArrSize, ArrayType> src_grid_stride,      // 源tensor在各维度上的步长(bytes)
+    const ArrayStruct<ArrSize, ArrayType> dst_grid_stride,      // 目标tensor在各维度上的步长(bytes)
     unsigned int const unit_size      // 每个元素的字节数
 ) {
     // 声明共享内存
@@ -268,12 +270,12 @@ template<class Tmem>
 static __device__ void rearrange_1_blank(
     void *__restrict__ dst,
     void const *__restrict__ src,
-    ArrayStruct block_len,            // 各维度的长度
-    ArrayStruct src_block_stride,     // 源tensor在各维度上的步长(bytes)
-    ArrayStruct dst_block_stride,     // 目标tensor在各维度上的步长(bytes)
-    ArrayStruct grid_len,             // 各维度的长度
-    ArrayStruct src_grid_stride,      // 源tensor在各维度上的步长(bytes)
-    ArrayStruct dst_grid_stride,      // 目标tensor在各维度上的步长(bytes)
+    ArrayStruct<ARRAY_SIZE, ARRAY_TYPE> block_len,            // 各维度的长度
+    ArrayStruct<ARRAY_SIZE, ARRAY_TYPE> src_block_stride,     // 源tensor在各维度上的步长(bytes)
+    ArrayStruct<ARRAY_SIZE, ARRAY_TYPE> dst_block_stride,     // 目标tensor在各维度上的步长(bytes)
+    ArrayStruct<ARRAY_SIZE, ARRAY_TYPE> grid_len,             // 各维度的长度
+    ArrayStruct<ARRAY_SIZE, ARRAY_TYPE> src_grid_stride,      // 源tensor在各维度上的步长(bytes)
+    ArrayStruct<ARRAY_SIZE, ARRAY_TYPE> dst_grid_stride,      // 目标tensor在各维度上的步长(bytes)
     unsigned int const unit_size      // 每个元素的字节数
 ) {
     
@@ -338,8 +340,8 @@ static __device__ void rearrange_2(
     void *__restrict__ dst,
     void const *__restrict__ src,
     SplitArrayStruct dim_splits,      // 各维度的切分信息
-    ArrayStruct src_block_stride,     // 源tensor在各维度上的步长
-    ArrayStruct dst_block_stride,     // 目标tensor在各维度上的步长
+    ArrayStruct<ARRAY_SIZE, ARRAY_TYPE> src_block_stride,     // 源tensor在各维度上的步长
+    ArrayStruct<ARRAY_SIZE, ARRAY_TYPE> dst_block_stride,     // 目标tensor在各维度上的步长
     unsigned int const unit_size      // 每个元素的字节数
 ){
     // 计算当前block和thread在各维度上的内外层索引
