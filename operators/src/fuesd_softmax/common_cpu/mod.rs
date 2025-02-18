@@ -4,6 +4,7 @@
 };
 use crate::{common_cpu::Cpu, get_static, ByteOf, LaunchError, QueueAlloc, SchemeError};
 use half::f16;
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 pub struct Operator;
 
@@ -100,16 +101,16 @@ impl<T> Scheme<T> {
         let seq_len = self.seq_len as isize;
         let att_len = self.att_len as isize;
 
-        for j in 0..seq_len {
-            (0..nh).for_each(|i| {
-                let att = unsafe { self.att_base.byte_offset(i * self.sh + j * self.ss) };
-                let causal = match mask {
-                    AttnMask::None => att_len,
-                    AttnMask::Causal => att_len - seq_len + j + 1,
-                };
-                f(causal, att);
-            })
-        }
+        (0..nh * seq_len).into_par_iter().for_each(|i| {
+            let j = i / seq_len;
+            let k = i % seq_len;
+            let att = unsafe { self.att_base.byte_offset(j * self.sh + k * self.ss) };
+            let causal = match mask {
+                AttnMask::None => att_len,
+                AttnMask::Causal => att_len - seq_len + k + 1,
+            };
+            f(causal, att)
+        });
     }
 }
 
