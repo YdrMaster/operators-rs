@@ -1,8 +1,11 @@
-﻿use super::{args::Scheme, Args, Rearrange};
+use super::{args::Scheme, Args, Rearrange};
 use crate::{infini::Device, ByteOf, LaunchError, QueueAlloc, SchemeError};
 use digit_layout::types;
 use infini_op::{infiniop, AsRaw, Descriptor, Handle};
-use std::sync::Arc;
+use std::{
+    slice::{from_raw_parts, from_raw_parts_mut},
+    sync::Arc,
+};
 
 pub struct Operator(Arc<Handle>);
 
@@ -39,14 +42,25 @@ impl crate::Operator for Operator {
         use std::iter::once;
 
         let scheme = Scheme::new(args)?;
+        if scheme.ndim() == 0 {
+            let unit = scheme.unit();
+            let dst = unsafe { from_raw_parts_mut(args.dst_base, unit) };
+            let src = unsafe { from_raw_parts(args.src_base, unit) };
+            queue_alloc.queue().memcpy_d2d(dst, src);
+            return Ok(());
+        }
+
+        let scheme = scheme.distribute_unit((0..=5).rev().map(|n| 32 * (1 << n)));
+        let unit = scheme.unit();
+
         let dst = infini_op::Tensor::new(
             types::U8,
-            scheme.shape().chain(once(scheme.unit())),
+            scheme.shape().chain(once(unit)),
             scheme.dst_strides().iter().cloned().chain(once(1)),
         );
         let src = infini_op::Tensor::new(
             types::U8,
-            scheme.shape().chain(once(scheme.unit())),
+            scheme.shape().chain(once(unit)),
             scheme.src_strides().iter().cloned().chain(once(1)),
         );
 
