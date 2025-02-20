@@ -19,13 +19,13 @@ struct Layout {
 const ARRAY_SIZE: usize = 7;
 
 type ArrayType = i32;
-struct ArrayStruct([ArrayType; ARRAY_SIZE]);
+struct ArrayStruct<const N: usize>([ArrayType; N]);
 
-impl ArrayStruct {
+impl<const N: usize> ArrayStruct<N> {
     fn new(element: impl Iterator<Item = ArrayType>, default: ArrayType) -> Option<Self> {
-        let mut array = [default; ARRAY_SIZE];
+        let mut array = [default; N];
         for (i, v) in element.into_iter().enumerate() {
-            if i >= ARRAY_SIZE {
+            if i >= N {
                 return None;
             }
             array[i] = v;
@@ -34,7 +34,7 @@ impl ArrayStruct {
     }
 }
 //TODO 需要检查正确性
-impl AsParam for ArrayStruct {}
+impl<const N: usize> AsParam for ArrayStruct<N> {}
 
 pub struct Operator {
     _handle: Arc<Handle>,
@@ -146,23 +146,6 @@ impl crate::Operator for Operator {
         let unit = scheme_update.unit();
         let ndim = scheme_update.ndim();
 
-        // // 计算写入的最大连续内存
-        // let mut max_dst_contiguous = unit;
-        // let mut max_dst_contiguous_index = scheme_update.ndim();
-        // for i in (0..scheme_update.ndim()).rev() {
-        //     if dst_strides[i] as usize == max_dst_contiguous {
-        //         max_dst_contiguous *= shape[i];
-        //         max_dst_contiguous_index = i;
-        //     } else {
-        //         break;
-        //     }
-        // }
-
-        // // 计算读取的最大连续内存
-
-        // let mut max_src_contiguous = unit;
-        // let mut max_src_contiguous_index = scheme_update.ndim();
-
         //src strides 降序 index
         let src_strides_desc_idx = (0..scheme_update.ndim())
             .zip(src_strides)
@@ -170,16 +153,7 @@ impl crate::Operator for Operator {
             .map(|(i, _)| i)
             .collect::<Vec<_>>();
 
-        // for i in (0..scheme_update.ndim()).rev() {
-        //     if src_strides[src_strides_desc_idx[i]] as usize == max_src_contiguous {
-        //         max_src_contiguous *= shape[src_strides_desc_idx[i]];
-        //         max_src_contiguous_index = i;
-        //     } else {
-        //         break;
-        //     }
-        // }
-
-        //切分维度，分成grid处理的维度和block处理的维度，与dst的维度相对应
+        //分离维度，分成grid处理的维度和block处理的维度，与dst的维度相对应
         let mut block_dim_choose = repeat(false).take(ndim).collect::<Vec<_>>();
         let mut src_choose_idx = ndim;
         let mut dst_choose_idx = ndim;
@@ -191,9 +165,13 @@ impl crate::Operator for Operator {
         //TODO 需要优化
         let block_size = 256;
 
+        let mut is_last_stage = false;
         loop {
             //优先选择dst
-            if block_src_elements > block_dst_elements {
+            let mut is_dst_changed = true;
+            let mut is_src_changed = true;
+
+            if block_src_elements > block_dst_elements || is_last_stage {
                 //选择dst
                 let idx = if dst_choose_idx == 0 {
                     break;
@@ -202,19 +180,19 @@ impl crate::Operator for Operator {
                 };
 
                 if block_dim_choose[idx] {
+                    block_dst_elements *= shape[idx];
                     dst_choose_idx -= 1;
-                    continue;
-                }
-
-                if block_elements * shape[idx] <= block_size {
+                } else if block_elements * shape[idx] <= block_size {
                     block_dim_choose[idx] = true;
                     block_dst_elements *= shape[idx];
                     block_elements *= shape[idx];
                     dst_choose_idx -= 1;
                 } else {
-                    break;
+                    is_last_stage = true;
+                    is_dst_changed = false;
                 }
-            } else {
+            }
+            if block_src_elements <= block_dst_elements || is_last_stage {
                 //选择src
                 let idx = if src_choose_idx == 0 {
                     break;
@@ -223,72 +201,216 @@ impl crate::Operator for Operator {
                 };
 
                 if block_dim_choose[idx] {
-                    dst_choose_idx -= 1;
-                    continue;
-                }
-                if block_elements * shape[src_strides_desc_idx[src_choose_idx - 1]] <= block_size {
+                    block_src_elements *= shape[idx];
+                    src_choose_idx -= 1;
+                } else if block_src_elements * shape[idx] <= block_size {
                     block_dim_choose[idx] = true;
                     src_choose_idx -= 1;
                     block_src_elements *= shape[idx];
 
                     block_elements *= shape[idx];
                 } else {
-                    break;
+                    is_last_stage = true;
+                    is_src_changed = false;
+                }
+            }
+
+            if !is_src_changed && !is_dst_changed && is_last_stage {
+                break;
+            }
+        }
+
+        println!("block_elements: {}", block_elements);
+        println!("block_src_elements: {}", block_src_elements);
+        println!("block_dst_elements: {}", block_dst_elements);
+        //处理切分维度
+
+        struct split_dim {
+            choose_idx: usize,
+            num_per_block: usize,
+            num_per_grid: usize,
+            array_struct_idx_block: ArrayType,
+            array_struct_idx_grid: ArrayType,
+        }
+
+        let mut split_dims = Vec::new(); // 长度最多为2
+
+        let mut split_idx1 = 0;
+        let mut split_idx2 = 0;
+        let mut split_dim_num = 0; // 取值为0，1，2
+
+        match (src_choose_idx, dst_choose_idx) {
+            (0, 0) => {}
+            (0, _) => {
+                split_idx1 = dst_choose_idx - 1;
+                split_dim_num = 0;
+            }
+            (_, 0) => {
+                split_idx1 = src_strides_desc_idx[src_choose_idx - 1];
+                split_dim_num = 1;
+            }
+            (_, _) => {
+                let src_idx = src_strides_desc_idx[src_choose_idx - 1];
+                let dst_idx = dst_choose_idx - 1;
+                if src_idx == dst_idx {
+                    split_idx1 = src_idx;
+                    split_dim_num = 1;
+                } else {
+                    split_idx1 = src_idx;
+                    split_idx2 = dst_idx;
+                    split_dim_num = 2;
                 }
             }
         }
 
-        println!("block_dim_choose: {:?}", block_dim_choose);
+        match split_dim_num {
+            0 => {}
+            1 => {
+                let len = shape[split_idx1];
+                let num_per_block = block_size.div_euclid(block_elements);
+                assert!(num_per_block > 0);
+                assert!(len >= num_per_block);
+                if num_per_block > 1 {
+                    split_dims.push(split_dim {
+                        choose_idx: split_idx1,
+                        num_per_block,
+                        num_per_grid: len.div_ceil(num_per_block),
+                        array_struct_idx_block: 0,
+                        array_struct_idx_grid: 0,
+                    });
+                }
+            }
+            2 => {
+                let num_per_block = (block_size.div_euclid(block_elements) as f64)
+                    .sqrt()
+                    .floor() as usize;
+                if num_per_block > 1 {
+                    let len1 = shape[split_idx1];
+                    let len2 = shape[split_idx2];
+                    split_dims.push(split_dim {
+                        choose_idx: split_idx1,
+                        num_per_block,
+                        num_per_grid: len1.div_ceil(num_per_block),
+                        array_struct_idx_block: 0,
+                        array_struct_idx_grid: 0,
+                    });
+                    split_dims.push(split_dim {
+                        choose_idx: split_idx2,
+                        num_per_block,
+                        num_per_grid: len2.div_ceil(num_per_block),
+                        array_struct_idx_block: 0,
+                        array_struct_idx_grid: 0,
+                    });
+                }
+            }
+            _ => {
+                unreachable!()
+            }
+        }
 
         //TODO 需要支持对单个维度的切分
         if src_choose_idx == ndim || dst_choose_idx == ndim {
             panic!("rearrange not support this scheme");
         }
 
-        //填充block_len，block_stride，grid_len，grid_stride
-        macro_rules! fill_array {
-            ($input:expr, $default:expr, for_block) => {
-                ArrayStruct::new(
-                    $input
-                        .iter()
-                        .zip(block_dim_choose.iter())
-                        .filter_map(|(len, is_choose)| {
-                            if *is_choose {
-                                Some(*len as ArrayType)
-                            } else {
-                                None
-                            }
-                        }),
-                    $default,
-                )
-            };
+        let mut block_dim: ArrayType = 0;
 
-            ($input:expr, $default:expr, for_grid) => {
-                ArrayStruct::new(
-                    $input
-                        .iter()
-                        .zip(block_dim_choose.iter())
-                        .filter_map(|(len, is_choose)| {
-                            if !*is_choose {
-                                Some(*len as ArrayType)
-                            } else {
-                                None
-                            }
-                        }),
-                    $default,
-                )
-            };
+        let mut block_len = Vec::<ArrayType>::with_capacity(ARRAY_SIZE);
+        let mut src_block_stride = Vec::<ArrayType>::with_capacity(ARRAY_SIZE);
+        let mut dst_block_stride = Vec::<ArrayType>::with_capacity(ARRAY_SIZE);
+
+        let mut grid_len = Vec::<ArrayType>::with_capacity(ARRAY_SIZE);
+        let mut src_grid_stride = Vec::<ArrayType>::with_capacity(ARRAY_SIZE);
+        let mut dst_grid_stride = Vec::<ArrayType>::with_capacity(ARRAY_SIZE);
+
+        // 处理block，填充block_len，block_stride
+        for i in 0..ndim {
+            if block_dim_choose[i] {
+                block_len.push(shape[i] as ArrayType);
+                src_block_stride.push(src_strides[i] as ArrayType);
+                dst_block_stride.push(dst_strides[i] as ArrayType);
+                block_dim += 1;
+            }
+
+            for split_dim in split_dims.iter_mut() {
+                if i == split_dim.choose_idx {
+                    block_len.push(split_dim.num_per_block as ArrayType);
+                    src_block_stride.push(src_strides[i] as ArrayType);
+                    dst_block_stride.push(dst_strides[i] as ArrayType);
+                    split_dim.array_struct_idx_block = block_dim;
+                }
+            }
         }
 
-        let block_dim = block_dim_choose.iter().filter(|&&x| x == true).count() as u32;
-        let block_len = fill_array!(shape, 1, for_block).unwrap();
-        let src_block_stride = fill_array!(src_strides, 0, for_block).unwrap();
-        let dst_block_stride = fill_array!(dst_strides, 0, for_block).unwrap();
-        let grid_len = fill_array!(shape, 1, for_grid).unwrap();
+        // 处理grid，填充grid_len，grid_stride
+        let mut grid_dim = 0;
+        for i in 0..ndim {
+            let mut is_split = false;
+            if !block_dim_choose[i] {
+                for split_dim in split_dims.iter_mut() {
+                    if i == split_dim.choose_idx {
+                        is_split = true;
+                        grid_len.push(split_dim.num_per_grid as ArrayType);
+                        src_grid_stride
+                            .push((src_strides[i] * split_dim.num_per_block as isize) as ArrayType);
+                        dst_grid_stride
+                            .push((dst_strides[i] * split_dim.num_per_block as isize) as ArrayType);
+                        split_dim.array_struct_idx_grid = grid_dim;
+                    }
+                }
+                if !is_split {
+                    grid_len.push(shape[i] as ArrayType);
+                    src_grid_stride.push(src_strides[i] as ArrayType);
+                    dst_grid_stride.push(dst_strides[i] as ArrayType);
+                }
+                grid_dim += 1;
+            }
+        }
 
-        let src_grid_stride = fill_array!(src_strides, 0, for_grid).unwrap();
-        let dst_grid_stride = fill_array!(dst_strides, 0, for_grid).unwrap();
+        // cuda 参数准备
+        let block_len_total = block_len.iter().product::<ArrayType>();
+        let src_block_stride =
+            ArrayStruct::<ARRAY_SIZE>::new(src_block_stride.into_iter(), 0).unwrap();
+        let dst_block_stride =
+            ArrayStruct::<ARRAY_SIZE>::new(dst_block_stride.into_iter(), 0).unwrap();
+        let src_grid_stride =
+            ArrayStruct::<ARRAY_SIZE>::new(src_grid_stride.into_iter(), 0).unwrap();
+        let dst_grid_stride =
+            ArrayStruct::<ARRAY_SIZE>::new(dst_grid_stride.into_iter(), 0).unwrap();
+        let block_len = ArrayStruct::<ARRAY_SIZE>::new(block_len.into_iter(), 1).unwrap();
+        let grid_len = ArrayStruct::<ARRAY_SIZE>::new(grid_len.into_iter(), 1).unwrap();
 
+        let (constrain1, constrain2) = match split_dims.len() {
+            0 => (ArrayStruct([0; 4]), ArrayStruct([0; 4])),
+            1 => {
+                let constrains1 = ArrayStruct([
+                    split_dims[0].array_struct_idx_grid,
+                    split_dims[0].array_struct_idx_block,
+                    split_dims[0].num_per_block as ArrayType,
+                    shape[split_dims[0].choose_idx] as ArrayType,
+                ]);
+                let constrains2 = ArrayStruct([0; 4]);
+                (constrains1, constrains2)
+            }
+            2 => {
+                let constrains1 = ArrayStruct([
+                    split_dims[0].array_struct_idx_grid,
+                    split_dims[0].array_struct_idx_block,
+                    split_dims[0].num_per_block as ArrayType,
+                    shape[split_dims[0].choose_idx] as ArrayType,
+                ]);
+                let constrains2 = ArrayStruct([
+                    split_dims[1].array_struct_idx_grid,
+                    split_dims[1].array_struct_idx_block,
+                    split_dims[1].num_per_block as ArrayType,
+                    shape[split_dims[1].choose_idx] as ArrayType,
+                ]);
+                (constrains1, constrains2)
+            }
+            _ => {
+                unreachable!()
+            }
+        };
         //----------------------------------------------------------------------
 
         let name = CString::new(NAME).unwrap();
@@ -312,6 +434,9 @@ impl crate::Operator for Operator {
             args.dst_base,
             args.src_base,
             block_dim,
+            block_len_total,
+            constrain1,
+            constrain2,
             block_len,        // 各维度的长度
             src_block_stride, // 源tensor在各维度上的步长(bytes)
             dst_block_stride, // 目标tensor在各维度上的步长(bytes)
@@ -337,6 +462,9 @@ extern "C" __global__ void {NAME}(
     void       *__restrict__ dst,
     void const *__restrict__ src,
     const int block_dim,                   // block维度数量
+    const int block_len_total,             // block_len 各元素的乘积
+    const ArrayStruct<4, ARRAY_TYPE> constrains1,          // 切分维度的约束条件1
+    const ArrayStruct<4, ARRAY_TYPE> constrains2,          // 切分维度的约束条件2
     const ArrayStruct<ARRAY_SIZE, ARRAY_TYPE> block_len,           // 各维度的长度
     const ArrayStruct<ARRAY_SIZE, ARRAY_TYPE> src_block_stride,    // 源tensor在各维度上的步长(bytes)
     const ArrayStruct<ARRAY_SIZE, ARRAY_TYPE> dst_block_stride,    // 目标tensor在各维度上的步长(bytes)
@@ -346,12 +474,12 @@ extern "C" __global__ void {NAME}(
     unsigned int const unit_size     // 每个元素的字节数
 ){{
     switch (unit_size) {{
-        case  1: rearrange_1<uchar1 ,ARRAY_SIZE, ARRAY_TYPE>(dst, src, block_dim, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
-        case  2: rearrange_1<uchar2 ,ARRAY_SIZE, ARRAY_TYPE>(dst, src, block_dim, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
-        case  4: rearrange_1<float1 ,ARRAY_SIZE, ARRAY_TYPE>(dst, src, block_dim, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
-        case  8: rearrange_1<float2 ,ARRAY_SIZE, ARRAY_TYPE>(dst, src, block_dim, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
-        case 16: rearrange_1<float4 ,ARRAY_SIZE, ARRAY_TYPE>(dst, src, block_dim, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
-        case 32: rearrange_1<double4,ARRAY_SIZE, ARRAY_TYPE>(dst, src, block_dim, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
+        case  1: rearrange_1<uchar1 ,ARRAY_SIZE, ARRAY_TYPE>(dst, src, block_dim, block_len_total, constrains1, constrains2, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
+        case  2: rearrange_1<uchar2 ,ARRAY_SIZE, ARRAY_TYPE>(dst, src, block_dim, block_len_total, constrains1, constrains2, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
+        case  4: rearrange_1<float1 ,ARRAY_SIZE, ARRAY_TYPE>(dst, src, block_dim, block_len_total, constrains1, constrains2, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
+        case  8: rearrange_1<float2 ,ARRAY_SIZE, ARRAY_TYPE>(dst, src, block_dim, block_len_total, constrains1, constrains2, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
+        case 16: rearrange_1<float4 ,ARRAY_SIZE, ARRAY_TYPE>(dst, src, block_dim, block_len_total, constrains1, constrains2, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
+        case 32: rearrange_1<double4,ARRAY_SIZE, ARRAY_TYPE>(dst, src, block_dim, block_len_total, constrains1, constrains2, block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride, unit_size); break;
     }}
 }}
 "#
