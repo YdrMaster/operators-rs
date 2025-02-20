@@ -223,10 +223,10 @@ static __device__ void rearrange_1(
             dst_offset += idx * dst_grid_stride.a[i];
 
             if (i == constrains1.a[0]) {
-                shared_constrains1_grid_idx_multiple = idx;
+                shared_constrains1_grid_idx_multiple = idx * constrains1.a[2];
             }
             if (i == constrains2.a[0]) {
-                shared_constrains2_grid_idx_multiple = idx;
+                shared_constrains2_grid_idx_multiple = idx * constrains2.a[2];
             }
 
             // 将结果存入共享内存

@@ -226,6 +226,7 @@ impl crate::Operator for Operator {
                     let dst_num_per_block = dst_num_per_block.floor() as usize;
                     let src_num_per_grid = src_current_dim_len.div_ceil(src_num_per_block);
                     let dst_num_per_grid = dst_current_dim_len.div_ceil(dst_num_per_block);
+
                     if src_num_per_block > 1 {
                         split_dims.push(SplitDim {
                             choose_idx: src_idx,
@@ -504,22 +505,28 @@ mod test {
         cpu_op.scheme(&dyn_args(dt), 0).unwrap();
         gpu_op.scheme(&dyn_args(dt), 0).unwrap();
 
-        let nh = 100;
-        let seq = 3343;
-        let dh = 100;
-        let mut src = vec![0u64; nh * seq * dh];
+        const N: usize = 5;
+        const TRANS_N: usize = 3;
+        let shape: [usize; N] = [2232, 3, 7, 9, 4];
+        let mut r_shape: [usize; N] = shape.clone();
+        r_shape[0..TRANS_N].reverse();
+
+        let trans_param: [usize; TRANS_N] =
+            (0..TRANS_N).rev().collect::<Vec<_>>().try_into().unwrap();
+
+        let mut src = vec![0u64; shape.iter().product::<usize>()];
         rand::rng().fill(&mut src[..]);
 
         let ele = dt.nbytes();
-        let s_src = ArrayLayout::<3>::new_contiguous(&[nh, seq, dh], BigEndian, ele);
+        let s_src = ArrayLayout::<3>::new_contiguous(&shape, BigEndian, ele);
         let s_dst =
-            ArrayLayout::<3>::new_contiguous(&[dh, seq, nh], BigEndian, ele).transpose(&[2, 1, 0]);
+            ArrayLayout::<3>::new_contiguous(&r_shape, BigEndian, ele).transpose(&trans_param);
 
         println!("s_src: {:?}", s_src.shape());
         println!("s_dst: {:?}", s_dst.shape());
         println!("s_src strides: {:?}", s_src.strides());
-
         println!("s_dst strides: {:?}", s_dst.strides());
+
         let dst_ans = gpu.apply(|ctx| {
             let stream = ctx.stream();
             #[cfg(use_nvidia)]
@@ -538,7 +545,7 @@ mod test {
                         .launch(
                             &args(
                                 dt,
-                                &[nh, seq, dh],
+                                &shape,
                                 s_src.strides(),
                                 s_dst.strides(),
                                 src.as_ptr().cast(),
@@ -556,7 +563,7 @@ mod test {
                 .launch(
                     &args(
                         dt,
-                        &[nh, seq, dh],
+                        &shape,
                         s_src.strides(),
                         s_dst.strides(),
                         src.as_ptr().cast(),
@@ -571,17 +578,17 @@ mod test {
             let time = end_event.elapse_from(&start_event);
             println!("time: {time:?}");
 
-            let mut host = vec![0u64; nh * seq * dh];
+            let mut host = vec![0u64; shape.iter().product::<usize>()];
             memcpy_d2h(&mut host, &dst);
             host
         });
 
-        let mut dst_ref = vec![0u64; nh * seq * dh];
+        let mut dst_ref = vec![0u64; shape.iter().product::<usize>()];
         cpu_op
             .launch(
                 &args(
                     dt,
-                    &[nh, seq, dh],
+                    &shape,
                     s_src.strides(),
                     s_dst.strides(),
                     src.as_ptr().cast(),
