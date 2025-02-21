@@ -13,6 +13,7 @@ impl Rope<Cpu> for Operator {
         _dt: DigitLayout,
         _nctx: usize,
         _dh: usize,
+        _theta: f32,
         queue_alloc: &QA,
     ) -> SinCosTable<QA::DevMem>
     where

@@ -12,6 +12,7 @@ impl Rope<Device> for Operator {
         dt: DigitLayout,
         nctx: usize,
         dh: usize,
+        theta: f32,
         queue_alloc: &QA,
     ) -> SinCosTable<QA::DevMem>
     where
@@ -35,7 +36,7 @@ impl Rope<Device> for Operator {
         }
 
         assert_eq!(dt, ty::F32);
-        let host = generate_sin_cos_tables(nctx, dh, 1e4);
+        let host = generate_sin_cos_tables(nctx, dh, theta);
         let mut mem = queue_alloc.alloc(size_of_val(host.as_slice()));
         queue_alloc.queue().memcpy_h2d(&mut mem, &host);
         queue_alloc.queue().synchronize();
@@ -244,6 +245,7 @@ mod test {
         const NT: usize = 7;
         let nh = 32;
         let dh = 64;
+        let theta = 1e4;
 
         let mut t = vec![0.0f64; NT * nh * dh];
         rand::rng().fill(&mut t[..]);
@@ -254,7 +256,7 @@ mod test {
             let stream = dev.stream();
             let mut t = cast_load(&t, f16::from_f64, &stream);
             let p = cast_load(&p, |x| x as u64, &stream);
-            let sincos = Operator::build_sincos(ty::F32, nctx, dh, &stream);
+            let sincos = Operator::build_sincos(ty::F32, nctx, dh, theta, &stream);
             let (sin, cos) = sincos.mem.split_at(sincos.mem.len() / 2);
 
             dev_op

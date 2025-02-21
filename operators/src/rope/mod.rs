@@ -12,7 +12,7 @@ pub use args::Args;
 
 crate::op_trait! { Rope
     /// 生成 sincos 表（[2, n, dh]）。
-    fn build_sincos<QA>(dt: digit_layout::DigitLayout, nctx: usize, dh: usize, queue_alloc: &QA) -> SinCosTable<QA::DevMem>
+    fn build_sincos<QA>(dt: digit_layout::DigitLayout, nctx: usize, dh: usize, theta: f32, queue_alloc: &QA) -> SinCosTable<QA::DevMem>
         where QA: crate::QueueAlloc<Hardware = Self::Hardware>;
     /// 为多个请求生成位置向量（[nt]）。
     fn build_pos<I, QA>(dt: digit_layout::DigitLayout, nt: usize, iter: I, queue_alloc: &QA) -> QA::DevMem

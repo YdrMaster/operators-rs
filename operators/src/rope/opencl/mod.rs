@@ -23,6 +23,7 @@ impl Rope<ClDevice> for Operator {
         _dt: digit_layout::DigitLayout,
         _nctx: usize,
         _dh: usize,
+        _theta: f32,
         _queue_alloc: &QA,
     ) -> SinCosTable<QA::DevMem>
     where
