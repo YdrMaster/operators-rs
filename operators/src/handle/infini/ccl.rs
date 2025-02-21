@@ -1,4 +1,4 @@
-﻿use super::Device;
+use super::Device;
 use crate::TopoNode;
 use infini_ccl::{bindings::DeviceType, Comm};
 use std::{os::raw::c_uint, sync::Arc};
@@ -26,6 +26,14 @@ impl InfiniNode {
 
     pub fn ascend_npu(indices: &[c_uint]) -> Vec<Self> {
         Self::new(indices, DeviceType::DEVICE_ASCEND)
+    }
+
+    pub fn metax_gpu(indices: &[c_uint]) -> Vec<Self> {
+        Self::new(indices, DeviceType::DEVICE_METAX)
+    }
+
+    pub fn mthreads_gpu(indices: &[c_uint]) -> Vec<Self> {
+        Self::new(indices, DeviceType::DEVICE_MTHREADS)
     }
 
     fn new(indices: &[c_uint], ty: DeviceType) -> Vec<Self> {

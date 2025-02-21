@@ -32,6 +32,16 @@ impl Device {
         Self::new(infini_rt::DEVICE_ASCEND, id)
     }
 
+    #[inline]
+    pub fn metax_gpu(id: usize) -> Self {
+        Self::new(infini_rt::DEVICE_METAX, id)
+    }
+
+    #[inline]
+    pub fn mthreads_gpu(id: usize) -> Self {
+        Self::new(infini_rt::DEVICE_MTHREADS, id)
+    }
+
     fn new(ty: infini_rt::DeviceType, id: usize) -> Self {
         use infini_op::bindings::Device as Ty;
         Self {
@@ -42,6 +52,8 @@ impl Device {
                     infini_rt::DEVICE_NVIDIA => Ty::DevNvGpu,
                     infini_rt::DEVICE_CAMBRICON => Ty::DevCambriconMlu,
                     infini_rt::DEVICE_ASCEND => Ty::DevAscendNpu,
+                    infini_rt::DEVICE_METAX => Ty::DevMetaxGpu,
+                    infini_rt::DEVICE_MTHREADS => Ty::DevMthreadsGpu,
                     _ => unreachable!("unknown device type"),
                 },
                 id as _,
