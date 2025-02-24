@@ -182,7 +182,13 @@ impl crate::Operator for Operator {
                     let src_num_per_grid = src_current_dim_len.div_ceil(src_num_per_block);
                     let dst_num_per_grid = dst_current_dim_len.div_ceil(dst_num_per_block);
 
-                    if src_num_per_block > 1 {
+                    if src_num_per_block == 1 {
+                    } else if src_num_per_grid == 1 {
+                        block_dim_choose[src_idx] = true;
+                        block_elements *= src_current_dim_len;
+                        block_src_elements *= src_current_dim_len;
+                        src_choose_idx -= 1;
+                    } else {
                         split_dims.push(SplitDim {
                             choose_idx: src_idx,
                             num_per_block: src_num_per_block,
@@ -191,7 +197,14 @@ impl crate::Operator for Operator {
                             array_struct_idx_grid: 0,
                         });
                     }
-                    if dst_num_per_block > 1 {
+
+                    if dst_num_per_block == 1 {
+                    } else if dst_num_per_grid == 1 {
+                        block_dim_choose[dst_idx] = true;
+                        block_elements *= dst_current_dim_len;
+                        block_dst_elements *= dst_current_dim_len;
+                        dst_choose_idx -= 1;
+                    } else {
                         split_dims.push(SplitDim {
                             choose_idx: dst_idx,
                             num_per_block: dst_num_per_block,
@@ -474,9 +487,9 @@ mod test {
         cpu_op.scheme(&dyn_args(dt), 0).unwrap();
         gpu_op.scheme(&dyn_args(dt), 0).unwrap();
 
-        const N: usize = 5;
+        const N: usize = 3;
         const TRANS_N: usize = 3;
-        let shape: [usize; N] = [2232, 3, 7, 9, 4];
+        let shape: [usize; N] = [16, 3343, 16];
         let mut r_shape: [usize; N] = shape.clone();
         r_shape[0..TRANS_N].reverse();
 
