@@ -9,6 +9,7 @@ pub mod all_reduce;
 pub mod attention;
 pub mod attention_kv_cached;
 pub mod attention_mla;
+pub mod attention_mla_cached;
 pub mod broadcast;
 pub mod conv;
 pub mod fuesd_softmax;

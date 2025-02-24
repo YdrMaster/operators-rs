@@ -1,7 +1,7 @@
 use super::{args::Meta, Args, AttentionMLA};
 use crate::{
-    dyn_, fuesd_softmax, get_static, mat_mul, rearrange, ByteOf, Hardware, LaunchError, QueueAlloc,
-    SchemeError, TensorLayout, Workspace, WorkspaceCollector,
+    fuesd_softmax, get_static, mat_mul, rearrange, ByteOf, Hardware, LaunchError, QueueAlloc,
+    SchemeError, TensorLayout, Workspace,
 };
 use ndarray_layout::ArrayLayout;
 use std::marker::PhantomData;
@@ -94,16 +94,13 @@ where
         let &[nh_sa, dv_sa, dkv_sa] = absorb_layout.strides() else {
             unreachable!()
         };
-        let &[nh_so, seq_so, dv_so] = o_layout.strides() else {
-            unreachable!()
-        };
+
         let ele = dt.nbytes();
         get_static! {
             nh      seq     dkv     dr
             nh_skv  att_skv  dkv_skv
             nh_skr  att_skr  dr_skr
             nh_sa   dv_sa    dkv_sa
-            nh_so   seq_so   dv_so
             dv      att
         };
 
@@ -141,7 +138,7 @@ where
             workspace,
             queue_alloc,
         )?;
-       
+
         self.mat_mul.launch(
             &mat_mul::Args {
                 c_layout: att_w_layout.clone(),
