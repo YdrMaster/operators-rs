@@ -8,6 +8,7 @@ pub mod add_rows;
 pub mod all_reduce;
 pub mod attention;
 pub mod attention_kv_cached;
+pub mod attention_mla;
 pub mod broadcast;
 pub mod conv;
 pub mod fuesd_softmax;

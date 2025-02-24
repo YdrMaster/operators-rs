@@ -1,5 +1,3 @@
-use std::ptr::null;
-
 use super::{args::Meta, args::RopeType as R, fill_pos, Args, Rope, Seq, SinCosTable};
 use crate::{
     common_cpu::Cpu, get_static, strides_not_support, ByteOf, LaunchError, QueueAlloc, SchemeError,
@@ -7,6 +5,7 @@ use crate::{
 };
 use digit_layout::{types as ty, DigitLayout};
 use half::f16;
+use std::ptr::null;
 #[derive(Copy, Clone)]
 enum NtkPartsType {
     None,
