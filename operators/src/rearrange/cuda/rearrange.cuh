@@ -6,7 +6,6 @@ struct ArrayStruct {
 };
 
 
-
 template<class Tmem, int ArrSize, typename ArrayType>
 static __device__ void rearrange_1(
     void *__restrict__ dst,
@@ -20,8 +19,7 @@ static __device__ void rearrange_1(
     const ArrayStruct<ArrSize, ArrayType> dst_block_stride,// 目标tensor在各维度上的步长(bytes)
     const ArrayStruct<ArrSize, ArrayType> grid_len,        // 各维度的长度
     const ArrayStruct<ArrSize, ArrayType> src_grid_stride, // 源tensor在各维度上的步长(bytes)
-    const ArrayStruct<ArrSize, ArrayType> dst_grid_stride, // 目标tensor在各维度上的步长(bytes)
-    unsigned int const unit_size                           // 每个元素的字节数
+    const ArrayStruct<ArrSize, ArrayType> dst_grid_stride  // 目标tensor在各维度上的步长(bytes)
 ) {
 
     int remaining = threadIdx.x;
@@ -76,7 +74,6 @@ static __device__ void rearrange_1(
     int constrains2_grid_idx_multiple = shared_constrains2_grid_idx_multiple;
 
 
-    
     for (int i = ArrSize - 1; i > 0; i--) {
         if (block_len.a[i] > 1) {
             int idx = remaining % block_len.a[i];
@@ -119,19 +116,10 @@ static __device__ void rearrange_1(
     }
 
     // 执行数据拷贝，注意offset已经是字节偏移
-    const int elements_per_thread = unit_size / sizeof(Tmem);
-    if (elements_per_thread == 1) {
-        *reinterpret_cast<Tmem *>(reinterpret_cast<char *>(dst) + dst_offset) =
-            *reinterpret_cast<const Tmem *>(reinterpret_cast<const char *>(src) + src_offset);
-    } else {
-        for (int i = 0; i < elements_per_thread; i++) {
-            reinterpret_cast<Tmem *>(reinterpret_cast<char *>(dst) + dst_offset)[i] =
-                reinterpret_cast<const Tmem *>(reinterpret_cast<const char *>(src) + src_offset)[i];
-        }
-    }
+    // 增加这个判断有助于优化程序
+    *reinterpret_cast<Tmem *>(reinterpret_cast<char *>(dst) + dst_offset) =
+        *reinterpret_cast<const Tmem *>(reinterpret_cast<const char *>(src) + src_offset);
 }
-
-
 
 
 // 不使用0号线程单独计算
@@ -148,8 +136,7 @@ static __device__ void rearrange_2(
     const ArrayStruct<ArrSize, ArrayType> dst_block_stride,// 目标tensor在各维度上的步长(bytes)
     const ArrayStruct<ArrSize, ArrayType> grid_len,        // 各维度的长度
     const ArrayStruct<ArrSize, ArrayType> src_grid_stride, // 源tensor在各维度上的步长(bytes)
-    const ArrayStruct<ArrSize, ArrayType> dst_grid_stride, // 目标tensor在各维度上的步长(bytes)
-    unsigned int const unit_size                           // 每个元素的字节数
+    const ArrayStruct<ArrSize, ArrayType> dst_grid_stride  // 目标tensor在各维度上的步长(bytes)
 ) {
 
     int remaining = threadIdx.x;
@@ -179,11 +166,10 @@ static __device__ void rearrange_2(
         if (i == constrains2.a[0]) {
             constrains2_grid_idx_multiple = idx * constrains2.a[2];
         }
-
     }
-    remaining=threadIdx.x;
+    remaining = threadIdx.x;
 
-    
+
     for (int i = ArrSize - 1; i > 0; i--) {
         if (block_len.a[i] > 1) {
             int idx = remaining % block_len.a[i];
@@ -226,14 +212,6 @@ static __device__ void rearrange_2(
     }
 
     // 执行数据拷贝，注意offset已经是字节偏移
-    const int elements_per_thread = unit_size / sizeof(Tmem);
-    if (elements_per_thread == 1) {
-        *reinterpret_cast<Tmem *>(reinterpret_cast<char *>(dst) + dst_offset) =
-            *reinterpret_cast<const Tmem *>(reinterpret_cast<const char *>(src) + src_offset);
-    } else {
-        for (int i = 0; i < elements_per_thread; i++) {
-            reinterpret_cast<Tmem *>(reinterpret_cast<char *>(dst) + dst_offset)[i] =
-                reinterpret_cast<const Tmem *>(reinterpret_cast<const char *>(src) + src_offset)[i];
-        }
-    }
+    *reinterpret_cast<Tmem *>(reinterpret_cast<char *>(dst) + dst_offset) =
+        *reinterpret_cast<const Tmem *>(reinterpret_cast<const char *>(src) + src_offset);
 }
