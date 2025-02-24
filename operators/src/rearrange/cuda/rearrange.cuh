@@ -54,13 +54,12 @@ static __device__ void rearrange_1(
             if (i == constrains2.a[0]) {
                 constrains2_grid_idx_multiple = idx * constrains2.a[2];
             }
-
-            // 将结果存入共享内存
-            shared_src_offset = src_offset;
-            shared_dst_offset = dst_offset;
-            shared_constrains1_grid_idx_multiple = constrains1_grid_idx_multiple;
-            shared_constrains2_grid_idx_multiple = constrains2_grid_idx_multiple;
         }
+        // 将结果存入共享内存
+        shared_src_offset = src_offset;
+        shared_dst_offset = dst_offset;
+        shared_constrains1_grid_idx_multiple = constrains1_grid_idx_multiple;
+        shared_constrains2_grid_idx_multiple = constrains2_grid_idx_multiple;
     }
 
     // 确保所有线程都能看到共享内存中的值
@@ -117,101 +116,6 @@ static __device__ void rearrange_1(
 
     // 执行数据拷贝，注意offset已经是字节偏移
     // 增加这个判断有助于优化程序
-    *reinterpret_cast<Tmem *>(reinterpret_cast<char *>(dst) + dst_offset) =
-        *reinterpret_cast<const Tmem *>(reinterpret_cast<const char *>(src) + src_offset);
-}
-
-
-// 不使用0号线程单独计算
-template<class Tmem, int ArrSize, typename ArrayType>
-static __device__ void rearrange_2(
-    void *__restrict__ dst,
-    void const *__restrict__ src,
-    unsigned int const block_dim,
-    unsigned int const block_len_total,                    // block_len 各元素的乘积
-    const ArrayStruct<4, ArrayType> constrains1,           // 切分维度的约束条件1，, 各个元素分别代表：[grid_idx, block_idx, grid 的stride相对于block的倍数，总的len限制]
-    const ArrayStruct<4, ArrayType> constrains2,           // 切分维度的约束条件2
-    const ArrayStruct<ArrSize, ArrayType> block_len,       // 各维度的长度
-    const ArrayStruct<ArrSize, ArrayType> src_block_stride,// 源tensor在各维度上的步长(bytes)
-    const ArrayStruct<ArrSize, ArrayType> dst_block_stride,// 目标tensor在各维度上的步长(bytes)
-    const ArrayStruct<ArrSize, ArrayType> grid_len,        // 各维度的长度
-    const ArrayStruct<ArrSize, ArrayType> src_grid_stride, // 源tensor在各维度上的步长(bytes)
-    const ArrayStruct<ArrSize, ArrayType> dst_grid_stride  // 目标tensor在各维度上的步长(bytes)
-) {
-
-    int remaining = threadIdx.x;
-    if (remaining >= block_len_total) {
-        return;
-    }
-
-    int src_offset = 0;
-    int dst_offset = 0;
-    int constrains1_grid_idx_multiple = 0;
-    int constrains2_grid_idx_multiple = 0;
-
-
-    // 计算当前block处理的数据在src和dst中的基础偏移(bytes)
-
-    remaining = blockIdx.x;
-
-    for (int i = ArrSize - 1; i >= 0; i--) {
-        int idx = remaining % grid_len.a[i];
-        remaining /= grid_len.a[i];
-        src_offset += idx * src_grid_stride.a[i];
-        dst_offset += idx * dst_grid_stride.a[i];
-
-        if (i == constrains1.a[0]) {
-            constrains1_grid_idx_multiple = idx * constrains1.a[2];
-        }
-        if (i == constrains2.a[0]) {
-            constrains2_grid_idx_multiple = idx * constrains2.a[2];
-        }
-    }
-    remaining = threadIdx.x;
-
-
-    for (int i = ArrSize - 1; i > 0; i--) {
-        if (block_len.a[i] > 1) {
-            int idx = remaining % block_len.a[i];
-            remaining /= block_len.a[i];
-            // 计算偏移量
-            src_offset += idx * src_block_stride.a[i];
-            dst_offset += idx * dst_block_stride.a[i];
-
-            if (constrains1.a[3] != 0 && i == constrains1.a[1]) {
-                if (constrains1_grid_idx_multiple + idx >= constrains1.a[3]) {
-                    return;
-                }
-            }
-
-            if (constrains2.a[3] != 0 && i == constrains2.a[1]) {
-                if (constrains2_grid_idx_multiple + idx >= constrains2.a[3]) {
-                    return;
-                }
-            }
-        }
-    }
-
-    // 单独处理第一个维度
-    if (remaining >= block_len.a[0]) {
-        return;
-    }
-    src_offset += remaining * src_block_stride.a[0];
-    dst_offset += remaining * dst_block_stride.a[0];
-
-    if (constrains1.a[3] != 0 && 0 == constrains1.a[1]) {
-        if (constrains1_grid_idx_multiple + remaining >= constrains1.a[3]) {
-            return;
-        }
-    }
-
-    if (constrains2.a[3] != 0 && 0 == constrains2.a[1]) {
-        if (constrains2_grid_idx_multiple + remaining >= constrains2.a[3]) {
-            return;
-        }
-    }
-
-    // 执行数据拷贝，注意offset已经是字节偏移
     *reinterpret_cast<Tmem *>(reinterpret_cast<char *>(dst) + dst_offset) =
         *reinterpret_cast<const Tmem *>(reinterpret_cast<const char *>(src) + src_offset);
 }

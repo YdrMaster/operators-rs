@@ -1,12 +1,17 @@
 use super::{args::Scheme, Args, Rearrange};
 use crate::cuda::AsParam;
+
 use crate::{
     cuda::{Gpu, Handle, ModuleBox},
-    ByteOf, LaunchError, QueueAlloc, SchemeError,
+    shape_not_support, ByteOf, LaunchError, QueueAlloc, SchemeError,
 };
 use itertools::Itertools;
 use std::iter::repeat;
 use std::{ffi::CString, sync::Arc};
+/// Maximum number of dimensions supported in the array
+const ARRAY_SIZE: usize = 5;
+/// Type used for array indices and strides
+type ArrayType = i32;
 
 #[derive(Debug)]
 struct SplitDim {
@@ -17,22 +22,24 @@ struct SplitDim {
     array_struct_idx_grid: ArrayType,
 }
 
-const ARRAY_SIZE: usize = 5;
-
-type ArrayType = i32;
 #[derive(Debug)]
 struct ArrayStruct<const N: usize>([ArrayType; N]);
 
 impl<const N: usize> ArrayStruct<N> {
-    fn new(element: impl Iterator<Item = ArrayType>, default: ArrayType) -> Option<Self> {
+    fn new(
+        element: impl Iterator<Item = ArrayType>,
+        default: ArrayType,
+    ) -> Result<Self, SchemeError> {
         let mut array = [default; N];
         for (i, v) in element.into_iter().enumerate() {
             if i >= N {
-                return None;
+                return Err(shape_not_support(
+                    "ArrayStruct::new: too many elements".to_string(),
+                ));
             }
             array[i] = v;
         }
-        Some(Self(array))
+        Ok(Self(array))
     }
 }
 
@@ -275,16 +282,12 @@ impl crate::Operator for Operator {
 
         // cuda 参数准备
         let block_len_total = block_len.iter().map(|x| *x as u32).product::<u32>();
-        let src_block_stride =
-            ArrayStruct::<ARRAY_SIZE>::new(src_block_stride.into_iter(), 0).unwrap();
-        let dst_block_stride =
-            ArrayStruct::<ARRAY_SIZE>::new(dst_block_stride.into_iter(), 0).unwrap();
-        let src_grid_stride =
-            ArrayStruct::<ARRAY_SIZE>::new(src_grid_stride.into_iter(), 0).unwrap();
-        let dst_grid_stride =
-            ArrayStruct::<ARRAY_SIZE>::new(dst_grid_stride.into_iter(), 0).unwrap();
-        let block_len = ArrayStruct::<ARRAY_SIZE>::new(block_len.into_iter(), 1).unwrap();
-        let grid_len = ArrayStruct::<ARRAY_SIZE>::new(grid_len.into_iter(), 1).unwrap();
+        let src_block_stride = ArrayStruct::<ARRAY_SIZE>::new(src_block_stride.into_iter(), 0)?;
+        let dst_block_stride = ArrayStruct::<ARRAY_SIZE>::new(dst_block_stride.into_iter(), 0)?;
+        let src_grid_stride = ArrayStruct::<ARRAY_SIZE>::new(src_grid_stride.into_iter(), 0)?;
+        let dst_grid_stride = ArrayStruct::<ARRAY_SIZE>::new(dst_grid_stride.into_iter(), 0)?;
+        let block_len = ArrayStruct::<ARRAY_SIZE>::new(block_len.into_iter(), 1)?;
+        let grid_len = ArrayStruct::<ARRAY_SIZE>::new(grid_len.into_iter(), 1)?;
 
         let (constrain1, constrain2) = match split_dims.len() {
             0 => (ArrayStruct([0; 4]), ArrayStruct([0; 4])),
