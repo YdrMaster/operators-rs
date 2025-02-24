@@ -1,13 +1,4 @@
-#include <cstdint>// 为int32_t添加定义
 
-
-#ifndef ARRAY_SIZE
-#define ARRAY_SIZE 7
-#endif
-
-#ifndef ARRAY_TYPE
-#define ARRAY_TYPE int// 使用int替代int32_t
-#endif
 
 template<int ArrSize, typename ArrayType>
 struct ArrayStruct {
@@ -49,8 +40,8 @@ static __device__ void rearrange_1(
         int src_offset = 0;
         int dst_offset = 0;
         int remaining = blockIdx.x;
-#pragma unroll
-        for (int i = ARRAY_SIZE - 1; i >= 0; i--) {
+
+        for (int i = ArrSize - 1; i >= 0; i--) {
             int idx = remaining % grid_len.a[i];
             remaining /= grid_len.a[i];
             src_offset += idx * src_grid_stride.a[i];
@@ -79,7 +70,7 @@ static __device__ void rearrange_1(
     int constrains1_grid_idx_multiple = shared_constrains1_grid_idx_multiple;
     int constrains2_grid_idx_multiple = shared_constrains2_grid_idx_multiple;
 
-    for (int i = ARRAY_SIZE - 1; i > 0; i--) {
+    for (int i = ArrSize - 1; i > 0; i--) {
         if (block_len.a[i] > 1) {
             int idx = remaining % block_len.a[i];
             remaining /= block_len.a[i];
