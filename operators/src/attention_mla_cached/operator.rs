@@ -1,12 +1,10 @@
-use crate::attention_mla_cached::args::Meta;
-use crate::attention_mla_cached::{Args, AttMLACached};
+use super::{args::Meta, Args, AttMLACached};
 use crate::{
     attention_mla, get_static, rearrange, shape_mismatch, ByteOf, Hardware, LaunchError,
     QueueAlloc, SchemeError, TensorLayout,
 };
 use ndarray_layout::ArrayLayout;
 use std::marker::PhantomData;
-
 pub struct Operator<Hardware, Rearrange, Attention> {
     rearrange: Rearrange,
     attention: Attention,
@@ -29,7 +27,7 @@ where
 {
     type Hardware = H;
     type TopoNode = H;
-    type Args = crate::attention_mla_cached::Args<H>;
+    type Args = Args<H>;
     fn new(node: &Self::TopoNode) -> Self {
         Self {
             rearrange: R::new(node),

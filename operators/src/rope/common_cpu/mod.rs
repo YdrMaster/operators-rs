@@ -416,9 +416,9 @@ where
                     ..
                 } => unsafe {
                     if p.val() < origin_pos as usize {
-                        short.byte_offset(i * st).cast()
+                        short
                     } else {
-                        long.byte_offset(i * st).cast()
+                        long
                     }
                 },
                 _ => null(),
@@ -429,7 +429,8 @@ where
                     let (sin, cos) = match scheme_type {
                         SchemeType::Rope { s } => p.freq_sin_cos_rope(k, dh, theta, s),
                         SchemeType::Long { s, .. } => {
-                            let factor = unsafe { *factor };
+                            //  TODO 这里先默认为 f32
+                            let factor = unsafe { *factor.byte_offset(k * 4).cast() };
                             p.freq_sin_cos_long(k, dh, theta, factor, s)
                         }
                         SchemeType::NtkParts {
