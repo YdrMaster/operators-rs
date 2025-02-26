@@ -1,13 +1,48 @@
-use super::{args::Scheme, Args, Rearrange};
+use super::{args::Scheme as ArgsScheme, Args, Rearrange};
 use crate::cuda::AsParam;
 
 use crate::{
     cuda::{Gpu, Handle, ModuleBox},
-    shape_not_support, ByteOf, LaunchError, QueueAlloc, SchemeError,
+    shape_not_support, ByteOf, LaunchError, QueueAlloc, SchemeDiversity, SchemeError,
 };
+use digit_layout::DigitLayout;
 use itertools::Itertools;
+use lru::LruCache;
 use std::iter::repeat;
-use std::{ffi::CString, sync::Arc};
+use std::{
+    ffi::CString,
+    sync::{Arc, Mutex},
+};
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+struct SchemeKey {
+    unit_size: usize,
+    constrain_num: usize,
+}
+
+#[derive(Clone)]
+struct Scheme {
+    module: Arc<ModuleBox>,
+    name: CString,
+    unit_size: usize,
+    constrain_num: usize,
+}
+
+impl Scheme {
+    pub fn new(key: SchemeKey, handle: &Arc<Handle>) -> Result<Self, SchemeError> {
+        let name = kernel_name(key.unit_size, key.constrain_num);
+        let cc = handle.device().compute_capability();
+
+        Ok(Self {
+            module: handle
+                .compile_kernel(&name, cc, || format_code(key.unit_size, key.constrain_num)),
+            name: CString::new(name).unwrap(),
+            unit_size: key.unit_size,
+            constrain_num: key.constrain_num,
+        })
+    }
+}
+
 /// Maximum number of dimensions supported in the array
 const ARRAY_SIZE: usize = 5;
 /// Type used for array indices and strides
@@ -47,15 +82,14 @@ impl<const N: usize> AsParam for ArrayStruct<N> {}
 
 //TODO 需要使用max_warps_block和warp_size来进行计算
 pub struct Operator {
-    _handle: Arc<Handle>,
+    handle: Arc<Handle>,
     #[allow(unused)]
     max_warps_block: usize,
     #[allow(unused)]
     warp_size: usize,
-    module: Arc<ModuleBox>,
+    schemes: Mutex<LruCache<SchemeKey, Scheme>>,
 }
 
-const NAME: &str = "rearrange";
 const CODE: &str = include_str!("rearrange.cuh");
 
 impl Rearrange<Gpu> for Operator {}
@@ -70,23 +104,42 @@ impl crate::Operator for Operator {
         let device = node.0.device();
         let max_threads_block = device.block_limit().max_threads;
         let warp_size = device.warp_size();
-        let cc = device.compute_capability();
         assert_eq!(max_threads_block % warp_size, 0);
         // 生成执行资源
         Self {
-            _handle: node.0.clone(),
+            handle: node.0.clone(),
             max_warps_block: max_threads_block / warp_size,
             warp_size,
-            module: node.0.compile_kernel(NAME, cc, format_code),
+            schemes: node.0.scheme_cache(SchemeDiversity::Low),
         }
     }
 
     fn scheme(
         &mut self,
-        _args: &Self::Args,
+        args: &Self::Args,
         _max_workspace_size: usize,
     ) -> Result<usize, SchemeError> {
-        // 完全动态，不需要做任何准备工作
+        //TODO 目前不支持dyn_args
+        // println!("scheme");
+        // let scheme_update = ArgsScheme::new(args)?;
+        // println!("scheme_update: {:?}", scheme_update);
+        // // 发现最大的1 thread 处理的数据量
+        // let scheme_update = scheme_update.distribute_unit((0..=5).rev().map(|n| (1 << n)));
+
+        // let unit_size = scheme_update.unit();
+
+        // // 编译所有可能的约束数量kernel
+        // for constrain_num in 0..=2 {
+        //     let key = SchemeKey {
+        //         unit_size,
+        //         constrain_num,
+        //     };
+
+        //     self.schemes
+        //         .lock()
+        //         .unwrap()
+        //         .try_get_or_insert(key, || Scheme::new(key, &self.handle))?;
+        // }
         Ok(0)
     }
 
@@ -99,10 +152,10 @@ impl crate::Operator for Operator {
     where
         QA: QueueAlloc<Hardware = Self::Hardware>,
     {
-        let scheme = Scheme::new(args)?;
+        let scheme_update = ArgsScheme::new(args)?;
 
         // 发现最大的1 thread 处理的数据量
-        let scheme_update = scheme.distribute_unit((0..=5).rev().map(|n| (1 << n)));
+        let scheme_update = scheme_update.distribute_unit((0..=5).rev().map(|n| (1 << n)));
 
         let src_strides = scheme_update.src_strides();
         let dst_strides = scheme_update.dst_strides();
@@ -127,7 +180,7 @@ impl crate::Operator for Operator {
         let mut block_dst_elements = 1;
 
         //TODO 需要优化
-        let block_size = 256;
+        let max_block_size = 256;
         let mut split_dims = Vec::new(); // 长度最多为2
 
         while src_choose_idx > 0 && dst_choose_idx > 0 {
@@ -137,7 +190,7 @@ impl crate::Operator for Operator {
             if src_idx == dst_idx {
                 let idx = src_idx;
                 let len = shape[idx];
-                if block_elements * shape[src_idx] <= block_size {
+                if block_elements * shape[src_idx] <= max_block_size {
                     //选择维度
                     block_dim_choose[idx] = true;
                     block_elements *= len;
@@ -147,7 +200,7 @@ impl crate::Operator for Operator {
                     dst_choose_idx -= 1;
                 } else {
                     //切分维度，并退出
-                    let num_per_block = block_size.div_euclid(block_elements);
+                    let num_per_block = max_block_size.div_euclid(block_elements);
                     assert!(num_per_block > 0);
                     assert!(len >= num_per_block);
                     if num_per_block > 1 {
@@ -164,7 +217,7 @@ impl crate::Operator for Operator {
             } else {
                 let src_div_dst = block_src_elements as f64 / block_dst_elements as f64;
                 let src_num_per_block =
-                    (block_size as f64 / block_elements as f64 / src_div_dst).sqrt();
+                    (max_block_size as f64 / block_elements as f64 / src_div_dst).sqrt();
                 let dst_num_per_block = src_num_per_block * src_div_dst;
 
                 let src_current_dim_len = shape[src_idx];
@@ -280,6 +333,16 @@ impl crate::Operator for Operator {
             }
         }
 
+        let constrain_num = split_dims.len();
+
+        let key = SchemeKey {
+            unit_size: unit,
+            constrain_num,
+        };
+
+        let mut schemes = self.schemes.lock().unwrap();
+        let scheme = schemes.try_get_or_insert(key, || Scheme::new(key, &self.handle))?;
+
         // cuda 参数准备
         let block_len_total = block_len.iter().map(|x| *x as u32).product::<u32>();
         let src_block_stride = ArrayStruct::<ARRAY_SIZE>::new(src_block_stride.into_iter(), 0)?;
@@ -289,40 +352,30 @@ impl crate::Operator for Operator {
         let block_len = ArrayStruct::<ARRAY_SIZE>::new(block_len.into_iter(), 1)?;
         let grid_len = ArrayStruct::<ARRAY_SIZE>::new(grid_len.into_iter(), 1)?;
 
-        let (constrain1, constrain2) = match split_dims.len() {
-            0 => (ArrayStruct([0; 4]), ArrayStruct([0; 4])),
-            1 => {
-                let constrains1 = ArrayStruct([
-                    split_dims[0].array_struct_idx_grid,
-                    split_dims[0].array_struct_idx_block,
-                    split_dims[0].num_per_block as ArrayType,
-                    shape[split_dims[0].choose_idx] as ArrayType,
-                ]);
-                let constrains2 = ArrayStruct([0; 4]);
-                (constrains1, constrains2)
-            }
-            2 => {
-                let constrains1 = ArrayStruct([
-                    split_dims[0].array_struct_idx_grid,
-                    split_dims[0].array_struct_idx_block,
-                    split_dims[0].num_per_block as ArrayType,
-                    shape[split_dims[0].choose_idx] as ArrayType,
-                ]);
-                let constrains2 = ArrayStruct([
-                    split_dims[1].array_struct_idx_grid,
-                    split_dims[1].array_struct_idx_block,
-                    split_dims[1].num_per_block as ArrayType,
-                    shape[split_dims[1].choose_idx] as ArrayType,
-                ]);
-                (constrains1, constrains2)
-            }
-            _ => {
-                unreachable!()
-            }
+        let constrains = match split_dims.len() {
+            0 => ArrayStruct([0; 8]),
+            1 => ArrayStruct([
+                split_dims[0].array_struct_idx_grid,
+                split_dims[0].array_struct_idx_block,
+                split_dims[0].num_per_block as ArrayType,
+                shape[split_dims[0].choose_idx] as ArrayType,
+                0,
+                0,
+                0,
+                0,
+            ]),
+            2 => ArrayStruct([
+                split_dims[0].array_struct_idx_grid,
+                split_dims[0].array_struct_idx_block,
+                split_dims[0].num_per_block as ArrayType,
+                shape[split_dims[0].choose_idx] as ArrayType,
+                split_dims[1].array_struct_idx_grid,
+                split_dims[1].array_struct_idx_block,
+                split_dims[1].num_per_block as ArrayType,
+                shape[split_dims[1].choose_idx] as ArrayType,
+            ]),
+            _ => unreachable!(),
         };
-        //----------------------------------------------------------------------
-
-        let name = CString::new(NAME).unwrap();
 
         let grid = shape
             .iter()
@@ -335,7 +388,7 @@ impl crate::Operator for Operator {
                 }
             })
             .product::<ArrayType>() as u32;
-        let block = block_size as u32;
+        let block = block_elements as u32;
 
         let unit = unit as i32;
 
@@ -344,73 +397,226 @@ impl crate::Operator for Operator {
             args.src_base,
             block_dim,
             block_len_total,
-            constrain1,
-            constrain2,
             block_len,        // 各维度的长度
             src_block_stride, // 源tensor在各维度上的步长(bytes)
             dst_block_stride, // 目标tensor在各维度上的步长(bytes)
             grid_len,         // 各维度的长度
             src_grid_stride,  // 源tensor在各维度上的步长(bytes)
-            dst_grid_stride,  // 源tensor在各维度上的步长(bytes)
-            unit              // bytes_per_thread
+            dst_grid_stride,  // 目标tensor在各维度上的步长(bytes)
+            unit,             // bytes_per_thread
+            constrains
         ];
 
-        self.module
-            .launch(&name, grid, block, params.as_ptr(), 0, queue_alloc.queue());
+        scheme.module.launch(
+            &scheme.name,
+            grid,
+            block,
+            params.as_ptr(),
+            0,
+            queue_alloc.queue(),
+        );
         Ok(())
     }
 }
 
-fn format_code() -> String {
-    format!(
-        r#"#define ARRAY_SIZE {ARRAY_SIZE}
-#define ARRAY_TYPE int
-{CODE}
+fn kernel_name(unit_size: usize, constrain_num: usize) -> String {
+    format!("rearrange_unit_{unit_size}_constrain_{constrain_num}")
+}
 
-extern "C" __global__ void {NAME}(
-    void       *__restrict__ dst,
+fn kernel_code(unit_size: usize, constrain_num: usize, array_size: usize) -> String {
+    let name = kernel_name(unit_size, constrain_num);
+    // 根据 unit_size 选择对应的类型
+    let tmem_type = match unit_size {
+        1 => "uchar1",
+        2 => "uchar2",
+        4 => "float1",
+        8 => "float2",
+        16 => "float4",
+        32 => "double4",
+        _ => unreachable!(),
+    };
+
+    // 生成约束参数
+    let constrain_param = match constrain_num {
+        0 => String::new(),
+        1 | 2 => format!(",const ArrayStruct<4, ARRAY_TYPE> constrains[{constrain_num}]"),
+        _ => unreachable!(),
+    };
+
+    // 生成共享内存声明
+    let shared_mem_decl = match constrain_num {
+        0 => String::new(),
+        1 | 2 => format!("__shared__ int shared_constrains_grid_idx_multiple[{constrain_num}];"),
+        _ => unreachable!(),
+    };
+
+    // 生成约束数组初始化代码
+    let constrain_init = match constrain_num {
+        0 => String::new(),
+        1 | 2 => format!("int constrains_grid_idx_multiple[{constrain_num}] = {{0}};"),
+        _ => unreachable!(),
+    };
+
+    // 生成约束检查代码
+    let constrain_check = match constrain_num {
+        0 => String::new(),
+        _ => format!(
+            r#"
+            for (int j = 0; j < {constrain_num}; j++) {{
+                if (i == constrains[j].a[0]) {{
+                    constrains_grid_idx_multiple[j] = idx * constrains[j].a[2];
+                }}
+            }}"#
+        ),
+    };
+
+    // 生成共享内存同步代码
+    let shared_mem_sync = match constrain_num {
+        0 => String::new(),
+        _ => format!(
+            r#"
+            for (int j = 0; j < {constrain_num}; j++) {{
+                shared_constrains_grid_idx_multiple[j] = constrains_grid_idx_multiple[j];
+            }}"#
+        ),
+    };
+
+    // 生成约束加载代码
+    let constrain_load = match constrain_num {
+        0 => String::new(),
+        _ => format!(
+            r#"
+    int constrains_grid_idx_multiple[{constrain_num}];
+    for (int j = 0; j < {constrain_num}; j++) {{
+        constrains_grid_idx_multiple[j] = shared_constrains_grid_idx_multiple[j];
+    }}"#
+        ),
+    };
+
+    // 生成约束边界检查代码
+    let constrain_boundary_check = match constrain_num {
+        0 => String::new(),
+        _ => format!(
+            r#"
+            for (int j = 0; j < {constrain_num}; j++) {{
+                if (constrains[j].a[3] != 0 && i == constrains[j].a[1]) {{
+                    if (constrains_grid_idx_multiple[j] + idx >= constrains[j].a[3]) {{
+                        return;
+                    }}
+                }}
+            }}"#
+        ),
+    };
+
+    // 生成第一维度约束检查代码
+    let first_dim_check = match constrain_num {
+        0 => String::new(),
+        _ => format!(
+            r#"
+    for (int j = 0; j < {constrain_num}; j++) {{
+        if (constrains[j].a[3] != 0 && 0 == constrains[j].a[1]) {{
+            if (constrains_grid_idx_multiple[j] + remaining >= constrains[j].a[3]) {{
+                return;
+            }}
+        }}
+    }}"#
+        ),
+    };
+
+    format!(
+        r#"
+extern "C" __global__ void {name}(
+    void *__restrict__ dst,
     void const *__restrict__ src,
-    unsigned int const block_dim,                                   // block维度数量
-    unsigned int const block_len_total,                            // block_len 各元素的乘积
-    const ArrayStruct<4, ARRAY_TYPE> constrains1,         // 切分维度的约束条件1
-    const ArrayStruct<4, ARRAY_TYPE> constrains2,         // 切分维度的约束条件2
-    const ArrayStruct<ARRAY_SIZE, ARRAY_TYPE> block_len,          // 各维度的长度
-    const ArrayStruct<ARRAY_SIZE, ARRAY_TYPE> src_block_stride,   // 源tensor在各维度上的步长(bytes)
-    const ArrayStruct<ARRAY_SIZE, ARRAY_TYPE> dst_block_stride,   // 目标tensor在各维度上的步长(bytes)
-    const ArrayStruct<ARRAY_SIZE, ARRAY_TYPE> grid_len,           // 各维度的长度
-    const ArrayStruct<ARRAY_SIZE, ARRAY_TYPE> src_grid_stride,    // 源tensor在各维度上的步长(bytes)
-    const ArrayStruct<ARRAY_SIZE, ARRAY_TYPE> dst_grid_stride,    // 目标tensor在各维度上的步长(bytes)
-    unsigned int const unit_size                                  // 每个元素的字节数
-){{
-    switch (unit_size) {{
-        case  1: 
-            rearrange_1<uchar1 ,ARRAY_SIZE, ARRAY_TYPE>(dst, src, block_dim, block_len_total, constrains1, constrains2, 
-                block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride); 
-            break;
-        case  2: 
-            rearrange_1<uchar2 ,ARRAY_SIZE, ARRAY_TYPE>(dst, src, block_dim, block_len_total, constrains1, constrains2, 
-                block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride); 
-            break;
-        case  4: 
-            rearrange_1<float1 ,ARRAY_SIZE, ARRAY_TYPE>(dst, src, block_dim, block_len_total, constrains1, constrains2, 
-                block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride); 
-            break;
-        case  8: 
-            rearrange_1<float2 ,ARRAY_SIZE, ARRAY_TYPE>(dst, src, block_dim, block_len_total, constrains1, constrains2, 
-                block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride); 
-            break;
-        case 16: 
-            rearrange_1<float4 ,ARRAY_SIZE, ARRAY_TYPE>(dst, src, block_dim, block_len_total, constrains1, constrains2, 
-                block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride); 
-            break;
-        case 32: 
-            rearrange_1<double4,ARRAY_SIZE, ARRAY_TYPE>(dst, src, block_dim, block_len_total, constrains1, constrains2, 
-                block_len, src_block_stride, dst_block_stride, grid_len, src_grid_stride, dst_grid_stride); 
-            break;
+    unsigned int const block_dim,
+    unsigned int const block_len_total,                    // block_len 各元素的乘积
+    const ArrayStruct<{array_size}, ARRAY_TYPE> block_len,       // 各维度的长度
+    const ArrayStruct<{array_size}, ARRAY_TYPE> src_block_stride,// 源tensor在各维度上的步长(bytes)
+    const ArrayStruct<{array_size}, ARRAY_TYPE> dst_block_stride,// 目标tensor在各维度上的步长(bytes)
+    const ArrayStruct<{array_size}, ARRAY_TYPE> grid_len,        // 各维度的长度
+    const ArrayStruct<{array_size}, ARRAY_TYPE> src_grid_stride, // 源tensor在各维度上的步长(bytes)
+    const ArrayStruct<{array_size}, ARRAY_TYPE> dst_grid_stride{constrain_param} // 目标tensor在各维度上的步长(bytes),切分维度的约束条件数组
+             // 
+) {{
+    int remaining = threadIdx.x;
+    if (remaining >= block_len_total) {{
+        return;
     }}
+
+    // 声明共享内存
+    __shared__ int shared_src_offset;
+    __shared__ int shared_dst_offset;
+    {shared_mem_decl}
+
+    if (threadIdx.x == 0) {{// 只让0号线程计算
+        // 计算当前block处理的数据在src和dst中的基础偏移(bytes)
+        int src_offset = 0;
+        int dst_offset = 0;
+        {constrain_init}
+        int remaining = blockIdx.x;
+
+        for (int i = {array_size} - 1; i >= 0; i--) {{
+            int idx = remaining % grid_len.a[i];
+            remaining /= grid_len.a[i];
+            src_offset += idx * src_grid_stride.a[i];
+            dst_offset += idx * dst_grid_stride.a[i];
+            {constrain_check}
+        }}
+        
+        // 将结果存入共享内存
+        shared_src_offset = src_offset;
+        shared_dst_offset = dst_offset;
+        {shared_mem_sync}
+    }}
+
+    // 确保所有线程都能看到共享内存中的值
+    __syncthreads();
+
+    // 所有线程直接使用计算好的偏移值
+    int src_offset = shared_src_offset;
+    int dst_offset = shared_dst_offset;
+    {constrain_load}
+
+    for (int i = {array_size} - 1; i > 0; i--) {{
+        if (block_len.a[i] > 1) {{
+            int idx = remaining % block_len.a[i];
+            remaining /= block_len.a[i];
+            // 计算偏移量
+            src_offset += idx * src_block_stride.a[i];
+            dst_offset += idx * dst_block_stride.a[i];
+            {constrain_boundary_check}
+        }}
+    }}
+
+    // 单独处理第一个维度
+    if (remaining >= block_len.a[0]) {{
+        return;
+    }}
+    src_offset += remaining * src_block_stride.a[0];
+    dst_offset += remaining * dst_block_stride.a[0];
+    {first_dim_check}
+
+    // 执行数据拷贝，注意offset已经是字节偏移
+    *reinterpret_cast<{tmem_type} *>(reinterpret_cast<char *>(dst) + dst_offset) =
+        *reinterpret_cast<const {tmem_type} *>(reinterpret_cast<const char *>(src) + src_offset);
 }}
 "#
     )
+}
+
+fn format_code(unit_size: usize, constrain_num: usize) -> String {
+    let mut code = String::new();
+
+    // 添加头部定义
+    code.push_str(&format!("#define ARRAY_SIZE {ARRAY_SIZE}\n"));
+    code.push_str("#define ARRAY_TYPE int\n");
+    code.push_str(CODE);
+    code.push_str("\n");
+
+    code.push_str(&kernel_code(unit_size, constrain_num, ARRAY_SIZE));
+    code.push_str("\n\n");
+
+    code
 }
 
 #[cfg(test)]
@@ -448,24 +654,50 @@ mod test {
 
     #[test]
     fn test_compile() {
-        use super::NAME;
+        use super::Scheme;
+        use super::SchemeKey;
         use std::ffi::CString;
-
         let Some(gpu) = Gpu::init() else {
             return;
         };
         println!("{}", gpu.0.device().info());
 
         let mut op = Operator::new(&gpu);
-        op.scheme(&dyn_args(ty::U8), 0).unwrap();
 
-        let module = op.module;
+        // 遍历所有可能的unit_size和constrain_num组合，编译所有kernel
+        for unit_size in (0..=5).map(|n| (1 << n)) {
+            for constrain_num in 0..=2 {
+                println!(
+                    "compile unit_size: {}, constrain_num: {}",
+                    unit_size, constrain_num
+                );
+                let key = SchemeKey {
+                    unit_size,
+                    constrain_num,
+                };
+                op.schemes
+                    .lock()
+                    .unwrap()
+                    .try_get_or_insert(key, || Scheme::new(key, &op.handle))
+                    .unwrap();
+            }
+        }
+
+        // 打印所有编译好的kernel信息
         gpu.apply(|ctx| {
-            println!(
-                "{NAME}\n{}",
-                module.load(CString::new(NAME).unwrap(), ctx).info()
-            );
-        })
+            let schemes = op.schemes.lock().unwrap();
+            for (key, scheme) in schemes.iter() {
+                println!("{:?}", scheme.name);
+                println!(
+                    "unit_size: {}, constrain_num: {}\n{}",
+                    key.unit_size,
+                    key.constrain_num,
+                    // scheme.name.to_str().unwrap(),
+                    scheme.module.load(&scheme.name, ctx).info()
+                );
+                println!("----------------------------------------");
+            }
+        });
     }
 
     #[test]
@@ -476,9 +708,7 @@ mod test {
         use cuda::memcpy_d2h;
         use ndarray_layout::{ArrayLayout, Endian::BigEndian};
         use rand::Rng;
-        // use crate::rearrange::cuda::format_code;
-        // let code = format_code();
-        // std::fs::write("rearrange.cu", code).unwrap();
+
         let Some(gpu) = Gpu::init() else {
             return;
         };
@@ -492,7 +722,7 @@ mod test {
 
         const N: usize = 3;
         const TRANS_N: usize = 3;
-        let shape: [usize; N] = [16, 3343, 16];
+        let shape: [usize; N] = [31, 2, 16];
         let mut r_shape: [usize; N] = shape.clone();
         r_shape[0..TRANS_N].reverse();
 
