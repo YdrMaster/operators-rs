@@ -16,6 +16,7 @@ mod test {
             seq.into(),
             att.into(),
             dyn_(),
+            dyn_(),
         )
     }
 

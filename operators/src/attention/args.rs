@@ -30,9 +30,11 @@ pub(super) struct Meta {
     pub seq: MaybeDyn<usize>,
     pub att: MaybeDyn<usize>,
     pub dh: MaybeDyn<usize>,
+    pub dv: MaybeDyn<usize>,
 }
 
 impl<H: Hardware> Args<H> {
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn new_null(
         mask: AttnMask,
         dt: DigitLayout,
@@ -41,17 +43,20 @@ impl<H: Hardware> Args<H> {
         seq: MaybeDyn<usize>,
         att: MaybeDyn<usize>,
         dh: MaybeDyn<usize>,
+        dv: MaybeDyn<usize>,
     ) -> Self {
-        let qo_layout = TensorLayout::new_dyn(dt, &[nh, seq, dh], &[dyn_(); 3]);
-        let kv_layout = TensorLayout::new_dyn(dt, &[nkvh, att, dh], &[dyn_(); 3]);
+        let q_layout = TensorLayout::new_dyn(dt, &[nh, seq, dh], &[dyn_(); 3]);
+        let k_layout = TensorLayout::new_dyn(dt, &[nkvh, seq, dh], &[dyn_(); 3]);
+        let v_layout = TensorLayout::new_dyn(dt, &[nkvh, att, dv], &[dyn_(); 3]);
+        let o_layout = TensorLayout::new_dyn(dt, &[nkvh, att, dh], &[dyn_(); 3]);
         Self {
-            q_layout: qo_layout.clone(),
+            q_layout: q_layout.clone(),
             q_base: null_mut(),
-            k_layout: kv_layout.clone(),
+            k_layout: k_layout.clone(),
             k_base: null(),
-            v_layout: kv_layout,
+            v_layout,
             v_base: null(),
-            o_layout: qo_layout,
+            o_layout,
             o_base: null_mut(),
             mask,
         }
@@ -85,7 +90,8 @@ impl<H: Hardware> Args<H> {
             nkvh: dim_distinct(&[nkvh_k, nkvh_v])?,
             seq: dim_distinct(&[seq_q, seq_o])?,
             att: dim_distinct(&[att_k, att_v])?,
-            dh: dim_distinct(&[dh_q, dh_k, dh_v, dh_o])?,
+            dh: dim_distinct(&[dh_q, dh_k])?,
+            dv: dim_distinct(&[dh_v, dh_o])?,
         })
     }
 }

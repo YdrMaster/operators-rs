@@ -1,4 +1,4 @@
-﻿use super::{args::Meta, Args, Attention};
+use super::{args::Meta, Args, Attention};
 use crate::{
     dyn_, fuesd_softmax, get_static, mat_mul, rearrange, ByteOf, Hardware, LaunchError, QueueAlloc,
     SchemeError, TensorLayout, Workspace, WorkspaceCollector,
@@ -53,6 +53,7 @@ where
             seq,
             att,
             dh,
+            dv,
             ..
         } = args.meta()?;
         let Args {
@@ -64,11 +65,12 @@ where
         } = args;
 
         // 如果不能保证 nh seq att dh 已知，用任意值初始化算子
-        let (Some(&nh), Some(&seq), Some(&att), Some(&dh)) = (
+        let (Some(&nh), Some(&seq), Some(&att), Some(&dh), Some(&_dv)) = (
             nh.get_static(),
             seq.get_static(),
             att.get_static(),
             dh.get_static(),
+            dv.get_static(),
         ) else {
             let mut wc = WorkspaceCollector::new();
 
@@ -149,6 +151,7 @@ where
             seq,
             att,
             dh,
+            dv,
         } = args.meta()?;
         let Args {
             mask,
@@ -172,8 +175,8 @@ where
         let ele = dt.nbytes();
         get_static! {
             nh      seq    dh
-            nh_sq   seq_sq dh_sq
-            nkvh    att
+            dv      seq_sq dh_sq
+            nkvh    att    nh_sq
             nkvh_sk att_sk dh_sk
         };
 
@@ -191,7 +194,7 @@ where
         let (att_buf, workspace) = workspace.split_at_mut(att_size);
 
         let head_group = nh / nkvh;
-        let (q_layout, qx_layout, q_base) = match qx {
+        let (_q_layout, qx_layout, q_base) = match qx {
             None => {
                 let q_layout = TensorLayout::new_contiguous(dt, &[nh, seq, dh]);
                 let qx_layout = TensorLayout::new_contiguous(dt, &[nkvh, head_group * seq, dh]);
@@ -219,6 +222,7 @@ where
         let k_layout = TensorLayout::new(dt, k_layout.shape(), k_layout.strides());
         let att_mat_mul = TensorLayout::new_contiguous(dt, &[nkvh, head_group * seq, att]);
         let att_softmax = TensorLayout::new_contiguous(dt, &[nh, seq, att]);
+        let att_result = TensorLayout::new_contiguous(dt, &[nkvh, head_group * seq, dv]);
 
         // att = q . k^T
         self.mat_mul.launch(
@@ -248,7 +252,7 @@ where
         // q = att . v
         self.mat_mul.launch(
             &mat_mul::Args {
-                c_layout: qx_layout.clone(),
+                c_layout: att_result.clone(),
                 c_base: q_base,
                 beta: 0.,
                 a_layout: att_mat_mul,
@@ -266,7 +270,7 @@ where
                 &rearrange::Args {
                     dst_layout: o_layout.clone(),
                     dst_base: *o_base,
-                    src_layout: q_layout.clone(),
+                    src_layout: o_layout.clone(),
                     src_base: q_base,
                 },
                 workspace,
