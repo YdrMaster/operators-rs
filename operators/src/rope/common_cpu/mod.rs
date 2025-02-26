@@ -323,7 +323,7 @@ trait Position<Calculation> {
         k: isize,
         dh: isize,
         t: f32,
-        f: Calculation,
+        f: f32,
         s: f32,
     ) -> (Calculation, Calculation);
     #[allow(clippy::too_many_arguments)]
@@ -349,9 +349,9 @@ macro_rules! impl_position {
                     .sin_cos()
             }
             #[inline]
-            fn freq_sin_cos_long(self, k: isize, dh: isize, t: f32, f: $a, s: f32) -> ($a, $a) {
+            fn freq_sin_cos_long(self, k: isize, dh: isize, t: f32, f: f32, s: f32) -> ($a, $a) {
                 let (sin, cos) =
-                    (self.val() as $a * (t as $a).powf(k as $a / dh as $a).recip() * f).sin_cos();
+                    (self.val() as $a * (t as $a).powf(k as $a / dh as $a).recip() * (f as $a).recip() ).sin_cos();
                 (sin * s as $a, cos * s as $a)
             }
             #[inline]
