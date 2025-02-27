@@ -1,7 +1,7 @@
 use super::{args::Scheme, Args, Rearrange};
 use crate::{
     cuda::{Gpu, Handle, ModuleBox},
-    rank_not_support, shape_not_support, ByteOf, LaunchError, QueueAlloc, SchemeError,
+    rank_not_support, shape_not_support, ByteOf, LaunchError, QueueAlloc,
 };
 use std::{
     ffi::CString,
@@ -40,15 +40,6 @@ impl crate::Operator for Operator {
             warp_size,
             module: node.0.compile_kernel(NAME, cc, format_code),
         }
-    }
-
-    fn scheme(
-        &mut self,
-        _args: &Self::Args,
-        _max_workspace_size: usize,
-    ) -> Result<usize, SchemeError> {
-        // 完全动态，不需要做任何准备工作
-        Ok(0)
     }
 
     fn launch<QA>(
@@ -200,17 +191,6 @@ mod test {
     use crate::{ConstPtr, Hardware, MutPtr, Operator as _, TensorLayout};
     use digit_layout::{types as ty, DigitLayout};
 
-    fn dyn_args<H: Hardware>(dt: DigitLayout) -> Args<H> {
-        use crate::dyn_;
-        use std::ptr::{null, null_mut};
-        Args {
-            dst_layout: TensorLayout::new_dyn(dt, &[dyn_(); 2], &[dyn_(); 2]),
-            dst_base: null_mut(),
-            src_layout: TensorLayout::new_dyn(dt, &[dyn_(); 2], &[dyn_(); 2]),
-            src_base: null(),
-        }
-    }
-
     fn args<H: Hardware>(
         dt: DigitLayout,
         shape: &[usize],
@@ -228,28 +208,6 @@ mod test {
     }
 
     #[test]
-    fn test_compile() {
-        use super::NAME;
-        use std::ffi::CString;
-
-        let Some(gpu) = Gpu::init() else {
-            return;
-        };
-        println!("{}", gpu.0.device().info());
-
-        let mut op = Operator::new(&gpu);
-        op.scheme(&dyn_args(ty::F16), 0).unwrap();
-
-        let module = op.module;
-        gpu.apply(|ctx| {
-            println!(
-                "{NAME}\n{}",
-                module.load(CString::new(NAME).unwrap(), ctx).info()
-            );
-        })
-    }
-
-    #[test]
     fn test_compute() {
         use super::super::common_cpu::Operator as RefOp;
         use crate::common_cpu::{Cpu, ThisThread};
@@ -263,10 +221,8 @@ mod test {
 
         let dt = ty::U32;
 
-        let mut cpu_op = RefOp::new(&Cpu);
-        let mut gpu_op = Operator::new(&gpu);
-        cpu_op.scheme(&dyn_args(dt), 0).unwrap();
-        gpu_op.scheme(&dyn_args(dt), 0).unwrap();
+        let cpu_op = RefOp::new(&Cpu);
+        let gpu_op = Operator::new(&gpu);
 
         let nh = 32;
         let seq = 7;

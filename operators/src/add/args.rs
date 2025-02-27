@@ -1,6 +1,6 @@
 use crate::{
-    get_static, rank_mismatch, shape_mismatch, shape_not_support, utils::type_distinct, ConstPtr,
-    Hardware, MutPtr, SchemeError, TensorLayout,
+    rank_mismatch, shape_mismatch, shape_not_support, utils::type_distinct, ConstPtr, Hardware,
+    LaunchError, MutPtr, TensorLayout,
 };
 use digit_layout::DigitLayout;
 use itertools::izip;
@@ -40,7 +40,7 @@ impl<H: Hardware> Args<H> {
 pub(super) struct Scheme(DigitLayout, Box<[isize]>);
 
 impl Scheme {
-    pub fn new<H: Hardware>(args: &Args<H>) -> Result<Self, SchemeError> {
+    pub fn new<H: Hardware>(args: &Args<H>) -> Result<Self, LaunchError> {
         let Args {
             c_layout: c,
             a_layout: a,
@@ -48,7 +48,7 @@ impl Scheme {
             ..
         } = args;
         // # 检查基本属性
-        let dt = type_distinct(&[c.dt(), a.dt(), b.dt()])?;
+        let dt = type_distinct(&[c.dt, a.dt, b.dt])?;
         let ndim = c.ndim();
         if a.ndim() != ndim || b.ndim() != ndim {
             return Err(rank_mismatch(format!(
@@ -68,17 +68,13 @@ impl Scheme {
         }
         let mut dims = Vec::with_capacity(ndim);
         for (&d, &da, &db, &sc, &sa, &sb) in izip!(
-            c.shape(),
-            a.shape(),
-            b.shape(),
+            c.shape_group(),
+            a.shape_group(),
+            b.shape_group(),
             c.strides(),
             a.strides(),
-            b.strides()
+            b.strides(),
         ) {
-            get_static! {
-                d  da db
-                sc sa sb
-            }
             if da != d || db != d {
                 return Err(shape_mismatch(format!(
                     "c: {:?}, a: {:?}, b: {:?}",

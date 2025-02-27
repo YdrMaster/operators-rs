@@ -6,26 +6,7 @@ mod test {
     use crate::{cuda::Gpu, ByteOf, Hardware, Operator as _, TensorLayout};
     use digit_layout::{types as ty, DigitLayout};
 
-    fn dyn_args<H: Hardware>(
-        dt: DigitLayout,
-        nh: usize,
-        seq: usize,
-        dh: usize,
-        pos: usize,
-    ) -> Args<H> {
-        use crate::dyn_;
-        Args::new_null(
-            TensorLayout::new_dyn(dt, &[nh.into(), seq.into(), dh.into()], &[dyn_(); 3]),
-            TensorLayout::new_dyn(dt, &[dyn_(), seq.into(), dh.into()], &[dyn_(); 3]),
-            TensorLayout::new_dyn(dt, &[dyn_(), seq.into(), dh.into()], &[dyn_(); 3]),
-            TensorLayout::new_dyn(dt, &[nh.into(), seq.into(), dh.into()], &[dyn_(); 3]),
-            TensorLayout::new_dyn(dt, &[nh.into(), seq.into(), dh.into()], &[dyn_(); 3]),
-            TensorLayout::new_dyn(dt, &[nh.into(), seq.into(), dh.into()], &[dyn_(); 3]),
-            crate::fuesd_softmax::AttnMask::Causal,
-            pos.into(),
-        )
-    }
-
+    #[allow(clippy::too_many_arguments)]
     fn args<H: Hardware>(
         dt: DigitLayout,
         nh: usize,
@@ -54,20 +35,8 @@ mod test {
             k_cache_base,
             v_cache_base,
             mask: crate::fuesd_softmax::AttnMask::Causal,
-            pos: pos.into(),
+            pos,
         }
-    }
-
-    #[test]
-    fn test_compile() {
-        let Some(gpu) = Gpu::init() else {
-            return;
-        };
-        println!("{}", gpu.0.device().info());
-
-        let mut op = Operator::new(&gpu);
-        let workspace = op.scheme(&dyn_args(ty::F16, 32, 7, 64, 13), usize::MAX);
-        println!("workspace: {workspace:?}");
     }
 
     #[test]

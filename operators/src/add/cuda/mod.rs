@@ -2,8 +2,8 @@ use super::{args::Scheme, Add, Args};
 use crate::{
     cuda::{dt_name, Gpu, Handle, ModuleBox},
     shape_not_support, strides_not_support,
-    utils::{gcd, type_distinct},
-    ByteOf, LaunchError, QueueAlloc, SchemeDiversity, SchemeError,
+    utils::gcd,
+    ByteOf, LaunchError, QueueAlloc, SchemeDiversity,
 };
 use digit_layout::DigitLayout;
 use lru::LruCache;
@@ -32,20 +32,6 @@ impl crate::Operator for Operator {
         }
     }
 
-    #[inline]
-    fn scheme(
-        &mut self,
-        args: &Self::Args,
-        _max_workspace_size: usize,
-    ) -> Result<usize, SchemeError> {
-        let dt = type_distinct(&[args.c_layout.dt(), args.a_layout.dt(), args.b_layout.dt()])?;
-        self.schemes
-            .lock()
-            .unwrap()
-            .get_or_insert(dt, || compile(&self.handle, dt));
-        Ok(0)
-    }
-
     fn launch<QA>(
         &self,
         args: &Self::Args,
@@ -60,20 +46,20 @@ impl crate::Operator for Operator {
         let count = scheme.count();
 
         let &[1] = scheme.idx_strides() else {
-            return Err(shape_not_support("").into());
+            return Err(shape_not_support(""));
         };
         let &[sc] = scheme.c_strides() else {
-            return Err(shape_not_support("").into());
+            return Err(shape_not_support(""));
         };
         let &[sa] = scheme.a_strides() else {
-            return Err(shape_not_support("").into());
+            return Err(shape_not_support(""));
         };
         let &[sb] = scheme.b_strides() else {
-            return Err(shape_not_support("").into());
+            return Err(shape_not_support(""));
         };
         let unit = dt.nbytes() as isize;
         if sc != unit || sa != unit || sb != unit {
-            return Err(strides_not_support("").into());
+            return Err(strides_not_support(""));
         }
 
         let block_dims = gcd(count, self.max_threads_block);
@@ -124,25 +110,12 @@ extern "C" __global__ void add(
 #[cfg(test)]
 mod test {
     use super::{Args, Gpu, Operator};
-    use crate::{dyn_, Hardware, Operator as _, TensorLayout};
+    use crate::{Hardware, Operator as _, TensorLayout};
     use digit_layout::{
         types::{F16, F64},
         DigitLayout,
     };
-    use std::ptr::null;
 
-    fn dyn_args<H: Hardware>(dt: DigitLayout) -> Args<H> {
-        use std::ptr::null_mut;
-        let layout = TensorLayout::new_dyn(dt, &[dyn_(); 2], &[dyn_(); 2]);
-        Args {
-            c_layout: layout.clone(),
-            c_base: null_mut(),
-            a_layout: layout.clone(),
-            a_base: null(),
-            b_layout: layout.clone(),
-            b_base: null(),
-        }
-    }
     fn args<H: Hardware>(
         dt: DigitLayout,
         n: usize,
@@ -178,10 +151,8 @@ mod test {
             return;
         };
 
-        let mut cpu_op = RefOp::new(&Cpu);
-        let mut gpu_op = Operator::new(&gpu);
-        cpu_op.scheme(&dyn_args(F64), 0).unwrap();
-        gpu_op.scheme(&dyn_args(F16), 0).unwrap();
+        let cpu_op = RefOp::new(&Cpu);
+        let gpu_op = Operator::new(&gpu);
 
         let n = 1;
         let d = 768;

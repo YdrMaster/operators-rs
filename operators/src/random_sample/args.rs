@@ -1,7 +1,6 @@
-﻿use super::KVPair;
+use super::KVPair;
 use crate::{
-    type_not_support, utils::rank_error, ConstPtr, Hardware, MaybeDyn, MutPtr, SchemeError,
-    TensorLayout,
+    type_not_support, utils::rank_error, ConstPtr, Hardware, LaunchError, MutPtr, TensorLayout,
 };
 use digit_layout::{types as ty, DigitLayout};
 use std::ptr::{null, null_mut};
@@ -86,11 +85,11 @@ impl SampleArgs {
 #[derive(PartialEq, Eq, Debug)]
 pub(super) struct Meta {
     pub dt: DigitLayout,
-    pub n: MaybeDyn<usize>,
+    pub n: usize,
 }
 
 impl<H: Hardware> Args<H> {
-    pub(super) fn meta(&self) -> Result<Meta, SchemeError> {
+    pub(super) fn meta(&self) -> Result<Meta, LaunchError> {
         let Self {
             kv_pair,
             logits,
@@ -98,21 +97,21 @@ impl<H: Hardware> Args<H> {
             ..
         } = self;
 
-        if kv_pair.dt() != KVPair::<()>::LAYOUT {
+        if kv_pair.dt != KVPair::<()>::LAYOUT {
             return Err(type_not_support("output must be KVpair"));
         }
 
-        let dt_p = logits.dt();
+        let dt_p = logits.dt;
         if dt_p.nbytes() > size_of::<u32>() {
             return Err(type_not_support("element too large"));
         }
-        if indices.dt() != ty::U32 {
+        if indices.dt != ty::U32 {
             return Err(type_not_support("indices must be u32"));
         }
-        let &[n] = self.logits.shape() else {
+        let &[n] = &*self.logits.shape() else {
             return Err(rank_error("logits", 1, self.logits.ndim()));
         };
-        let &[_] = self.indices.shape() else {
+        let &[_] = &*self.indices.shape() else {
             return Err(rank_error("indices", 1, self.indices.ndim()));
         };
 

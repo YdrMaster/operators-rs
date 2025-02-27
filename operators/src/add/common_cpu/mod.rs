@@ -1,5 +1,5 @@
 ﻿use super::{args::Scheme, Add, Args};
-use crate::{common_cpu::Cpu, ByteOf, LaunchError, QueueAlloc, SchemeError};
+use crate::{common_cpu::Cpu, ByteOf, LaunchError, QueueAlloc};
 use digit_layout::types as ty;
 use half::f16;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
@@ -16,14 +16,6 @@ impl crate::Operator for Operator {
     #[inline]
     fn new(_node: &Self::TopoNode) -> Self {
         Self
-    }
-    #[inline]
-    fn scheme(
-        &mut self,
-        _args: &Self::Args,
-        _max_workspace_size: usize,
-    ) -> Result<usize, SchemeError> {
-        Ok(0)
     }
 
     fn launch<QA>(

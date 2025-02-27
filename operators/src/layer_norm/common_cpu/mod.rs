@@ -1,5 +1,5 @@
-﻿use super::{args::Meta, Args, LayerNorm};
-use crate::{common_cpu::Cpu, get_static, ByteOf, LaunchError, QueueAlloc, SchemeError};
+use super::{args::Meta, Args, LayerNorm};
+use crate::{common_cpu::Cpu, ByteOf, LaunchError, QueueAlloc};
 use half::f16;
 use num_traits::{real::Real, NumCast, ToPrimitive};
 use std::ops::AddAssign;
@@ -15,15 +15,6 @@ impl crate::Operator for Operator {
 
     fn new(_node: &Self::TopoNode) -> Self {
         Self
-    }
-
-    fn scheme(
-        &mut self,
-        args: &Self::Args,
-        _max_workspace_size: usize,
-    ) -> Result<usize, SchemeError> {
-        let _meta = args.meta()?;
-        Ok(0)
     }
 
     fn launch<QA>(
@@ -59,14 +50,6 @@ impl crate::Operator for Operator {
         let &[dsb] = bias_layout.strides() else {
             unreachable!()
         };
-
-        get_static! {
-            n   d
-            nsy dsy
-            nsx dsx
-                dss
-                dsb
-        }
 
         macro_rules! calculate {
             ($eps:expr; $w:ty, $a:ty) => {

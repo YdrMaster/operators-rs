@@ -1,9 +1,8 @@
 use super::{args::Meta, common_cpu::Operator as RefOp, Args, Indices, RandomSample};
 use crate::{
     common_cpu::{Cpu, ThisThread},
-    get_static,
     infini::Device,
-    ByteOf, LaunchError, QueueAlloc, SchemeError,
+    ByteOf, LaunchError, QueueAlloc,
 };
 use std::{ptr::null, slice::from_raw_parts};
 
@@ -30,14 +29,6 @@ impl crate::Operator for Operator {
         Self(node.clone())
     }
 
-    fn scheme(
-        &mut self,
-        _args: &Self::Args,
-        _max_workspace_size: usize,
-    ) -> Result<usize, SchemeError> {
-        Ok(0)
-    }
-
     fn launch<QA>(
         &self,
         args: &Self::Args,
@@ -58,9 +49,7 @@ impl crate::Operator for Operator {
             seed,
         } = args;
         let Meta { dt, n } = args.meta()?;
-        get_static! {
-            n
-        }
+
         let unit = dt.nbytes();
         let mut host = vec![0u8; n * unit];
 
@@ -92,7 +81,6 @@ fn test_compute() {
     use super::{common_cpu::Operator as RefOp, KVPair};
     use crate::{
         common_cpu::{Cpu, ThisThread},
-        infini::cast_load,
         Operator as _,
     };
     use digit_layout::types as ty;
@@ -102,12 +90,8 @@ fn test_compute() {
     let dev = Device::cpu();
 
     let cpu_op = RefOp::new(&Cpu);
-    let mut dev_op = Operator::new(&dev);
+    let dev_op = Operator::new(&dev);
     let n = 32000;
-
-    dev_op
-        .scheme(&Args::layout(ty::F32, n), usize::MAX)
-        .unwrap();
 
     let mut logits = vec![0.0f32; n];
     rand::rng().fill(&mut logits[..]);
@@ -116,7 +100,7 @@ fn test_compute() {
     {
         let kv_ans = {
             let stream = dev.stream();
-            let logits = cast_load(&logits, |x| x as f32, &stream);
+            let logits = stream.from_host(&logits);
             let mut kv: KVPair<f32> = KVPair::new(u32::MAX, 0.0f32);
 
             dev_op

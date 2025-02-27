@@ -1,6 +1,6 @@
-﻿use crate::{
+use crate::{
     utils::{dim_distinct, rank_error, type_distinct},
-    ConstPtr, Hardware, MaybeDyn, MutPtr, SchemeError, TensorLayout,
+    ConstPtr, Hardware, LaunchError, MutPtr, TensorLayout,
 };
 use digit_layout::DigitLayout;
 
@@ -13,8 +13,8 @@ pub struct Args<H: Hardware> {
 
 pub(super) struct Meta {
     pub dt: DigitLayout,
-    pub n: MaybeDyn<usize>,
-    pub d: MaybeDyn<usize>,
+    pub n: usize,
+    pub d: usize,
 }
 
 impl<H: Hardware> Args<H> {
@@ -28,24 +28,24 @@ impl<H: Hardware> Args<H> {
         }
     }
 
-    pub(super) fn meta(&self) -> Result<Meta, SchemeError> {
+    pub(super) fn meta(&self) -> Result<Meta, LaunchError> {
         let Self {
             gate_layout,
             up_layout,
             ..
         } = self;
 
-        let &[gn, gd] = gate_layout.shape() else {
+        let &[gn, gd] = &*gate_layout.shape() else {
             return Err(rank_error("gate", 2, gate_layout.ndim()));
         };
-        let &[un, ud] = up_layout.shape() else {
+        let &[un, ud] = &*up_layout.shape() else {
             return Err(rank_error("up", 2, up_layout.ndim()));
         };
 
         Ok(Meta {
-            dt: type_distinct(&[gate_layout.dt(), up_layout.dt()])?,
-            n: dim_distinct(&[gn, un])?,
-            d: dim_distinct(&[gd, ud])?,
+            dt: type_distinct(&[gate_layout.dt, up_layout.dt])?,
+            n: dim_distinct(&[gn, un]).expect("n mismatch"),
+            d: dim_distinct(&[gd, ud]).expect("d mismatch"),
         })
     }
 }

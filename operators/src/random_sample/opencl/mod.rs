@@ -2,11 +2,10 @@
 
 use super::{args::Meta, Args, Indices, KVPair, RandomSample};
 use crate::{
-    get_static,
     opencl::{ClDevice, CodeGen, KernelCache, CL2_0},
     strides_not_support, ByteOf, LaunchError, QueueAlloc,
     SchemeDiversity::Low as LowDiversity,
-    SchemeError, Workspace,
+    Workspace,
 };
 use clrt::{bindings::cl_uint, Context};
 use digit_layout::{types as Ty, DigitLayout};
@@ -52,27 +51,6 @@ impl crate::Operator for Operator {
         }
     }
 
-    fn scheme(
-        &mut self,
-        args: &Self::Args,
-        _max_workspace_size: usize,
-    ) -> Result<usize, SchemeError> {
-        let Meta { dt, n } = args.meta()?;
-
-        let Some(&n) = n.get_static() else {
-            return Ok(0);
-        };
-
-        let key = self.cache_kernel(dt, n);
-        let n_pairs = n / key.group_size / 2;
-
-        Ok(match n_pairs {
-            0 => unreachable!(),
-            1 => 0,
-            n => n * KVPair::<()>::LAYOUT.nbytes(),
-        })
-    }
-
     fn launch<QA>(
         &self,
         args: &Self::Args,
@@ -86,11 +64,10 @@ impl crate::Operator for Operator {
         let &[s] = args.logits.strides() else {
             unreachable!()
         };
-        if s.get_static().copied() != Some(dt.nbytes() as isize) {
-            return Err(strides_not_support("").into());
+        if s != dt.nbytes() as isize {
+            return Err(strides_not_support(""));
         }
 
-        get_static!(n);
         let Args {
             kv_pair_base,
             logits_base,
@@ -251,7 +228,7 @@ fn test_compute() {
                     &queue,
                 )
                 .unwrap();
-            let map = queue.map(&mut kv_pair_svm);
+            let map = queue.map(&kv_pair_svm);
             let kv_ans = unsafe { *map.as_ptr().cast::<KVPair<()>>() };
             queue.unmap(map);
             queue.finish();

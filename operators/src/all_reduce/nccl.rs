@@ -1,7 +1,7 @@
-﻿use super::{args::Meta, AllReduce, Args, ReduceOp};
+use super::{args::Meta, AllReduce, Args, ReduceOp};
 use crate::{
     cuda::{Gpu, NcclNode},
-    rearrange, ByteOf, LaunchError, QueueAlloc, SchemeError,
+    rearrange, ByteOf, LaunchError, LaunchError, QueueAlloc,
 };
 use std::{
     slice::{from_raw_parts, from_raw_parts_mut},
@@ -29,7 +29,7 @@ impl crate::Operator for Operator {
         &mut self,
         _args: &Self::Args,
         _max_workspace_size: usize,
-    ) -> Result<usize, SchemeError> {
+    ) -> Result<usize, LaunchError> {
         Ok(0)
     }
 

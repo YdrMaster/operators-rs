@@ -1,7 +1,7 @@
-﻿use super::{args::Meta, Args, Attention};
+use super::{args::Meta, Args, Attention};
 use crate::{
-    dyn_, fuesd_softmax, get_static, mat_mul, rearrange, ByteOf, Hardware, LaunchError, QueueAlloc,
-    SchemeError, TensorLayout, Workspace, WorkspaceCollector,
+    fuesd_softmax, mat_mul, rearrange, ByteOf, Hardware, LaunchError, QueueAlloc, TensorLayout,
+    Workspace,
 };
 use ndarray_layout::ArrayLayout;
 use std::marker::PhantomData;
@@ -42,97 +42,6 @@ where
         }
     }
 
-    fn scheme(
-        &mut self,
-        args: &Self::Args,
-        max_workspace_size: usize,
-    ) -> Result<usize, SchemeError> {
-        let Meta {
-            dt,
-            nh,
-            seq,
-            att,
-            dh,
-            ..
-        } = args.meta()?;
-        let Args {
-            q_layout,
-            k_layout,
-            v_layout,
-            o_layout,
-            ..
-        } = args;
-
-        // 如果不能保证 nh seq att dh 已知，用任意值初始化算子
-        let (Some(&nh), Some(&seq), Some(&att), Some(&dh)) = (
-            nh.get_static(),
-            seq.get_static(),
-            att.get_static(),
-            dh.get_static(),
-        ) else {
-            let mut wc = WorkspaceCollector::new();
-
-            let layout = TensorLayout::new_dyn(dt, &[dyn_(); 3], &[dyn_(); 3]);
-            wc.push_sub(self.mat_mul.scheme(
-                &mat_mul::Args::new_null(layout.clone(), 1., layout.clone(), layout, 1.),
-                max_workspace_size,
-            )?);
-
-            let layout = TensorLayout::new_dyn(dt, &[nh, seq, att], &[dyn_(); 3]);
-            wc.push_sub(self.softmax.scheme(
-                &fuesd_softmax::Args::new_null(args.mask, layout),
-                max_workspace_size,
-            )?);
-
-            let layout = TensorLayout::new_dyn(dt, &[dyn_(); 3], &[dyn_(); 3]);
-            wc.push_sub(self.rearrange.scheme(
-                &rearrange::Args::new_null(layout.clone(), layout),
-                max_workspace_size,
-            )?);
-
-            return Ok(wc.cauculate(max_workspace_size));
-        };
-
-        let ele = dt.nbytes();
-        let att_layout = TensorLayout::new_contiguous(dt, &[nh, seq, att]);
-        let q_size = nh * seq * dh * ele;
-        let att_size = nh * seq * att * ele;
-        let workspace_size = max_workspace_size.saturating_sub(q_size + att_size);
-
-        let mut wc = WorkspaceCollector::new();
-        wc.push_base(q_size);
-        wc.push_base(att_size);
-
-        // att = q . k^T
-        wc.push_sub(self.mat_mul.scheme(
-            &mat_mul::Args::new_null(
-                att_layout.clone(),
-                0.,
-                q_layout.clone(),
-                k_layout.clone(),
-                1.,
-            ),
-            workspace_size,
-        )?);
-        // att = softmax(att)
-        wc.push_sub(self.softmax.scheme(
-            &fuesd_softmax::Args::new_null(args.mask, att_layout.clone()),
-            workspace_size,
-        )?);
-        // q = att . v
-        wc.push_sub(self.mat_mul.scheme(
-            &mat_mul::Args::new_null(q_layout.clone(), 0., att_layout, v_layout.clone(), 1.),
-            workspace_size,
-        )?);
-        // o = rearrange(q)
-        wc.push_sub(self.rearrange.scheme(
-            &rearrange::Args::new_null(o_layout.clone(), q_layout.clone()),
-            workspace_size,
-        )?);
-
-        Ok(wc.cauculate(max_workspace_size))
-    }
-
     fn launch<QA>(
         &self,
         args: &Self::Args,
@@ -170,12 +79,6 @@ where
         };
 
         let ele = dt.nbytes();
-        get_static! {
-            nh      seq    dh
-            nh_sq   seq_sq dh_sq
-            nkvh    att
-            nkvh_sk att_sk dh_sk
-        };
 
         #[inline(always)]
         fn layout(shape: [usize; 3], strides: [isize; 3]) -> ArrayLayout<3> {

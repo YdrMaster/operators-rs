@@ -1,10 +1,8 @@
 use super::{Args, LayerNorm};
 use crate::{
     cuda::{dt_name, Gpu, Handle, ModuleBox},
-    get_static,
     layer_norm::args::Meta,
     shape_not_support, strides_not_support, ByteOf, LaunchError, QueueAlloc, SchemeDiversity,
-    SchemeError,
 };
 use digit_layout::DigitLayout;
 use lru::LruCache;
@@ -30,22 +28,6 @@ impl crate::Operator for Operator {
             handle: node.0.clone(),
             schemes: node.0.scheme_cache(SchemeDiversity::Low),
         }
-    }
-
-    fn scheme(
-        &mut self,
-        args: &Self::Args,
-        _max_workspace_size: usize,
-    ) -> Result<usize, SchemeError> {
-        let Meta { dt_a, dt_w, d, .. } = args.meta()?;
-        get_static!(d);
-
-        let key = SchemeKey { dt_a, dt_w, d };
-        self.schemes
-            .lock()
-            .unwrap()
-            .try_get_or_insert(key, || Scheme::new(&self.handle, key))?;
-        Ok(0)
     }
 
     fn launch<QA>(
@@ -82,21 +64,13 @@ impl crate::Operator for Operator {
             unreachable!()
         };
 
-        get_static! {
-            n   d
-            nsy dsy
-            nsx dsx
-                dss
-                dsb
-        }
-
         let unit = dt_a.nbytes() as isize;
         if dsy != unit
             || dsx != unit
             || dss != dt_w.nbytes() as isize
             || dsb != dt_w.nbytes() as isize
         {
-            return Err(strides_not_support("").into());
+            return Err(strides_not_support(""));
         };
         let key = SchemeKey { dt_a, dt_w, d };
         let scheme = self
@@ -150,7 +124,7 @@ impl Scheme {
     pub fn new(
         handle: &Arc<Handle>,
         SchemeKey { dt_a, dt_w, d }: SchemeKey,
-    ) -> Result<Self, SchemeError> {
+    ) -> Result<Self, LaunchError> {
         let device = handle.device();
         let cc = device.compute_capability();
         let block_size = device.block_limit().max_threads;
@@ -231,30 +205,14 @@ extern "C" __global__ void {name}(
 #[cfg(test)]
 mod test {
     use super::{Args, Gpu, Operator};
-    use crate::{dyn_, Hardware, Operator as _, TensorLayout};
+    use crate::{Hardware, Operator as _, TensorLayout};
     use core::f32;
     use digit_layout::{
         types::{F16, F32, F64},
         DigitLayout,
     };
-    use std::ptr::null;
 
-    fn dyn_args<H: Hardware>(dt_a: DigitLayout, dt_w: DigitLayout, d: usize) -> Args<H> {
-        use std::ptr::null_mut;
-        let yx_layout = TensorLayout::new_dyn(dt_a, &[dyn_(), d.into()], &[dyn_(); 2]);
-        let sb_layout = TensorLayout::new_dyn(dt_w, &[d.into()], &[dyn_()]);
-        Args {
-            y_layout: yx_layout.clone(),
-            y_base: null_mut(),
-            x_layout: yx_layout.clone(),
-            x_base: null(),
-            scale_layout: sb_layout.clone(),
-            scale_base: null(),
-            bias_layout: sb_layout.clone(),
-            bias_base: null(),
-            epsilon: 0.1f32,
-        }
-    }
+    #[allow(clippy::too_many_arguments)]
     fn args<H: Hardware>(
         dt_a: DigitLayout,
         dt_w: DigitLayout,
@@ -297,14 +255,12 @@ mod test {
             return;
         };
 
-        let mut cpu_op = RefOp::new(&Cpu);
-        let mut gpu_op = Operator::new(&gpu);
+        let cpu_op = RefOp::new(&Cpu);
+        let gpu_op = Operator::new(&gpu);
         for k in 8..=13 {
             let n = 4;
             let d = 1 << k;
             let epsilon = 1.0f32;
-            cpu_op.scheme(&dyn_args(F64, F64, d), 0).unwrap();
-            gpu_op.scheme(&dyn_args(F16, F32, d), 0).unwrap();
             let y = vec![0.0f64; n * d];
             let mut x = vec![1.0f64; n * d];
             let mut scale = vec![1.0f64; d];

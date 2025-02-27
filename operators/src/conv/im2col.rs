@@ -1,7 +1,7 @@
-﻿use super::{args::Meta, Args, Conv};
+use super::{args::Meta, Args, Conv};
 use crate::{
-    args_not_support, get_static, mat_mul, rearrange, strides_not_support, ByteOf, Hardware,
-    LaunchError, QueueAlloc, SchemeError, TensorLayout, Workspace,
+    args_not_support, mat_mul, rearrange, strides_not_support, ByteOf, Hardware, LaunchError,
+    QueueAlloc, TensorLayout, Workspace,
 };
 use ndarray_layout::{ArrayLayout, Endian::BigEndian, MergeArg};
 use std::marker::PhantomData;
@@ -38,48 +38,6 @@ where
         }
     }
 
-    fn scheme(
-        &mut self,
-        args: &Self::Args,
-        max_workspace_size: usize,
-    ) -> Result<usize, SchemeError> {
-        let Args { pads, .. } = args;
-        let &[0, 0, 0, 0] = pads else {
-            return Err(args_not_support(
-                "non-zero padding for im2col is not supported",
-            ));
-        };
-        let Meta {
-            dt,
-            n,
-            c,
-            hy,
-            wy,
-            hk,
-            wk,
-            ..
-        } = args.meta()?;
-
-        macro_rules! get {
-            ($( $var:ident )+) => {
-                $(
-                    let Some(&$var) = $var.get_static() else {
-                        return Ok(0);
-                    };
-                )+
-            };
-        }
-
-        get!(n c hk wk hy wy);
-        let a_size = [n, c, hk, wk, hy, wy, dt.nbytes()].iter().product();
-
-        Ok(if a_size <= max_workspace_size {
-            a_size
-        } else {
-            0
-        })
-    }
-
     fn launch<QA>(
         &self,
         args: &Self::Args,
@@ -106,7 +64,9 @@ where
         let &[hs, ws] = strides;
         let &[hd, wd] = dilations;
         let &[0, 0, 0, 0] = pads else {
-            return Err(args_not_support("non-zero padding for im2col is not supported").into());
+            return Err(args_not_support(
+                "non-zero padding for im2col is not supported",
+            ));
         };
 
         let Meta {
@@ -135,45 +95,37 @@ where
             unreachable!()
         };
 
-        get_static! {
-            n   m   c   h hy hk w wy wk
-            nys mys     hys     wys
-            nxs     cxs hxs     wxs
-                mks cks hks     wks
-                mbs
-        }
-
         // 计算考虑空洞的 kernel size
 
         let hkd = (hk - 1) * hd + 1;
         let wkd = (wk - 1) * wd + 1;
 
         if (h - hkd) % hs != 0 || (w - wkd) % ws != 0 {
-            return Err(strides_not_support("output size not divisible by strides").into());
+            return Err(strides_not_support("output size not divisible by strides"));
         }
 
-        type Arr6 = ArrayLayout<6>;
+        type Arr4 = ArrayLayout<4>;
 
         // c <- y: [n, m, hy * wy]
         // a <- w: [n, m, c * hk * wk]
         // b <- x: [n, c * hk * wk, hy * wy]
 
         // y 作为矩阵乘输出的布局
-        let Some(c_y) = Arr6::new(&[n, m, hy, wy], &[nys, mys, hys, wys], 0).merge_be(2, 2) else {
-            return Err(strides_not_support("").into());
+        let Some(c_y) = Arr4::new(&[n, m, hy, wy], &[nys, mys, hys, wys], 0).merge_be(2, 2) else {
+            return Err(strides_not_support(""));
         };
         // w 作为矩阵乘输入的布局
-        let Some(a_w) = Arr6::new(&[n, m, c, hk, wk], &[0, mks, cks, hks, wks], 0).merge_be(2, 3)
+        let Some(a_w) = Arr4::new(&[n, m, c, hk, wk], &[0, mks, cks, hks, wks], 0).merge_be(2, 3)
         else {
-            return Err(strides_not_support("").into());
+            return Err(strides_not_support(""));
         };
         // x im2col rearrange
         let ele = dt.nbytes();
         let b_shape = [n, c, hk, wk, hy, wy];
         let [hd, wd, hs, ws] = [hd, wd, hs, ws].map(|x| x as isize);
         let b_strides = [nxs, cxs, hxs * hd, wxs * wd, hxs * hs, wxs * ws];
-        let b_dst = Arr6::new_contiguous(&b_shape, BigEndian, ele);
-        let b_src = Arr6::new(&b_shape, &b_strides, 0);
+        let b_dst = Arr4::new_contiguous(&b_shape, BigEndian, ele);
+        let b_src = Arr4::new(&b_shape, &b_strides, 0);
         let b_x = b_dst
             .merge_many(&[
                 MergeArg {
@@ -189,14 +141,14 @@ where
             ])
             .unwrap();
 
-        let c_y = TensorLayout::from_arr(dt, &c_y);
-        let a_w = TensorLayout::from_arr(dt, &a_w);
-        let b_x = TensorLayout::from_arr(dt, &b_x);
-        let b_dst = TensorLayout::from_arr(dt, &b_dst);
-        let b_src = TensorLayout::from_arr(dt, &b_src);
+        let c_y = TensorLayout { dt, layout: c_y };
+        let a_w = TensorLayout { dt, layout: a_w };
+        let b_x = TensorLayout { dt, layout: b_x };
+        let b_dst = TensorLayout { dt, layout: b_dst };
+        let b_src = TensorLayout { dt, layout: b_src };
 
         // b 布局广播
-        let b = Arr6::new(&[n, m, hy * wy], &[0, mbs, 0], 0);
+        let b = Arr4::new(&[n, m, hy * wy], &[0, mbs, 0], 0);
         // 广播 b
         self.rearrange.launch(
             &rearrange::Args {

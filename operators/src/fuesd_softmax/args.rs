@@ -1,4 +1,4 @@
-﻿use crate::{rank_not_support, Hardware, MutPtr, SchemeError, TensorLayout};
+use crate::{rank_not_support, Hardware, LaunchError, MutPtr, TensorLayout};
 use digit_layout::DigitLayout;
 use std::ptr::null_mut;
 
@@ -28,8 +28,8 @@ impl<H: Hardware> Args<H> {
         }
     }
 
-    pub(super) fn meta(&self) -> Result<Meta, SchemeError> {
-        let dt = self.att_layout.dt();
+    pub(super) fn meta(&self) -> Result<Meta, LaunchError> {
+        let dt = self.att_layout.dt;
         if self.att_layout.ndim() != 3 {
             return Err(rank_not_support(""));
         }
