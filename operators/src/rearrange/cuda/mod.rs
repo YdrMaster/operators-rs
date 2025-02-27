@@ -5,7 +5,7 @@ use crate::{
     cuda::{Gpu, Handle, ModuleBox},
     shape_not_support, ByteOf, LaunchError, QueueAlloc, SchemeDiversity, SchemeError,
 };
-use digit_layout::DigitLayout;
+
 use itertools::Itertools;
 use lru::LruCache;
 use std::iter::repeat;
@@ -24,21 +24,18 @@ struct SchemeKey {
 struct Scheme {
     module: Arc<ModuleBox>,
     name: CString,
-    unit_size: usize,
-    constrain_num: usize,
 }
 
 impl Scheme {
     pub fn new(key: SchemeKey, handle: &Arc<Handle>) -> Result<Self, SchemeError> {
         let name = kernel_name(key.unit_size, key.constrain_num);
         let cc = handle.device().compute_capability();
-
+        let code = format_code(key.unit_size, key.constrain_num);
+        std::fs::write("rearrange.cu", code).unwrap();
         Ok(Self {
             module: handle
                 .compile_kernel(&name, cc, || format_code(key.unit_size, key.constrain_num)),
             name: CString::new(name).unwrap(),
-            unit_size: key.unit_size,
-            constrain_num: key.constrain_num,
         })
     }
 }
@@ -55,6 +52,7 @@ struct SplitDim {
     num_per_grid: usize,
     array_struct_idx_block: ArrayType,
     array_struct_idx_grid: ArrayType,
+    dim_len: usize,
 }
 
 #[derive(Debug)]
@@ -116,7 +114,7 @@ impl crate::Operator for Operator {
 
     fn scheme(
         &mut self,
-        args: &Self::Args,
+        _args: &Self::Args,
         _max_workspace_size: usize,
     ) -> Result<usize, SchemeError> {
         //TODO 目前不支持dyn_args
@@ -172,108 +170,108 @@ impl crate::Operator for Operator {
 
         //分离维度，分成grid处理的维度和block处理的维度，与dst的维度相对应
         let mut block_dim_choose = repeat(false).take(ndim).collect::<Vec<_>>();
-        let mut src_choose_idx = ndim;
-        let mut dst_choose_idx = ndim;
-
-        let mut block_elements = 1;
-        let mut block_src_elements = 1;
-        let mut block_dst_elements = 1;
 
         //TODO 需要优化
         let max_block_size = 256;
         let mut split_dims = Vec::new(); // 长度最多为2
 
-        while src_choose_idx > 0 && dst_choose_idx > 0 {
-            let src_idx = src_strides_desc_idx[src_choose_idx - 1];
-            let dst_idx = dst_choose_idx - 1;
+        {
+            let mut src_choose_idx = ndim;
+            let mut dst_choose_idx = ndim;
 
-            if src_idx == dst_idx {
-                let idx = src_idx;
-                let len = shape[idx];
-                if block_elements * shape[src_idx] <= max_block_size {
-                    //选择维度
-                    block_dim_choose[idx] = true;
-                    block_elements *= len;
-                    block_src_elements *= len;
-                    block_dst_elements *= len;
-                    src_choose_idx -= 1;
-                    dst_choose_idx -= 1;
-                } else {
-                    //切分维度，并退出
-                    let num_per_block = max_block_size.div_euclid(block_elements);
-                    assert!(num_per_block > 0);
-                    assert!(len >= num_per_block);
-                    if num_per_block > 1 {
-                        split_dims.push(SplitDim {
-                            choose_idx: idx,
-                            num_per_block,
-                            num_per_grid: len.div_ceil(num_per_block),
-                            array_struct_idx_block: 0,
-                            array_struct_idx_grid: 0,
-                        });
+            let mut block_elements = 1;
+            let mut block_src_elements = 1;
+            let mut block_dst_elements = 1;
+
+            while src_choose_idx > 0 && dst_choose_idx > 0 {
+                let src_idx = src_strides_desc_idx[src_choose_idx - 1];
+                let dst_idx = dst_choose_idx - 1;
+
+                if src_idx == dst_idx {
+                    let idx = src_idx;
+                    let len = shape[idx];
+                    if block_elements * shape[src_idx] <= max_block_size {
+                        //选择维度
+                        block_dim_choose[idx] = true;
+                        block_elements *= len;
+                        block_src_elements *= len;
+                        block_dst_elements *= len;
+                        src_choose_idx -= 1;
+                        dst_choose_idx -= 1;
+                    } else {
+                        //切分维度，并退出
+                        let num_per_block = max_block_size.div_euclid(block_elements);
+                        assert!(num_per_block > 0);
+                        assert!(len >= num_per_block);
+                        if num_per_block > 1 {
+                            split_dims.push(SplitDim {
+                                choose_idx: idx,
+                                num_per_block,
+                                num_per_grid: len.div_ceil(num_per_block),
+                                array_struct_idx_block: 0,
+                                array_struct_idx_grid: 0,
+                                dim_len: len,
+                            });
+                        }
+                        break;
                     }
-                    break;
-                }
-            } else {
-                let src_div_dst = block_src_elements as f64 / block_dst_elements as f64;
-                let src_num_per_block =
-                    (max_block_size as f64 / block_elements as f64 / src_div_dst).sqrt();
-                let dst_num_per_block = src_num_per_block * src_div_dst;
-
-                let src_current_dim_len = shape[src_idx];
-                let dst_current_dim_len = shape[dst_idx];
-
-                if (src_current_dim_len as f64) < src_num_per_block {
-                    //选择维度
-                    block_dim_choose[src_idx] = true;
-                    block_elements *= src_current_dim_len;
-                    block_src_elements *= src_current_dim_len;
-                    src_choose_idx -= 1;
-                } else if (dst_current_dim_len as f64) < dst_num_per_block {
-                    //选择维度
-                    block_dim_choose[dst_idx] = true;
-                    block_elements *= dst_current_dim_len;
-                    block_dst_elements *= dst_current_dim_len;
-                    dst_choose_idx -= 1;
                 } else {
-                    //切分维度，并退出
-                    let src_num_per_block = src_num_per_block.floor() as usize;
-                    let dst_num_per_block = dst_num_per_block.floor() as usize;
-                    let src_num_per_grid = src_current_dim_len.div_ceil(src_num_per_block);
-                    let dst_num_per_grid = dst_current_dim_len.div_ceil(dst_num_per_block);
+                    let src_div_dst = block_src_elements as f64 / block_dst_elements as f64;
+                    let src_num_per_block =
+                        (max_block_size as f64 / block_elements as f64 / src_div_dst).sqrt();
+                    let dst_num_per_block = src_num_per_block * src_div_dst;
 
-                    if src_num_per_block == 1 {
-                    } else if src_num_per_grid == 1 {
+                    let src_current_dim_len = shape[src_idx];
+                    let dst_current_dim_len = shape[dst_idx];
+
+                    if (src_current_dim_len as f64) < src_num_per_block {
+                        //选择维度
                         block_dim_choose[src_idx] = true;
                         block_elements *= src_current_dim_len;
                         block_src_elements *= src_current_dim_len;
                         src_choose_idx -= 1;
-                    } else {
-                        split_dims.push(SplitDim {
-                            choose_idx: src_idx,
-                            num_per_block: src_num_per_block,
-                            num_per_grid: src_num_per_grid,
-                            array_struct_idx_block: 0,
-                            array_struct_idx_grid: 0,
-                        });
-                    }
-
-                    if dst_num_per_block == 1 {
-                    } else if dst_num_per_grid == 1 {
+                    } else if (dst_current_dim_len as f64) < dst_num_per_block {
+                        //选择维度
                         block_dim_choose[dst_idx] = true;
                         block_elements *= dst_current_dim_len;
                         block_dst_elements *= dst_current_dim_len;
                         dst_choose_idx -= 1;
                     } else {
-                        split_dims.push(SplitDim {
-                            choose_idx: dst_idx,
-                            num_per_block: dst_num_per_block,
-                            num_per_grid: dst_num_per_grid,
-                            array_struct_idx_block: 0,
-                            array_struct_idx_grid: 0,
-                        });
+                        //切分维度，并退出
+                        let src_num_per_block = src_num_per_block.floor() as usize;
+                        let dst_num_per_block = dst_num_per_block.floor() as usize;
+                        let src_num_per_grid = src_current_dim_len.div_ceil(src_num_per_block);
+                        let dst_num_per_grid = dst_current_dim_len.div_ceil(dst_num_per_block);
+
+                        if src_num_per_block == 1 {
+                        } else if src_num_per_grid == 1 {
+                            block_dim_choose[src_idx] = true;
+                        } else {
+                            split_dims.push(SplitDim {
+                                choose_idx: src_idx,
+                                num_per_block: src_num_per_block,
+                                num_per_grid: src_num_per_grid,
+                                array_struct_idx_block: 0,
+                                array_struct_idx_grid: 0,
+                                dim_len: src_current_dim_len,
+                            });
+                        }
+
+                        if dst_num_per_block == 1 {
+                        } else if dst_num_per_grid == 1 {
+                            block_dim_choose[dst_idx] = true;
+                        } else {
+                            split_dims.push(SplitDim {
+                                choose_idx: dst_idx,
+                                num_per_block: dst_num_per_block,
+                                num_per_grid: dst_num_per_grid,
+                                array_struct_idx_block: 0,
+                                array_struct_idx_grid: 0,
+                                dim_len: dst_current_dim_len,
+                            });
+                        }
+                        break;
                     }
-                    break;
                 }
             }
         }
@@ -343,6 +341,10 @@ impl crate::Operator for Operator {
         let mut schemes = self.schemes.lock().unwrap();
         let scheme = schemes.try_get_or_insert(key, || Scheme::new(key, &self.handle))?;
 
+        // 计算grid和block
+        let grid = grid_len.iter().product::<ArrayType>() as u32;
+        let block = block_len.iter().product::<ArrayType>() as u32;
+
         // cuda 参数准备
         let block_len_total = block_len.iter().map(|x| *x as u32).product::<u32>();
         let src_block_stride = ArrayStruct::<ARRAY_SIZE>::new(src_block_stride.into_iter(), 0)?;
@@ -352,45 +354,35 @@ impl crate::Operator for Operator {
         let block_len = ArrayStruct::<ARRAY_SIZE>::new(block_len.into_iter(), 1)?;
         let grid_len = ArrayStruct::<ARRAY_SIZE>::new(grid_len.into_iter(), 1)?;
 
-        let constrains = match split_dims.len() {
+        let filter_split_dims = split_dims
+            .iter()
+            .filter(|split_dim| split_dim.dim_len % split_dim.num_per_block != 0)
+            .collect::<Vec<_>>();
+
+        let constrains = match filter_split_dims.len() {
             0 => ArrayStruct([0; 8]),
             1 => ArrayStruct([
-                split_dims[0].array_struct_idx_grid,
-                split_dims[0].array_struct_idx_block,
-                split_dims[0].num_per_block as ArrayType,
-                shape[split_dims[0].choose_idx] as ArrayType,
+                filter_split_dims[0].array_struct_idx_grid,
+                filter_split_dims[0].array_struct_idx_block,
+                filter_split_dims[0].num_per_block as ArrayType,
+                filter_split_dims[0].dim_len as ArrayType,
                 0,
                 0,
                 0,
                 0,
             ]),
             2 => ArrayStruct([
-                split_dims[0].array_struct_idx_grid,
-                split_dims[0].array_struct_idx_block,
-                split_dims[0].num_per_block as ArrayType,
-                shape[split_dims[0].choose_idx] as ArrayType,
-                split_dims[1].array_struct_idx_grid,
-                split_dims[1].array_struct_idx_block,
-                split_dims[1].num_per_block as ArrayType,
-                shape[split_dims[1].choose_idx] as ArrayType,
+                filter_split_dims[0].array_struct_idx_grid,
+                filter_split_dims[0].array_struct_idx_block,
+                filter_split_dims[0].num_per_block as ArrayType,
+                filter_split_dims[0].dim_len as ArrayType,
+                filter_split_dims[1].array_struct_idx_grid,
+                filter_split_dims[1].array_struct_idx_block,
+                filter_split_dims[1].num_per_block as ArrayType,
+                filter_split_dims[1].dim_len as ArrayType,
             ]),
             _ => unreachable!(),
         };
-
-        let grid = shape
-            .iter()
-            .zip(block_dim_choose.iter())
-            .filter_map(|(len, is_choose)| {
-                if !*is_choose {
-                    Some(*len as ArrayType)
-                } else {
-                    None
-                }
-            })
-            .product::<ArrayType>() as u32;
-        let block = block_elements as u32;
-
-        let unit = unit as i32;
 
         let params = cuda::params![
             args.dst_base,
@@ -403,7 +395,6 @@ impl crate::Operator for Operator {
             grid_len,         // 各维度的长度
             src_grid_stride,  // 源tensor在各维度上的步长(bytes)
             dst_grid_stride,  // 目标tensor在各维度上的步长(bytes)
-            unit,             // bytes_per_thread
             constrains
         ];
 
@@ -439,7 +430,7 @@ fn kernel_code(unit_size: usize, constrain_num: usize, array_size: usize) -> Str
     // 生成约束参数
     let constrain_param = match constrain_num {
         0 => String::new(),
-        1 | 2 => format!(",const ArrayStruct<4, ARRAY_TYPE> constrains[{constrain_num}]"),
+        1 | 2 => format!(",const ArrayStruct<{constrain_num}, Constrains<ARRAY_TYPE>> constrains"),
         _ => unreachable!(),
     };
 
@@ -463,8 +454,8 @@ fn kernel_code(unit_size: usize, constrain_num: usize, array_size: usize) -> Str
         _ => format!(
             r#"
             for (int j = 0; j < {constrain_num}; j++) {{
-                if (i == constrains[j].a[0]) {{
-                    constrains_grid_idx_multiple[j] = idx * constrains[j].a[2];
+                if (i == constrains.a[j].grid_idx) {{
+                    constrains_grid_idx_multiple[j] = idx * constrains.a[j].grid_div_block;
                 }}
             }}"#
         ),
@@ -499,8 +490,8 @@ fn kernel_code(unit_size: usize, constrain_num: usize, array_size: usize) -> Str
         _ => format!(
             r#"
             for (int j = 0; j < {constrain_num}; j++) {{
-                if (constrains[j].a[3] != 0 && i == constrains[j].a[1]) {{
-                    if (constrains_grid_idx_multiple[j] + idx >= constrains[j].a[3]) {{
+                if (constrains.a[j].total_len != 0 && i == constrains.a[j].block_idx) {{
+                    if (constrains_grid_idx_multiple[j] + idx >= constrains.a[j].total_len) {{
                         return;
                     }}
                 }}
@@ -514,8 +505,8 @@ fn kernel_code(unit_size: usize, constrain_num: usize, array_size: usize) -> Str
         _ => format!(
             r#"
     for (int j = 0; j < {constrain_num}; j++) {{
-        if (constrains[j].a[3] != 0 && 0 == constrains[j].a[1]) {{
-            if (constrains_grid_idx_multiple[j] + remaining >= constrains[j].a[3]) {{
+        if (constrains.a[j].total_len != 0 && 0 == constrains.a[j].block_idx) {{
+            if (constrains_grid_idx_multiple[j] + remaining >= constrains.a[j].total_len) {{
                 return;
             }}
         }}
@@ -588,10 +579,6 @@ extern "C" __global__ void {name}(
         }}
     }}
 
-    // 单独处理第一个维度
-    if (remaining >= block_len.a[0]) {{
-        return;
-    }}
     src_offset += remaining * src_block_stride.a[0];
     dst_offset += remaining * dst_block_stride.a[0];
     {first_dim_check}
@@ -656,13 +643,13 @@ mod test {
     fn test_compile() {
         use super::Scheme;
         use super::SchemeKey;
-        use std::ffi::CString;
+
         let Some(gpu) = Gpu::init() else {
             return;
         };
         println!("{}", gpu.0.device().info());
 
-        let mut op = Operator::new(&gpu);
+        let op = Operator::new(&gpu);
 
         // 遍历所有可能的unit_size和constrain_num组合，编译所有kernel
         for unit_size in (0..=5).map(|n| (1 << n)) {
@@ -722,7 +709,7 @@ mod test {
 
         const N: usize = 3;
         const TRANS_N: usize = 3;
-        let shape: [usize; N] = [31, 2, 16];
+        let shape: [usize; N] = [32, 2, 17];
         let mut r_shape: [usize; N] = shape.clone();
         r_shape[0..TRANS_N].reverse();
 
