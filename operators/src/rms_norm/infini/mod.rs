@@ -1,5 +1,5 @@
 ﻿use super::{args::Meta, Args, RmsNorm};
-use crate::{get_static, infini::Device, ByteOf, LaunchError, QueueAlloc, SchemeError, Workspace};
+use crate::{get_static, infini::Device, ByteOf, LaunchError, QueueAlloc, Workspace};
 use infini_op::{infiniop, AsRaw, Descriptor};
 
 pub struct Operator(Device);
@@ -14,15 +14,6 @@ impl crate::Operator for Operator {
     #[inline]
     fn new(node: &Self::TopoNode) -> Self {
         Self(node.clone())
-    }
-
-    #[inline]
-    fn scheme(
-        &mut self,
-        _args: &Self::Args,
-        _max_workspace_size: usize,
-    ) -> Result<usize, SchemeError> {
-        Ok(0)
     }
 
     fn launch<QA>(
@@ -107,20 +98,6 @@ mod test {
     };
     use rayon::iter::ParallelIterator;
 
-    fn dyn_args<H: Hardware>(dt_w: DigitLayout, dt_a: DigitLayout, d: usize) -> Args<H> {
-        use crate::dyn_;
-        use std::ptr::{null, null_mut};
-        Args {
-            y_layout: TensorLayout::new_dyn(dt_a, &[dyn_(), d.into()], &[dyn_(); 2]),
-            y_base: null_mut(),
-            x_layout: TensorLayout::new_dyn(dt_a, &[dyn_(), d.into()], &[dyn_(); 2]),
-            x_base: null(),
-            w_layout: TensorLayout::new_dyn(dt_w, &[d.into()], &[dyn_()]),
-            w_base: null(),
-            epsilon: 1e-5,
-        }
-    }
-
     fn args<H: Hardware>(
         dt_w: DigitLayout,
         dt_a: DigitLayout,
@@ -157,14 +134,12 @@ mod test {
         infini_rt::init(infini_rt::DEVICE_CPU);
         let dev = Device::cpu();
 
-        let mut cpu_op = RefOp::new(&Cpu);
-        let mut dev_op = Operator::new(&dev);
+        let cpu_op = RefOp::new(&Cpu);
+        let dev_op = Operator::new(&dev);
 
         for k in 8..=13 {
             let n = 4;
             let d = 1 << k;
-            cpu_op.scheme(&dyn_args(F64, F64, d), 0).unwrap();
-            dev_op.scheme(&dyn_args(F32, F16, d), 0).unwrap();
 
             let mut x = vec![0.0f64; n * d];
             let mut w = vec![0.0f64; d];

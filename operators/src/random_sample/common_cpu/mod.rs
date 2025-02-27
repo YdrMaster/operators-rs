@@ -1,7 +1,7 @@
 use super::{args::Meta, Args, Indices, KVPair, RandomSample, SampleArgs};
 use crate::{
     common_cpu::Cpu, get_static, strides_not_support, type_not_support, ByteOf, LaunchError,
-    QueueAlloc, SchemeError,
+    QueueAlloc,
 };
 use half::f16;
 use num_traits::Float;
@@ -30,14 +30,6 @@ impl crate::Operator for Operator {
         Self
     }
 
-    fn scheme(
-        &mut self,
-        _args: &Self::Args,
-        _max_workspace_size: usize,
-    ) -> Result<usize, SchemeError> {
-        Ok(0)
-    }
-
     fn launch<QA>(
         &self,
         args: &Self::Args,
@@ -52,7 +44,7 @@ impl crate::Operator for Operator {
             unreachable!()
         };
         if s.get_static().copied() != Some(dt.nbytes() as isize) {
-            return Err(strides_not_support("").into());
+            return Err(strides_not_support(""));
         }
 
         get_static!(n);
@@ -74,7 +66,7 @@ impl crate::Operator for Operator {
             match dt {
                 ty::F16 => argmax!(f16),
                 ty::F32 => argmax!(f32),
-                e => return Err(type_not_support(format!("{e} not support")).into()),
+                e => return Err(type_not_support(format!("{e} not support"))),
             }
         } else {
             let &SampleArgs {
@@ -90,7 +82,7 @@ impl crate::Operator for Operator {
             match dt {
                 ty::F16 => random!(f16),
                 ty::F32 => random!(f32),
-                e => return Err(type_not_support(format!("{e} not support")).into()),
+                e => return Err(type_not_support(format!("{e} not support"))),
             }
         };
         unsafe { kv_pair_base.cast::<KVPair<()>>().write(kv) };

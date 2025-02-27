@@ -1,11 +1,9 @@
 ﻿use crate::{
-    dyn_,
     fuesd_softmax::AttnMask,
     utils::{dim_distinct, rank_error, type_distinct},
-    ConstPtr, Hardware, MaybeDyn, MutPtr, SchemeError, TensorLayout,
+    ConstPtr, Hardware, LaunchError, MaybeDyn, MutPtr, TensorLayout,
 };
 use digit_layout::DigitLayout;
-use std::ptr::{null, null_mut};
 
 pub struct Args<H: Hardware> {
     pub q_layout: TensorLayout,
@@ -33,31 +31,7 @@ pub(super) struct Meta {
 }
 
 impl<H: Hardware> Args<H> {
-    pub(crate) fn new_null(
-        mask: AttnMask,
-        dt: DigitLayout,
-        nh: MaybeDyn<usize>,
-        nkvh: MaybeDyn<usize>,
-        seq: MaybeDyn<usize>,
-        att: MaybeDyn<usize>,
-        dh: MaybeDyn<usize>,
-    ) -> Self {
-        let qo_layout = TensorLayout::new_dyn(dt, &[nh, seq, dh], &[dyn_(); 3]);
-        let kv_layout = TensorLayout::new_dyn(dt, &[nkvh, att, dh], &[dyn_(); 3]);
-        Self {
-            q_layout: qo_layout.clone(),
-            q_base: null_mut(),
-            k_layout: kv_layout.clone(),
-            k_base: null(),
-            v_layout: kv_layout,
-            v_base: null(),
-            o_layout: qo_layout,
-            o_base: null_mut(),
-            mask,
-        }
-    }
-
-    pub(super) fn meta(&self) -> Result<Meta, SchemeError> {
+    pub(super) fn meta(&self) -> Result<Meta, LaunchError> {
         let Self {
             q_layout,
             k_layout,

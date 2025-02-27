@@ -1,6 +1,6 @@
 use crate::{
     get_static, rank_mismatch, shape_mismatch, shape_not_support, utils::type_distinct, ConstPtr,
-    Hardware, MutPtr, SchemeError, TensorLayout,
+    Hardware, LaunchError, MutPtr, TensorLayout,
 };
 use digit_layout::DigitLayout;
 use itertools::izip;
@@ -40,7 +40,7 @@ impl<H: Hardware> Args<H> {
 pub(super) struct Scheme(DigitLayout, Box<[isize]>);
 
 impl Scheme {
-    pub fn new<H: Hardware>(args: &Args<H>) -> Result<Self, SchemeError> {
+    pub fn new<H: Hardware>(args: &Args<H>) -> Result<Self, LaunchError> {
         let Args {
             c_layout: c,
             a_layout: a,

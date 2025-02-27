@@ -1,7 +1,7 @@
 ﻿use crate::{
     fuesd_softmax::AttnMask,
     utils::{dim_distinct, rank_error, type_distinct},
-    ConstPtr, Hardware, MaybeDyn, MutPtr, SchemeError, TensorLayout,
+    ConstPtr, Hardware, LaunchError, MaybeDyn, MutPtr, TensorLayout,
 };
 use digit_layout::DigitLayout;
 
@@ -30,7 +30,6 @@ pub struct Args<H: Hardware> {
 
 pub(super) struct Meta {
     pub dt: DigitLayout,
-    pub nh: MaybeDyn<usize>,
     pub nkvh: MaybeDyn<usize>,
     pub dh: MaybeDyn<usize>,
 
@@ -68,7 +67,7 @@ impl<H: Hardware> Args<H> {
         }
     }
 
-    pub(super) fn meta(&self) -> Result<Meta, SchemeError> {
+    pub(super) fn meta(&self) -> Result<Meta, LaunchError> {
         let Self {
             q_layout,
             k_layout,
@@ -98,6 +97,7 @@ impl<H: Hardware> Args<H> {
             return Err(rank_error("v_cache", 3, v_cache_layout.ndim()));
         };
 
+        let _nh = dim_distinct(&[nh_q, nh_o]);
         Ok(Meta {
             dt: type_distinct(&[
                 q_layout.dt(),
@@ -107,7 +107,6 @@ impl<H: Hardware> Args<H> {
                 k_cache_layout.dt(),
                 v_cache_layout.dt(),
             ])?,
-            nh: dim_distinct(&[nh_q, nh_o])?,
             nkvh: dim_distinct(&[nkvh_k, nkvh_v, nkvh_kc, nkvh_vc])?,
             dh: dim_distinct(&[dh_q, dh_k, dh_v, dh_o, dh_kc, dh_vc])?,
             seq: dim_distinct(&[seq_q, seq_k, seq_v, seq_o])?,

@@ -1,6 +1,6 @@
 ﻿use crate::{
     dyn_not_support, rearrange, shape_mismatch, strides_not_support, utils::type_distinct,
-    Hardware, MaybeDyn, SchemeError,
+    Hardware, LaunchError, MaybeDyn,
 };
 use ndarray_layout::ArrayLayout;
 
@@ -21,7 +21,7 @@ pub(super) struct Meta {
 }
 
 impl<H: Hardware> Args<H> {
-    pub(super) fn meta(&self) -> Result<Meta, SchemeError> {
+    pub(super) fn meta(&self) -> Result<Meta, LaunchError> {
         let Self {
             pair:
                 rearrange::Args {

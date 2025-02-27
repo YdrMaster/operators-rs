@@ -1,6 +1,6 @@
 ﻿use crate::{
     rank_mismatch, shape_mismatch, shape_not_support, static_from, utils::type_distinct, ConstPtr,
-    Hardware, MutPtr, SchemeError, TensorLayout,
+    Hardware, LaunchError, MutPtr, TensorLayout,
 };
 use std::{
     cmp::Ordering,
@@ -32,7 +32,7 @@ impl<H: Hardware> Args<H> {
 pub(super) struct Scheme(Vec<isize>);
 
 impl Scheme {
-    pub fn new<H: Hardware>(args: &Args<H>) -> Result<Self, SchemeError> {
+    pub fn new<H: Hardware>(args: &Args<H>) -> Result<Self, LaunchError> {
         let Args {
             dst_layout: dst_,
             src_layout: src_,
@@ -268,13 +268,13 @@ fn test_scheme() {
             dst_layout: TensorLayout::new(
                 F16,
                 &shape,
-                &[33554432 * 2, 16777216 * 2, 524288 * 2, 128 * 2, 1 * 2],
+                &[33554432 * 2, 16777216 * 2, 524288 * 2, 128 * 2, 2],
             ),
             dst_base: null_mut(),
             src_layout: TensorLayout::new(
                 F16,
                 &shape,
-                &[33554432 * 2, 16777216 * 2, 524288 * 2, 128 * 2, 1 * 2],
+                &[33554432 * 2, 16777216 * 2, 524288 * 2, 128 * 2, 2],
             ),
             src_base: null(),
         };

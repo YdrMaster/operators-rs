@@ -1,7 +1,5 @@
 ﻿use super::{Args, MatMul};
-use crate::{
-    infini::Device, ByteOf, LaunchError, QueueAlloc, SchemeError, TensorLayout, Workspace,
-};
+use crate::{infini::Device, ByteOf, LaunchError, QueueAlloc, TensorLayout, Workspace};
 use infini_op::{infiniop, AsRaw, Descriptor};
 
 pub struct Operator(Device);
@@ -16,15 +14,6 @@ impl crate::Operator for Operator {
     #[inline]
     fn new(node: &Self::TopoNode) -> Self {
         Self(node.clone())
-    }
-
-    #[inline]
-    fn scheme(
-        &mut self,
-        _args: &Self::Args,
-        _max_workspace_size: usize,
-    ) -> Result<usize, SchemeError> {
-        Ok(0)
     }
 
     fn launch<QA>(

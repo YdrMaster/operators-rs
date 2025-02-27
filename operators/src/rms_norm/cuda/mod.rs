@@ -2,7 +2,7 @@ use super::{args::Meta, Args, RmsNorm};
 use crate::{
     cuda::{dt_name, Gpu, Handle, ModuleBox},
     get_static, shape_not_support, strides_not_support, ByteOf, LaunchError, QueueAlloc,
-    SchemeDiversity, SchemeError,
+    SchemeDiversity,
 };
 use digit_layout::DigitLayout;
 use lru::LruCache;
@@ -28,22 +28,6 @@ impl crate::Operator for Operator {
             handle: node.0.clone(),
             schemes: node.0.scheme_cache(SchemeDiversity::Low),
         }
-    }
-
-    fn scheme(
-        &mut self,
-        args: &Self::Args,
-        _max_workspace_size: usize,
-    ) -> Result<usize, SchemeError> {
-        let Meta { dt_a, dt_w, d, .. } = args.meta()?;
-        get_static!(d);
-
-        let key = SchemeKey { dt_a, dt_w, d };
-        self.schemes
-            .lock()
-            .unwrap()
-            .try_get_or_insert(key, || Scheme::new(&self.handle, key))?;
-        Ok(0)
     }
 
     fn launch<QA>(
@@ -84,7 +68,7 @@ impl crate::Operator for Operator {
 
         let unit = dt_a.nbytes() as isize;
         if yds != unit || xds != unit || wds != dt_w.nbytes() as isize {
-            return Err(strides_not_support("").into());
+            return Err(strides_not_support(""));
         };
 
         let key = SchemeKey { dt_a, dt_w, d };
@@ -138,7 +122,7 @@ impl Scheme {
     pub fn new(
         handle: &Arc<Handle>,
         SchemeKey { dt_a, dt_w, d }: SchemeKey,
-    ) -> Result<Self, SchemeError> {
+    ) -> Result<Self, LaunchError> {
         let device = handle.device();
         let cc = device.compute_capability();
         let block_size = device.block_limit().max_threads;
@@ -226,20 +210,6 @@ mod test {
         DigitLayout,
     };
 
-    fn dyn_args<H: Hardware>(dt_w: DigitLayout, dt_a: DigitLayout, d: usize) -> Args<H> {
-        use crate::dyn_;
-        use std::ptr::{null, null_mut};
-        Args {
-            y_layout: TensorLayout::new_dyn(dt_a, &[dyn_(), d.into()], &[dyn_(); 2]),
-            y_base: null_mut(),
-            x_layout: TensorLayout::new_dyn(dt_a, &[dyn_(), d.into()], &[dyn_(); 2]),
-            x_base: null(),
-            w_layout: TensorLayout::new_dyn(dt_w, &[d.into()], &[dyn_()]),
-            w_base: null(),
-            epsilon: 1e-5,
-        }
-    }
-
     fn args<H: Hardware>(
         dt_w: DigitLayout,
         dt_a: DigitLayout,
@@ -262,28 +232,6 @@ mod test {
     }
 
     #[test]
-    fn test_compile() {
-        let Some(gpu) = Gpu::init() else {
-            return;
-        };
-        println!("{}", gpu.0.device().info());
-
-        let mut op = Operator::new(&gpu);
-        for k in 8..=13 {
-            let d = 1 << k;
-            op.scheme(&dyn_args(F32, F16, d), 0).unwrap();
-            let scheme = op.schemes.lock().unwrap().iter().next().unwrap().1.clone();
-            gpu.apply(|ctx| {
-                println!(
-                    "{}\n{}",
-                    scheme.name.to_str().unwrap(),
-                    scheme.module.load(&scheme.name, ctx).info()
-                )
-            });
-        }
-    }
-
-    #[test]
     fn test_compute() {
         use super::super::common_cpu::Operator as RefOp;
         use crate::{
@@ -300,13 +248,11 @@ mod test {
             return;
         };
 
-        let mut cpu_op = RefOp::new(&Cpu);
-        let mut gpu_op = Operator::new(&gpu);
+        let cpu_op = RefOp::new(&Cpu);
+        let gpu_op = Operator::new(&gpu);
         for k in 8..=13 {
             let n = 4;
             let d = 1 << k;
-            cpu_op.scheme(&dyn_args(F64, F64, d), 0).unwrap();
-            gpu_op.scheme(&dyn_args(F32, F16, d), 0).unwrap();
 
             let mut x = vec![0.0f64; n * d];
             let mut w = vec![0.0f64; d];

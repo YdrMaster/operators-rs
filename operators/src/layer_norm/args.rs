@@ -1,6 +1,6 @@
-﻿use crate::{
+use crate::{
     utils::{dim_distinct, rank_error, type_distinct},
-    ConstPtr, Hardware, MaybeDyn, MutPtr, SchemeError, TensorLayout,
+    ConstPtr, Hardware, LaunchError, MaybeDyn, MutPtr, TensorLayout,
 };
 use digit_layout::DigitLayout;
 
@@ -24,7 +24,7 @@ pub(super) struct Meta {
 }
 
 impl<H: Hardware> Args<H> {
-    pub(super) fn meta(&self) -> Result<Meta, SchemeError> {
+    pub(super) fn meta(&self) -> Result<Meta, LaunchError> {
         let Self {
             y_layout: y,
             x_layout: x,

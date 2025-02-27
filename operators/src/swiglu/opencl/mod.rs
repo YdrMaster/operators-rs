@@ -6,7 +6,6 @@ use crate::{
     utils::gcd,
     ByteOf, LaunchError, QueueAlloc,
     SchemeDiversity::Low as LowDiversity,
-    SchemeError,
 };
 use clrt::{bindings::cl_int, Context};
 use digit_layout::{types as Ty, DigitLayout};
@@ -42,18 +41,6 @@ impl crate::Operator for Operator {
         }
     }
 
-    fn scheme(
-        &mut self,
-        args: &Self::Args,
-        _max_workspace_size: usize,
-    ) -> Result<usize, SchemeError> {
-        let Meta { dt, d, .. } = args.meta()?;
-        if let Some(&d) = d.get_static() {
-            self.cache_kernel(dt, d);
-        }
-        Ok(0)
-    }
-
     fn launch<QA>(
         &self,
         args: &Self::Args,
@@ -85,7 +72,7 @@ impl crate::Operator for Operator {
 
         let unit = dt.nbytes() as isize;
         if sgd != unit || sud != unit {
-            return Err(strides_not_support("opencl: swiglu").into());
+            return Err(strides_not_support("opencl: swiglu"));
         };
 
         let sg = (sgn / unit) as i32;
@@ -152,22 +139,11 @@ struct SchemeKey {
 #[cfg(test)]
 mod test {
     use super::{Args, Operator};
-    use crate::{dyn_, Hardware, Operator as _, TensorLayout};
+    use crate::{Hardware, Operator as _, TensorLayout};
     use digit_layout::{
         types::{F32, F64},
         DigitLayout,
     };
-
-    fn dyn_args<H: Hardware>(dt: DigitLayout) -> Args<H> {
-        use std::ptr::{null, null_mut};
-        let layout = TensorLayout::new_dyn(dt, &[dyn_(); 2], &[dyn_(); 2]);
-        Args {
-            gate_layout: layout.clone(),
-            gate_base: null_mut(),
-            up_layout: layout,
-            up_base: null(),
-        }
-    }
 
     fn args<H: Hardware>(
         dt: DigitLayout,
@@ -197,16 +173,14 @@ mod test {
         use rand::Rng;
         use std::{iter::zip, time::Instant};
 
-        let mut cpu_op = RefOp::new(&Cpu);
+        let cpu_op = RefOp::new(&Cpu);
         for platform in Platform::all() {
             for device in platform.devices() {
                 println!("device: {}", device.name());
 
                 let context = device.context();
                 let queue = context.queue();
-                let mut cl_op = Operator::new(&ClDevice::new(context.clone(), Default::default()));
-                cpu_op.scheme(&dyn_args(F64), 0).unwrap();
-                cl_op.scheme(&dyn_args(F32), 0).unwrap();
+                let cl_op = Operator::new(&ClDevice::new(context.clone(), Default::default()));
 
                 // let n = 5632;
                 // let d = 2048;
@@ -264,7 +238,7 @@ mod test {
                     )
                     .unwrap();
                 let cpu_time = time.elapsed();
-                let map = queue.map(&mut gate_svm);
+                let map = queue.map(&gate_svm);
                 let ([], y_ans, []) = (unsafe { map.align_to::<f32>() }) else {
                     panic!()
                 };

@@ -1,7 +1,7 @@
 ﻿use super::{args::Meta, Args, Broadcast};
 use crate::{
     common_cpu::{Cpu, InprocNode},
-    rearrange, ByteOf, LaunchError, QueueAlloc, SchemeError, TopoNode,
+    rearrange, ByteOf, LaunchError, QueueAlloc, TopoNode,
 };
 use std::ptr::{addr_eq, copy, copy_nonoverlapping};
 
@@ -17,14 +17,6 @@ impl crate::Operator for Operator {
     fn new(node: &Self::TopoNode) -> Self {
         assert!(node.group_size().is_power_of_two());
         Self(node.clone())
-    }
-
-    fn scheme(
-        &mut self,
-        _args: &Self::Args,
-        _max_workspace_size: usize,
-    ) -> Result<usize, SchemeError> {
-        Ok(0)
     }
 
     fn launch<QA>(

@@ -1,7 +1,5 @@
 use super::{args::Meta, fill_pos, Args, Rope, Seq, SinCosTable};
-use crate::{
-    get_static, infini::Device, Blob, ByteOf, LaunchError, QueueAlloc, SchemeError, Workspace,
-};
+use crate::{get_static, infini::Device, Blob, ByteOf, LaunchError, QueueAlloc, Workspace};
 use digit_layout::{types as ty, DigitLayout};
 use infini_op::{infiniop, AsRaw, Descriptor};
 
@@ -69,15 +67,6 @@ impl crate::Operator for Operator {
     #[inline]
     fn new(node: &Self::TopoNode) -> Self {
         Self(node.clone())
-    }
-
-    #[inline]
-    fn scheme(
-        &mut self,
-        _args: &Self::Args,
-        _max_workspace_size: usize,
-    ) -> Result<usize, SchemeError> {
-        Ok(0)
     }
 
     fn launch<QA>(
@@ -170,22 +159,6 @@ mod test {
     use digit_layout::{types as ty, DigitLayout};
     use std::ptr::null;
 
-    fn dyn_args<H: Hardware>(dt_t: DigitLayout, dt_p: DigitLayout) -> Args<H> {
-        use crate::dyn_;
-        use std::ptr::{null, null_mut};
-        Args {
-            t_layout: TensorLayout::new_dyn(dt_t, &[dyn_(); 3], &[dyn_(); 3]),
-            t_base: null_mut(),
-            p_layout: TensorLayout::new_dyn(dt_p, &[dyn_()], &[dyn_()]),
-            p_base: null(),
-            sin_layout: TensorLayout::new_dyn(ty::F32, &[dyn_(); 2], &[dyn_(); 2]),
-            sin_base: null(),
-            cos_layout: TensorLayout::new_dyn(ty::F32, &[dyn_(); 2], &[dyn_(); 2]),
-            cos_base: null(),
-            theta: 0.,
-        }
-    }
-
     fn args<H: Hardware>(
         dt_t: DigitLayout,
         dt_p: DigitLayout,
@@ -235,11 +208,8 @@ mod test {
         infini_rt::init(infini_rt::DEVICE_CPU);
         let dev = Device::cpu();
 
-        let mut cpu_op = RefOp::new(&Cpu);
-        let mut dev_op = Operator::new(&dev);
-
-        cpu_op.scheme(&dyn_args(ty::F64, ty::U32), 0).unwrap();
-        dev_op.scheme(&dyn_args(ty::F16, ty::U64), 0).unwrap();
+        let cpu_op = RefOp::new(&Cpu);
+        let dev_op = Operator::new(&dev);
 
         const NT: usize = 7;
         let nh = 32;

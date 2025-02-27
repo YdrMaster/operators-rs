@@ -103,8 +103,8 @@ impl<T: DynVal + PartialEq> MaybeDyn<T> {
 }
 
 #[inline]
-pub(crate) fn static_from<T: DynVal>(arg: &MaybeDyn<T>) -> Result<&T, SchemeError> {
-    arg.get_static().ok_or_else(|| dyn_not_support(""))
+pub(crate) fn static_from<T: DynVal>(arg: &MaybeDyn<T>) -> Result<&T, LaunchError> {
+    Ok(arg.get_static().unwrap())
 }
 
 macro_rules! get_static {
@@ -115,4 +115,4 @@ macro_rules! get_static {
 
 pub(crate) use get_static;
 
-use super::{dyn_not_support, SchemeError};
+use super::LaunchError;

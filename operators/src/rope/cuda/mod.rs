@@ -2,7 +2,7 @@ use super::{args::Meta, fill_pos, Args, Rope, Seq, SinCosTable};
 use crate::{
     cuda::{Gpu, Handle, ModuleBox},
     get_static, shape_not_support, strides_not_support, type_not_support, Blob, ByteOf,
-    LaunchError, QueueAlloc, SchemeError,
+    LaunchError, QueueAlloc,
 };
 use digit_layout::{types as ty, DigitLayout};
 use std::{ffi::CString, sync::Arc};
@@ -70,14 +70,6 @@ impl crate::Operator for Operator {
         }
     }
 
-    fn scheme(
-        &mut self,
-        _args: &Self::Args,
-        _max_workspace_size: usize,
-    ) -> Result<usize, SchemeError> {
-        Ok(0)
-    }
-
     fn launch<QA>(
         &self,
         args: &Self::Args,
@@ -92,12 +84,12 @@ impl crate::Operator for Operator {
         } = args.meta()?;
 
         if dt_t != ty::F16 {
-            return Err(type_not_support("").into());
+            return Err(type_not_support(""));
         }
         let name = match dt_p {
             ty::U32 => POS_U32,
             ty::U64 => POS_U64,
-            _ => return Err(type_not_support("").into()),
+            _ => return Err(type_not_support("")),
         };
 
         let Args {
@@ -126,7 +118,7 @@ impl crate::Operator for Operator {
 
         let unit = dt_t.nbytes() as isize;
         if sd != unit || sp != dt_p.nbytes() as isize {
-            return Err(strides_not_support("").into());
+            return Err(strides_not_support(""));
         }
 
         let dh = dh / 2;
@@ -135,7 +127,7 @@ impl crate::Operator for Operator {
         let params = cuda::params![t_base, st, sh, p_base, theta];
 
         if self.max_threads_block % dh != 0 {
-            return Err(shape_not_support("").into());
+            return Err(shape_not_support(""));
         }
 
         let max_nh_l = (self.max_threads_block / dh).min(nh);
@@ -183,28 +175,12 @@ extern "C" __global__ void {POS_U64}(
 
 #[cfg(test)]
 mod test {
-    use super::{Args, Gpu, Operator, POS_U32, POS_U64};
+    use super::{Args, Gpu, Operator};
     use crate::{Hardware, Operator as _, TensorLayout};
     use digit_layout::{
         types::{F16, F64, U32},
         DigitLayout,
     };
-
-    fn dyn_args<H: Hardware>(dt_t: DigitLayout, dt_p: DigitLayout) -> Args<H> {
-        use crate::dyn_;
-        use std::ptr::{null, null_mut};
-        Args {
-            t_layout: TensorLayout::new_dyn(dt_t, &[dyn_(); 3], &[dyn_(); 3]),
-            t_base: null_mut(),
-            p_layout: TensorLayout::new_dyn(dt_p, &[dyn_()], &[dyn_()]),
-            p_base: null(),
-            sin_layout: TensorLayout::new_dyn(dt_t, &[dyn_(); 2], &[dyn_(); 2]),
-            sin_base: null(),
-            cos_layout: TensorLayout::new_dyn(dt_t, &[dyn_(); 2], &[dyn_(); 2]),
-            cos_base: null(),
-            theta: 0.,
-        }
-    }
 
     fn args<H: Hardware>(
         dt_t: DigitLayout,
@@ -231,30 +207,6 @@ mod test {
     }
 
     #[test]
-    fn test_compile() {
-        use std::ffi::CString;
-
-        let Some(gpu) = Gpu::init() else {
-            return;
-        };
-        println!("{}", gpu.0.device().info());
-
-        let mut op = Operator::new(&gpu);
-        op.scheme(&dyn_args(F16, U32), 0).unwrap();
-
-        gpu.apply(|ctx| {
-            println!(
-                "{POS_U32}\n{}",
-                op.module.load(CString::new(POS_U32).unwrap(), ctx).info()
-            );
-            println!(
-                "{POS_U64}\n{}",
-                op.module.load(CString::new(POS_U64).unwrap(), ctx).info()
-            );
-        })
-    }
-
-    #[test]
     fn test_compute() {
         use super::super::common_cpu::Operator as RefOp;
         use crate::{
@@ -270,10 +222,8 @@ mod test {
             return;
         };
 
-        let mut cpu_op = RefOp::new(&Cpu);
-        let mut gpu_op = Operator::new(&gpu);
-        cpu_op.scheme(&dyn_args(F64, U32), 0).unwrap();
-        gpu_op.scheme(&dyn_args(F16, U32), 0).unwrap();
+        let cpu_op = RefOp::new(&Cpu);
+        let gpu_op = Operator::new(&gpu);
 
         const NT: usize = 7;
         let nh = 32;

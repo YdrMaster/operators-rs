@@ -3,7 +3,6 @@ use crate::{
     opencl::{ClDevice, CodeGen, KernelCache, CL2_0},
     ByteOf, LaunchError, QueueAlloc,
     SchemeDiversity::Low as LowDiversity,
-    SchemeError,
 };
 use clrt::{bindings::cl_int, Context};
 use digit_layout::{types as Ty, DigitLayout};
@@ -37,14 +36,6 @@ impl crate::Operator for Operator {
             max_group_size,
             schemes: node.new_cache(LowDiversity),
         }
-    }
-
-    fn scheme(
-        &mut self,
-        _args: &Self::Args,
-        _max_workspace_size: usize,
-    ) -> Result<usize, SchemeError> {
-        Ok(0)
     }
 
     fn launch<QA>(
@@ -309,7 +300,7 @@ mod test {
                         .unwrap();
                     let cpu_time = time.elapsed();
 
-                    let map = queue.map(&mut c_svm);
+                    let map = queue.map(&c_svm);
                     let ([], y_ans, []) = (unsafe { map.align_to::<f32>() }) else {
                         panic!()
                     };

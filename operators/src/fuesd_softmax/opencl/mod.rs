@@ -5,7 +5,6 @@ use crate::{
     opencl::{ClDevice, CodeGen, KernelCache, CL2_0},
     strides_not_support, ByteOf, LaunchError, QueueAlloc,
     SchemeDiversity::Low as LowDiversity,
-    SchemeError,
 };
 use clrt::{
     bindings::{cl_int, cl_uint},
@@ -47,16 +46,6 @@ impl crate::Operator for Operator {
         }
     }
 
-    fn scheme(
-        &mut self,
-        args: &Self::Args,
-        _max_workspace_size: usize,
-    ) -> Result<usize, SchemeError> {
-        let Meta { dt } = args.meta()?;
-        self.cache_kernel(dt);
-        Ok(0)
-    }
-
     fn launch<QA>(
         &self,
         args: &Self::Args,
@@ -91,7 +80,7 @@ impl crate::Operator for Operator {
 
         let unit = dt.nbytes() as isize;
         if sa != unit {
-            return Err(strides_not_support("").into());
+            return Err(strides_not_support(""));
         };
 
         let group_size = last_power_of_two(att_len.min(self.max_group_size));
@@ -163,16 +152,6 @@ mod test {
     use crate::{Hardware, TensorLayout};
     use digit_layout::DigitLayout;
 
-    fn dyn_args<H: Hardware>(dt: DigitLayout) -> Args<H> {
-        use crate::dyn_;
-        use std::ptr::null_mut;
-        Args {
-            att_mask: AttnMask::Causal,
-            att_layout: TensorLayout::new_dyn(dt, &[dyn_(); 3], &[dyn_(); 3]),
-            att_base: null_mut(),
-        }
-    }
-
     fn args<H: Hardware>(
         dt: DigitLayout,
         nh: usize,
@@ -202,16 +181,14 @@ mod test {
         use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
         use std::{iter::zip, time::Instant};
 
-        let mut cpu_op = RefOp::new(&Cpu);
+        let cpu_op = RefOp::new(&Cpu);
         for platform in Platform::all() {
             for device in platform.devices() {
                 println!("device: {}", device.name());
 
                 let context = device.context();
                 let queue = context.queue();
-                let mut cl_op = Operator::new(&ClDevice::new(context.clone(), Default::default()));
-                cpu_op.scheme(&dyn_args(ty::F64), 0).unwrap();
-                cl_op.scheme(&dyn_args(ty::F32), 0).unwrap();
+                let cl_op = Operator::new(&ClDevice::new(context.clone(), Default::default()));
 
                 let nh = 32;
                 for (seq_len, att_len) in [
@@ -260,7 +237,7 @@ mod test {
                     let cpu_time = time.elapsed();
                     println!("cl: {cl_time:?} / cpu: {cpu_time:?}");
 
-                    let map = queue.map(&mut att_svm);
+                    let map = queue.map(&att_svm);
                     let ([], mem, []) = (unsafe { map.align_to::<f32>() }) else {
                         panic!()
                     };

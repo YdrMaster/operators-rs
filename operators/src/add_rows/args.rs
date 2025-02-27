@@ -1,7 +1,7 @@
-﻿use crate::{
+use crate::{
     type_not_support,
     utils::{dim_distinct, rank_error, type_distinct},
-    ConstPtr, Hardware, MaybeDyn, MutPtr, SchemeError, TensorLayout,
+    ConstPtr, Hardware, LaunchError, MaybeDyn, MutPtr, TensorLayout,
 };
 use digit_layout::{DigitLayout, LayoutContent::Unsigned};
 use std::ptr::{null, null_mut};
@@ -44,7 +44,7 @@ pub(super) struct Meta {
 }
 
 impl<H: Hardware> Args<H> {
-    pub(super) fn meta(&self) -> Result<Meta, SchemeError> {
+    pub(super) fn meta(&self) -> Result<Meta, LaunchError> {
         let Self {
             dst_layout: dst,
             src_layout: src,

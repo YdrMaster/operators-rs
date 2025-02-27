@@ -1,5 +1,5 @@
 ﻿use super::{args::Meta, Args, Swiglu};
-use crate::{get_static, infini::Device, ByteOf, LaunchError, QueueAlloc, SchemeError};
+use crate::{get_static, infini::Device, ByteOf, LaunchError, QueueAlloc};
 use infini_op::{infiniop, AsRaw, Descriptor, Handle};
 use std::sync::Arc;
 
@@ -15,15 +15,6 @@ impl crate::Operator for Operator {
     #[inline]
     fn new(node: &Self::TopoNode) -> Self {
         Self(node.handle().clone())
-    }
-
-    #[inline]
-    fn scheme(
-        &mut self,
-        _args: &Self::Args,
-        _max_workspace_size: usize,
-    ) -> Result<usize, SchemeError> {
-        Ok(0)
     }
 
     fn launch<QA>(
@@ -84,22 +75,11 @@ impl crate::Operator for Operator {
 #[cfg(test)]
 mod test {
     use super::{Args, Device, Operator};
-    use crate::{dyn_, Hardware, Operator as _, TensorLayout};
+    use crate::{Hardware, Operator as _, TensorLayout};
     use digit_layout::{
         types::{F16, F64},
         DigitLayout,
     };
-
-    fn dyn_args<H: Hardware>(dt: DigitLayout) -> Args<H> {
-        use std::ptr::{null, null_mut};
-        let layout = TensorLayout::new_dyn(dt, &[dyn_(); 2], &[dyn_(); 2]);
-        Args {
-            gate_layout: layout.clone(),
-            gate_base: null_mut(),
-            up_layout: layout,
-            up_base: null(),
-        }
-    }
 
     fn args<H: Hardware>(
         dt: DigitLayout,
@@ -134,10 +114,8 @@ mod test {
         infini_rt::init(infini_rt::DEVICE_CPU);
         let dev = Device::cpu();
 
-        let mut cpu_op = RefOp::new(&Cpu);
-        let mut dev_op = Operator::new(&dev);
-        cpu_op.scheme(&dyn_args(F64), 0).unwrap();
-        dev_op.scheme(&dyn_args(F16), 0).unwrap();
+        let cpu_op = RefOp::new(&Cpu);
+        let dev_op = Operator::new(&dev);
 
         let mut gate = vec![0.0f64; n * d];
         let mut up = vec![0.0f64; n * d];

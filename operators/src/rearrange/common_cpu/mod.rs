@@ -1,5 +1,5 @@
 ﻿use super::{args::Scheme, Args, Rearrange};
-use crate::{common_cpu::Cpu, ByteOf, LaunchError, QueueAlloc, SchemeError};
+use crate::{common_cpu::Cpu, ByteOf, LaunchError, QueueAlloc};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
 pub struct Operator;
@@ -13,14 +13,6 @@ impl crate::Operator for Operator {
 
     fn new(_node: &Self::TopoNode) -> Self {
         Self
-    }
-
-    fn scheme(
-        &mut self,
-        _args: &Self::Args,
-        _max_workspace_size: usize,
-    ) -> Result<usize, SchemeError> {
-        Ok(0)
     }
 
     fn launch<QA>(

@@ -4,7 +4,7 @@ use crate::{
     cuda::{dt_name, Gpu, Handle, ModuleBox},
     get_static, strides_not_support,
     utils::gcd,
-    ByteOf, LaunchError, QueueAlloc, SchemeDiversity, SchemeError,
+    ByteOf, LaunchError, QueueAlloc, SchemeDiversity,
 };
 use digit_layout::DigitLayout;
 use lru::LruCache;
@@ -32,22 +32,6 @@ impl crate::Operator for Operator {
             max_threads_block: node.0.device().block_limit().max_threads,
             schemes: node.0.scheme_cache(SchemeDiversity::Low),
         }
-    }
-
-    #[inline]
-    fn scheme(
-        &mut self,
-        args: &Self::Args,
-        _max_workspace_size: usize,
-    ) -> Result<usize, SchemeError> {
-        let Meta { dt, .. } = args.meta()?;
-
-        let key = SchemeKey { dt };
-        self.schemes
-            .lock()
-            .unwrap()
-            .try_get_or_insert(key, || Scheme::new(&self.handle, key))?;
-        Ok(0)
     }
 
     fn launch<QA>(
@@ -87,7 +71,7 @@ impl crate::Operator for Operator {
         let unit_dst = dst_layout.dt().nbytes() as isize;
         let unit_idx = idx_layout.dt().nbytes() as isize;
         if nsd != unit_dst || nss != unit_dst || msi != unit_idx {
-            return Err(strides_not_support("").into());
+            return Err(strides_not_support(""));
         };
         fn cast(strides: &[isize], size: usize) -> Vec<isize> {
             strides.iter().map(|x| x / size as isize).collect()
@@ -134,7 +118,7 @@ struct SchemeKey {
 }
 
 impl Scheme {
-    pub fn new(handle: &Arc<Handle>, SchemeKey { dt }: SchemeKey) -> Result<Self, SchemeError> {
+    pub fn new(handle: &Arc<Handle>, SchemeKey { dt }: SchemeKey) -> Result<Self, LaunchError> {
         let device = handle.device();
         let cc = device.compute_capability();
         let type_name = dt_name(dt);
@@ -168,26 +152,14 @@ extern "C" __global__ void {name}(
 #[cfg(test)]
 mod test {
     use super::{Args, Gpu, Operator};
-    use crate::{cuda::cast_load, dyn_, Hardware, Operator as _, TensorLayout};
+    use crate::{cuda::cast_load, Hardware, Operator as _, TensorLayout};
     use cuda::memcpy_d2h;
     use digit_layout::{
         types::{F16, F64, U32},
         DigitLayout,
     };
     use half::f16;
-    use std::ptr::null;
 
-    fn dyn_args<H: Hardware>(dt: DigitLayout) -> Args<H> {
-        use std::ptr::null_mut;
-        Args {
-            dst_layout: TensorLayout::new_dyn(dt, &[dyn_(); 3], &[dyn_(); 3]),
-            dst_base: null_mut(),
-            src_layout: TensorLayout::new_dyn(dt, &[dyn_(); 2], &[dyn_(); 2]),
-            src_base: null(),
-            idx_layout: TensorLayout::new_dyn(U32, &[dyn_(); 2], &[dyn_(); 2]),
-            idx_base: null(),
-        }
-    }
     fn args<H: Hardware>(
         dt: DigitLayout,
         b: usize,
@@ -220,10 +192,8 @@ mod test {
             return;
         };
 
-        let mut cpu_op = RefOp::new(&Cpu);
-        let mut gpu_op = Operator::new(&gpu);
-        cpu_op.scheme(&dyn_args(F64), 0).unwrap();
-        gpu_op.scheme(&dyn_args(F16), 0).unwrap();
+        let cpu_op = RefOp::new(&Cpu);
+        let gpu_op = Operator::new(&gpu);
 
         let b = 1;
         let m = 10;

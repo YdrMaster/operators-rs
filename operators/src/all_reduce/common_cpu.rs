@@ -2,7 +2,7 @@
 use crate::{
     broadcast::{self, common_cpu::Operator as Broadcast},
     common_cpu::{Cpu, InprocNode},
-    rearrange, ByteOf, LaunchError, QueueAlloc, SchemeError, TopoNode,
+    rearrange, ByteOf, LaunchError, QueueAlloc, TopoNode,
 };
 use digit_layout::DigitLayout;
 use half::{bf16, f16};
@@ -30,14 +30,6 @@ impl crate::Operator for Operator {
             node: node.clone(),
             broadcast: Broadcast::new(node),
         }
-    }
-
-    fn scheme(
-        &mut self,
-        _args: &Self::Args,
-        _max_workspace_size: usize,
-    ) -> Result<usize, SchemeError> {
-        Ok(0)
     }
 
     fn launch<QA>(
@@ -174,5 +166,5 @@ fn test_comm() {
         })
         .collect::<Vec<_>>()
         .into_iter()
-        .for_each(|h| assert_eq!(h.join().unwrap(), [0 + 1 + 2 + 3; 8]));
+        .for_each(|h| assert_eq!(h.join().unwrap(), [1 + 2 + 3; 8]));
 }

@@ -1,7 +1,7 @@
 ﻿use super::{args::Meta, Args, AttnKVCached};
 use crate::{
-    attention, dyn_, get_static, rearrange, shape_mismatch, ByteOf, Hardware, LaunchError,
-    MaybeDyn, QueueAlloc, TensorLayout, WorkspaceCollector,
+    attention, get_static, rearrange, shape_mismatch, ByteOf, Hardware, LaunchError, QueueAlloc,
+    TensorLayout,
 };
 use ndarray_layout::ArrayLayout;
 use std::marker::PhantomData;
@@ -36,41 +36,6 @@ where
             attention: A::new(node),
             _phantom: PhantomData,
         }
-    }
-
-    fn scheme(
-        &mut self,
-        args: &Self::Args,
-        max_workspace_size: usize,
-    ) -> Result<usize, crate::SchemeError> {
-        let Meta {
-            dt,
-            nh,
-            nkvh,
-            dh,
-            seq,
-        } = args.meta()?;
-
-        let mut wc = WorkspaceCollector::new();
-
-        let layout = TensorLayout::new_dyn(dt, &[dyn_(); 3], &[dyn_(); 3]);
-        wc.push_sub(self.rearrange.scheme(
-            &rearrange::Args::new_null(layout.clone(), layout),
-            max_workspace_size,
-        )?);
-
-        let att = if let (Some(&seq), Some(&pos)) = (seq.get_static(), args.pos.get_static()) {
-            MaybeDyn::from(pos + seq)
-        } else {
-            dyn_()
-        };
-
-        wc.push_sub(self.attention.scheme(
-            &attention::Args::new_null(args.mask, dt, nh, nkvh, seq, att, dh),
-            max_workspace_size,
-        )?);
-
-        Ok(wc.cauculate(max_workspace_size))
     }
 
     fn launch<QA>(
@@ -126,7 +91,7 @@ where
         // 检查 cache 容量
         let att = pos + seq;
         if buf_k < att || buf_v < att {
-            return Err(shape_mismatch("Out of cache buffer").into());
+            return Err(shape_mismatch("Out of cache buffer"));
         }
         // 连接 kv cache
         #[inline(always)]

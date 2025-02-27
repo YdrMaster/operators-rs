@@ -1,5 +1,5 @@
 use super::{args::Scheme, Args, Rearrange};
-use crate::{infini::Device, ByteOf, LaunchError, QueueAlloc, SchemeError};
+use crate::{infini::Device, ByteOf, LaunchError, QueueAlloc};
 use digit_layout::types;
 use infini_op::{infiniop, AsRaw, Descriptor, Handle};
 use std::{
@@ -19,15 +19,6 @@ impl crate::Operator for Operator {
     #[inline]
     fn new(node: &Self::TopoNode) -> Self {
         Self(node.handle().clone())
-    }
-
-    #[inline]
-    fn scheme(
-        &mut self,
-        _args: &Self::Args,
-        _max_workspace_size: usize,
-    ) -> Result<usize, SchemeError> {
-        Ok(0)
     }
 
     fn launch<QA>(
@@ -91,17 +82,6 @@ mod test {
     use crate::{ConstPtr, Hardware, MutPtr, Operator as _, TensorLayout};
     use digit_layout::{types as ty, DigitLayout};
 
-    fn dyn_args<H: Hardware>(dt: DigitLayout) -> Args<H> {
-        use crate::dyn_;
-        use std::ptr::{null, null_mut};
-        Args {
-            dst_layout: TensorLayout::new_dyn(dt, &[dyn_(); 2], &[dyn_(); 2]),
-            dst_base: null_mut(),
-            src_layout: TensorLayout::new_dyn(dt, &[dyn_(); 2], &[dyn_(); 2]),
-            src_base: null(),
-        }
-    }
-
     fn args<H: Hardware>(
         dt: DigitLayout,
         shape: &[usize],
@@ -133,10 +113,8 @@ mod test {
         infini_rt::init(infini_rt::DEVICE_CPU);
         let dev = Device::cpu();
 
-        let mut cpu_op = RefOp::new(&Cpu);
-        let mut dev_op = Operator::new(&dev);
-        cpu_op.scheme(&dyn_args(dt), 0).unwrap();
-        dev_op.scheme(&dyn_args(dt), 0).unwrap();
+        let cpu_op = RefOp::new(&Cpu);
+        let dev_op = Operator::new(&dev);
 
         let mut src = vec![0u32; nh * seq * dh];
         rand::rng().fill(&mut src[..]);

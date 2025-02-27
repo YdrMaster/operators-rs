@@ -1,6 +1,6 @@
-﻿use super::KVPair;
+use super::KVPair;
 use crate::{
-    type_not_support, utils::rank_error, ConstPtr, Hardware, MaybeDyn, MutPtr, SchemeError,
+    type_not_support, utils::rank_error, ConstPtr, Hardware, LaunchError, MaybeDyn, MutPtr,
     TensorLayout,
 };
 use digit_layout::{types as ty, DigitLayout};
@@ -90,7 +90,7 @@ pub(super) struct Meta {
 }
 
 impl<H: Hardware> Args<H> {
-    pub(super) fn meta(&self) -> Result<Meta, SchemeError> {
+    pub(super) fn meta(&self) -> Result<Meta, LaunchError> {
         let Self {
             kv_pair,
             logits,

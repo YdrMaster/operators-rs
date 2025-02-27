@@ -1,7 +1,7 @@
 use super::{args::SchemeLayout, Args, MatMul};
 use crate::{
     cuda::{Gpu, Handle},
-    type_not_support, ByteOf, LaunchError, QueueAlloc, SchemeError,
+    type_not_support, ByteOf, LaunchError, QueueAlloc,
 };
 use cublas::cublas;
 use cuda::AsRaw;
@@ -25,15 +25,6 @@ impl crate::Operator for Operator {
         Self {
             handle: processor.0.clone(),
         }
-    }
-
-    fn scheme(
-        &mut self,
-        _args: &Self::Args,
-        _max_workspace_size: usize,
-    ) -> Result<usize, SchemeError> {
-        // 仅支持 cublas，不需要为执行做准备
-        Ok(0)
     }
 
     fn launch<QA>(
@@ -71,7 +62,7 @@ impl crate::Operator for Operator {
         } = args;
 
         if dt != F16 {
-            return Err(type_not_support("").into());
+            return Err(type_not_support(""));
         }
 
         let (a, b) = if ab_swap {

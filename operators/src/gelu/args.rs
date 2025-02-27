@@ -1,4 +1,4 @@
-use crate::{utils::rank_error, Hardware, MaybeDyn, MutPtr, SchemeError, TensorLayout};
+use crate::{utils::rank_error, Hardware, LaunchError, MaybeDyn, MutPtr, TensorLayout};
 use digit_layout::DigitLayout;
 
 pub struct Args<H: Hardware> {
@@ -21,7 +21,7 @@ impl<H: Hardware> Args<H> {
         }
     }
 
-    pub(super) fn meta(&self) -> Result<Meta, SchemeError> {
+    pub(super) fn meta(&self) -> Result<Meta, LaunchError> {
         let Self { layout, .. } = self;
 
         let &[n, d] = layout.shape() else {

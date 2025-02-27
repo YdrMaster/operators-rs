@@ -6,19 +6,6 @@ mod test {
     use crate::{cuda::Gpu, ByteOf, Hardware, Operator as _, TensorLayout};
     use digit_layout::{types as ty, DigitLayout};
 
-    fn dyn_args<H: Hardware>(dt: DigitLayout, nh: usize, seq: usize, att: usize) -> Args<H> {
-        use crate::dyn_;
-        Args::new_null(
-            crate::fuesd_softmax::AttnMask::Causal,
-            dt,
-            nh.into(),
-            dyn_(),
-            seq.into(),
-            att.into(),
-            dyn_(),
-        )
-    }
-
     fn args<H: Hardware>(
         dt: DigitLayout,
         nh: usize,
@@ -42,18 +29,6 @@ mod test {
             o_base,
             mask: crate::fuesd_softmax::AttnMask::Causal,
         }
-    }
-
-    #[test]
-    fn test_compile() {
-        let Some(gpu) = Gpu::init() else {
-            return;
-        };
-        println!("{}", gpu.0.device().info());
-
-        let mut op = Operator::new(&gpu);
-        let workspace = op.scheme(&dyn_args(ty::F16, 32, 7, 127), usize::MAX);
-        println!("workspace: {workspace:?}");
     }
 
     #[test]

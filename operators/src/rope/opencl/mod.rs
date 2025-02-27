@@ -4,7 +4,6 @@ use crate::{
     opencl::{ClDevice, CodeGen, KernelCache, CL2_0},
     shape_not_support, strides_not_support, ByteOf, LaunchError, QueueAlloc,
     SchemeDiversity::Low as LowDiversity,
-    SchemeError,
 };
 use clrt::{bindings::cl_int, Context};
 use digit_layout::{types as Ty, DigitLayout};
@@ -101,14 +100,6 @@ impl crate::Operator for Operator {
         }
     }
 
-    fn scheme(
-        &mut self,
-        _args: &Self::Args,
-        _max_workspace_size: usize,
-    ) -> Result<usize, SchemeError> {
-        Ok(0)
-    }
-
     fn launch<QA>(
         &self,
         args: &Self::Args,
@@ -148,7 +139,7 @@ impl crate::Operator for Operator {
 
         let unit = dt_t.nbytes() as isize;
         if sd != unit || sp != dt_p.nbytes() as isize {
-            return Err(strides_not_support("").into());
+            return Err(strides_not_support(""));
         };
 
         let dh = dh / 2;
@@ -156,7 +147,7 @@ impl crate::Operator for Operator {
         let sh = (sh / unit / 2) as i32;
 
         if self.max_group_size % dh != 0 {
-            return Err(shape_not_support("").into());
+            return Err(shape_not_support(""));
         }
 
         let max_nh_l = (self.max_group_size / dh).min(nh);
@@ -238,25 +229,9 @@ mod test {
     use super::Args;
     use crate::{Hardware, TensorLayout};
     use digit_layout::{
-        types::{F32, F64, U32},
+        types::{F64, U32},
         DigitLayout,
     };
-
-    fn dyn_args<H: Hardware>(dt_t: DigitLayout, dt_p: DigitLayout) -> Args<H> {
-        use crate::dyn_;
-        use std::ptr::{null, null_mut};
-        Args {
-            t_layout: TensorLayout::new_dyn(dt_t, &[dyn_(); 3], &[dyn_(); 3]),
-            t_base: null_mut(),
-            p_layout: TensorLayout::new_dyn(dt_p, &[dyn_()], &[dyn_()]),
-            p_base: null(),
-            sin_layout: TensorLayout::new_dyn(dt_t, &[dyn_(); 2], &[dyn_(); 2]),
-            sin_base: null(),
-            cos_layout: TensorLayout::new_dyn(dt_t, &[dyn_(); 2], &[dyn_(); 2]),
-            cos_base: null(),
-            theta: 0.,
-        }
-    }
 
     fn args<H: Hardware>(
         dt_t: DigitLayout,
@@ -296,16 +271,14 @@ mod test {
         use rand::Rng;
         use std::{iter::zip, time::Instant};
 
-        let mut cpu_op = RefOp::new(&Cpu);
+        let cpu_op = RefOp::new(&Cpu);
         for platform in Platform::all() {
             for device in platform.devices() {
                 println!("device: {}", device.name());
 
                 let context = device.context();
                 let queue = context.queue();
-                let mut cl_op = Operator::new(&ClDevice::new(context.clone(), Default::default()));
-                cpu_op.scheme(&dyn_args(F64, U32), 0).unwrap();
-                cl_op.scheme(&dyn_args(F32, U32), 0).unwrap();
+                let cl_op = Operator::new(&ClDevice::new(context.clone(), Default::default()));
 
                 const NT: usize = 1;
                 let nh = 32;
@@ -375,7 +348,7 @@ mod test {
                     .unwrap();
                 let cpu_time = time.elapsed();
 
-                let map = queue.map(&mut t_svm);
+                let map = queue.map(&t_svm);
 
                 let ([], y_ans, []) = (unsafe { map.align_to::<f32>() }) else {
                     panic!()
