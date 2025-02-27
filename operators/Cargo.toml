@@ -44,5 +44,9 @@ search-cuda-tools.workspace = true
 search-corex-tools.workspace = true
 
 [dev-dependencies]
+ggus = "0.4"
+memmap2 = "0.9"
+patricia_tree = "0.9"
+
 gemm = "0.18"
 rand = "0.9"

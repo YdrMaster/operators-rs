@@ -2,6 +2,8 @@
 
 mod common;
 mod handle;
+#[cfg(test)]
+mod test;
 
 pub mod add;
 pub mod add_rows;
