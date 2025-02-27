@@ -1,7 +1,7 @@
 use crate::{
     type_not_support,
     utils::{dim_distinct, rank_error},
-    ConstPtr, Hardware, LaunchError, MaybeDyn, MutPtr, TensorLayout,
+    ConstPtr, Hardware, LaunchError, MutPtr, TensorLayout,
 };
 use digit_layout::DigitLayout;
 
@@ -20,9 +20,9 @@ pub struct Args<H: Hardware> {
 pub(super) struct Meta {
     pub dt_t: DigitLayout,
     pub dt_p: DigitLayout,
-    pub nt: MaybeDyn<usize>,
+    pub nt: usize,
     #[allow(dead_code)]
-    pub dh: MaybeDyn<usize>,
+    pub dh: usize,
 }
 
 impl<H: Hardware> Args<H> {
@@ -35,21 +35,21 @@ impl<H: Hardware> Args<H> {
             ..
         } = self;
 
-        let &[nt, _, dh] = t_layout.shape() else {
+        let &[nt, _, dh] = &*t_layout.shape() else {
             return Err(rank_error("t", 3, t_layout.ndim()));
         };
-        let &[np] = p_layout.shape() else {
+        let &[np] = &*p_layout.shape() else {
             return Err(rank_error("p", 1, p_layout.ndim()));
         };
-        let &[_, dh_sin] = sin_layout.shape() else {
+        let &[_, dh_sin] = &*sin_layout.shape() else {
             return Err(rank_error("sin", 2, sin_layout.ndim()));
         };
-        let &[_, dh_cos] = cos_layout.shape() else {
+        let &[_, dh_cos] = &*cos_layout.shape() else {
             return Err(rank_error("cos", 2, cos_layout.ndim()));
         };
 
-        let dt_t = t_layout.dt();
-        let dt_p = p_layout.dt();
+        let dt_t = t_layout.dt;
+        let dt_p = p_layout.dt;
         use digit_layout::LayoutContent::{Real, Unsigned};
         // tokens must be floating-point numbers
         if !matches!(dt_t.decode(), Real { exponent: 1.., .. },) {
@@ -66,8 +66,8 @@ impl<H: Hardware> Args<H> {
         Ok(Meta {
             dt_t,
             dt_p,
-            nt: dim_distinct(&[nt, np])?,
-            dh: dim_distinct(&[dh, dh_sin, dh_cos])?,
+            nt: dim_distinct(&[nt, np]).expect("nt mismatch"),
+            dh: dim_distinct(&[dh, dh_sin, dh_cos]).expect("dh mismatch"),
         })
     }
 }

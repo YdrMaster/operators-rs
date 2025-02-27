@@ -168,6 +168,7 @@ mod test {
     const ALPHA: f32 = 0.5;
     const BETA: f32 = 1.;
 
+    #[allow(clippy::too_many_arguments)]
     fn args<H: Hardware>(
         dt: DigitLayout,
         batch: usize,

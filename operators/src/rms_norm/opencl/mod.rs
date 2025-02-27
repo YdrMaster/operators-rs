@@ -1,6 +1,5 @@
 use super::{args::Meta, Args, RmsNorm};
 use crate::{
-    get_static,
     opencl::{ClDevice, CodeGen, KernelCache, CL2_0},
     ByteOf, LaunchError, QueueAlloc,
     SchemeDiversity::Low as LowDiversity,
@@ -67,11 +66,6 @@ impl crate::Operator for Operator {
         let &[nsx, ..] = x_layout.strides() else {
             unreachable!()
         };
-        get_static! {
-            n d
-            nsy
-            nsx
-        }
 
         let (key, group_size) = self.cache_kernel(dt_a, dt_w, d);
 

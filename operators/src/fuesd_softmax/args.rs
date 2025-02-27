@@ -29,7 +29,7 @@ impl<H: Hardware> Args<H> {
     }
 
     pub(super) fn meta(&self) -> Result<Meta, LaunchError> {
-        let dt = self.att_layout.dt();
+        let dt = self.att_layout.dt;
         if self.att_layout.ndim() != 3 {
             return Err(rank_not_support(""));
         }

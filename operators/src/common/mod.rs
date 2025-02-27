@@ -2,7 +2,6 @@ mod blob;
 mod calculator;
 mod diversity;
 mod error;
-mod maybe_dyn;
 mod pool;
 mod tensor;
 mod unsigned;
@@ -11,17 +10,15 @@ mod workspace;
 pub use blob::Blob;
 pub use calculator::OffsetCalculator;
 pub use error::{functions::*, LaunchError, LaunchErrorKind};
-pub use maybe_dyn::{dyn_, DynVal, MaybeDyn};
 pub use pool::Pool;
 pub use tensor::TensorLayout;
 pub use unsigned::Unsigned;
 pub use workspace::Workspace;
 
 pub(crate) use diversity::{SchemeCacheSize, SchemeDiversity};
-pub(crate) use maybe_dyn::{get_static, static_from};
 
 pub mod utils {
-    use super::{rank_not_support, shape_mismatch, type_mismatch, LaunchError, MaybeDyn};
+    use super::{rank_not_support, type_mismatch, LaunchError};
     use digit_layout::DigitLayout;
 
     #[cfg(any(use_cuda, use_cl))]
@@ -53,10 +50,14 @@ pub mod utils {
     }
 
     #[inline]
-    pub(crate) fn dim_distinct(args: &[MaybeDyn<usize>]) -> Result<MaybeDyn<usize>, LaunchError> {
-        MaybeDyn::merge(args)
-            .copied()
-            .map_err(|_| shape_mismatch(format!("{args:?} are not distinct")))
+    pub(crate) fn dim_distinct(args: &[usize]) -> Option<usize> {
+        let (&ans, others) = args.split_first().unwrap();
+        for &x in others {
+            if x != ans {
+                return None;
+            }
+        }
+        Some(ans)
     }
 }
 

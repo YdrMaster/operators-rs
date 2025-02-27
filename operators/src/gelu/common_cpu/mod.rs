@@ -1,5 +1,5 @@
 use super::{args::Meta, Args, Gelu};
-use crate::{common_cpu::Cpu, get_static, ByteOf, LaunchError, QueueAlloc};
+use crate::{common_cpu::Cpu, ByteOf, LaunchError, QueueAlloc};
 use half::f16;
 
 pub struct Operator;
@@ -29,11 +29,6 @@ impl crate::Operator for Operator {
         let &[sn, sd] = layout.strides() else {
             unreachable!()
         };
-
-        get_static! {
-             n  d
-            sn sd
-        }
 
         macro_rules! calculate {
             ($ty:ty) => {

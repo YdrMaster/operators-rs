@@ -1,10 +1,10 @@
-﻿use super::{
+use super::{
     args::{AttnMask, Meta},
     Args, FusedSoftmax,
 };
 use crate::{
     cuda::{Gpu, Handle, ModuleBox},
-    get_static, strides_not_support, type_not_support, ByteOf, LaunchError, QueueAlloc,
+    strides_not_support, type_not_support, ByteOf, LaunchError, QueueAlloc,
 };
 use digit_layout::types::F16;
 use std::{
@@ -51,7 +51,7 @@ impl crate::Operator for Operator {
             att_layout,
             att_base,
         } = args;
-        let &[nh, seq_len, att_len] = att_layout.shape() else {
+        let &[nh, seq_len, att_len] = &*att_layout.shape() else {
             unreachable!()
         };
         let &[sh, ss, sa] = att_layout.strides() else {
@@ -60,11 +60,6 @@ impl crate::Operator for Operator {
 
         if dt != F16 {
             return Err(type_not_support(""));
-        }
-
-        get_static! {
-            nh seq_len att_len
-            sh ss      sa
         }
 
         let unit = dt.nbytes() as isize;

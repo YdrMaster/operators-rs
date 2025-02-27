@@ -1,6 +1,6 @@
 use crate::{
-    dyn_not_support, rank_not_support, shape_mismatch, shape_not_support, strides_not_support,
-    utils::type_distinct, ConstPtr, Hardware, LaunchError, MaybeDyn, MutPtr, TensorLayout,
+    rank_not_support, shape_mismatch, shape_not_support, strides_not_support, utils::type_distinct,
+    ConstPtr, Hardware, LaunchError, MutPtr, TensorLayout,
 };
 use digit_layout::DigitLayout;
 use std::{
@@ -99,7 +99,7 @@ impl<H: Hardware> Args<H> {
         let (a_ld, a_trans) = a.ld_trans()?;
         let (b_ld, b_trans) = b.ld_trans()?;
         Ok(SchemeLayout {
-            dt: type_distinct(&[c_layout.dt(), a_layout.dt(), b_layout.dt()])?,
+            dt: type_distinct(&[c_layout.dt, a_layout.dt, b_layout.dt])?,
             ab_swap,
             a_trans,
             b_trans,
@@ -135,20 +135,13 @@ impl TryFrom<&TensorLayout> for Matrix {
     type Error = LaunchError;
 
     fn try_from(tensor: &TensorLayout) -> Result<Self, Self::Error> {
-        let Some(shape) = MaybeDyn::get_all(tensor.shape()) else {
-            return Err(dyn_not_support(""));
-        };
-        let Some(strides) = MaybeDyn::get_all(tensor.strides()) else {
-            return Err(dyn_not_support(""));
-        };
-
-        let [batch @ .., r, c] = shape else {
+        let [batch @ .., r, c] = &*tensor.shape() else {
             return Err(rank_not_support("Matrix must have rank 2 or more"));
         };
-        let [stride @ .., rs, cs] = strides else {
+        let [stride @ .., rs, cs] = tensor.strides() else {
             unreachable!();
         };
-        let unit = tensor.dt().nbytes() as isize;
+        let unit = tensor.dt.nbytes() as isize;
         let (batch, stride) = match batch {
             [] | [1] => {
                 assert!(matches!(stride, [] | [_]));

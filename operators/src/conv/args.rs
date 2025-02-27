@@ -1,6 +1,6 @@
 use crate::{
     utils::{dim_distinct, rank_error, type_distinct},
-    ConstPtr, Hardware, LaunchError, MaybeDyn, MutPtr, TensorLayout,
+    ConstPtr, Hardware, LaunchError, MutPtr, TensorLayout,
 };
 use digit_layout::DigitLayout;
 
@@ -20,15 +20,15 @@ pub struct Args<H: Hardware> {
 
 pub(crate) struct Meta {
     pub dt: DigitLayout,
-    pub n: MaybeDyn<usize>,
-    pub m: MaybeDyn<usize>,
-    pub c: MaybeDyn<usize>,
-    pub h: MaybeDyn<usize>,
-    pub w: MaybeDyn<usize>,
-    pub hy: MaybeDyn<usize>,
-    pub wy: MaybeDyn<usize>,
-    pub hk: MaybeDyn<usize>,
-    pub wk: MaybeDyn<usize>,
+    pub n: usize,
+    pub m: usize,
+    pub c: usize,
+    pub h: usize,
+    pub w: usize,
+    pub hy: usize,
+    pub wy: usize,
+    pub hk: usize,
+    pub wk: usize,
 }
 
 impl<H: Hardware> Args<H> {
@@ -41,24 +41,24 @@ impl<H: Hardware> Args<H> {
             ..
         } = self;
 
-        let &[ny, my, hy, wy] = y_layout.shape() else {
+        let &[ny, my, hy, wy] = &*y_layout.shape() else {
             return Err(rank_error("y", 4, y_layout.ndim()));
         };
-        let &[n, c, h, w] = x_layout.shape() else {
+        let &[n, c, h, w] = &*x_layout.shape() else {
             return Err(rank_error("x", 4, x_layout.ndim()));
         };
-        let &[m, ck, hk, wk] = w_layout.shape() else {
+        let &[m, ck, hk, wk] = &*w_layout.shape() else {
             return Err(rank_error("w", 4, w_layout.ndim()));
         };
-        let &[mb] = b_layout.shape() else {
+        let &[mb] = &*b_layout.shape() else {
             return Err(rank_error("b", 1, b_layout.ndim()));
         };
 
         Ok(Meta {
-            dt: type_distinct(&[y_layout.dt(), x_layout.dt(), w_layout.dt(), b_layout.dt()])?,
-            n: dim_distinct(&[n, ny])?,
-            m: dim_distinct(&[m, my, mb])?,
-            c: dim_distinct(&[c, ck])?,
+            dt: type_distinct(&[y_layout.dt, x_layout.dt, w_layout.dt, b_layout.dt])?,
+            n: dim_distinct(&[n, ny]).expect("n mismatch"),
+            m: dim_distinct(&[m, my, mb]).expect("m mismatch"),
+            c: dim_distinct(&[c, ck]).expect("c mismatch"),
             h,
             w,
             hy,

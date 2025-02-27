@@ -1,6 +1,6 @@
 use crate::{
     utils::{dim_distinct, rank_error, type_distinct},
-    ConstPtr, Hardware, LaunchError, MaybeDyn, MutPtr, TensorLayout,
+    ConstPtr, Hardware, LaunchError, MutPtr, TensorLayout,
 };
 use digit_layout::DigitLayout;
 
@@ -19,8 +19,8 @@ pub struct Args<H: Hardware> {
 pub(super) struct Meta {
     pub dt_a: DigitLayout,
     pub dt_w: DigitLayout,
-    pub n: MaybeDyn<usize>,
-    pub d: MaybeDyn<usize>,
+    pub n: usize,
+    pub d: usize,
 }
 
 impl<H: Hardware> Args<H> {
@@ -33,24 +33,24 @@ impl<H: Hardware> Args<H> {
             ..
         } = self;
 
-        let &[ny, dy] = y.shape() else {
+        let &[ny, dy] = &*y.shape() else {
             return Err(rank_error("y", 2, y.ndim()));
         };
-        let &[nx, dx] = x.shape() else {
+        let &[nx, dx] = &*x.shape() else {
             return Err(rank_error("x", 2, x.ndim()));
         };
-        let &[ds] = scale.shape() else {
+        let &[ds] = &*scale.shape() else {
             return Err(rank_error("scale", 1, scale.ndim()));
         };
-        let &[db] = bias.shape() else {
+        let &[db] = &*bias.shape() else {
             return Err(rank_error("bias", 1, bias.ndim()));
         };
 
         Ok(Meta {
-            dt_a: type_distinct(&[y.dt(), x.dt()])?,
-            dt_w: type_distinct(&[scale.dt(), bias.dt()])?,
-            n: dim_distinct(&[ny, nx])?,
-            d: dim_distinct(&[dy, dx, ds, db])?,
+            dt_a: type_distinct(&[y.dt, x.dt])?,
+            dt_w: type_distinct(&[scale.dt, bias.dt])?,
+            n: dim_distinct(&[ny, nx]).expect("m mismatch"),
+            d: dim_distinct(&[dy, dx, ds, db]).expect("d mismatch"),
         })
     }
 }

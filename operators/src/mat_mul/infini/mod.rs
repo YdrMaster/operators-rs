@@ -38,9 +38,9 @@ impl crate::Operator for Operator {
 
         fn tensor(layout: &TensorLayout) -> infini_op::Tensor {
             infini_op::Tensor::new(
-                layout.dt(),
-                layout.shape().iter().map(|&x| *x.get_static().unwrap()),
-                layout.strides().iter().map(|&x| *x.get_static().unwrap()),
+                layout.dt,
+                layout.shape().iter().cloned(),
+                layout.strides().iter().cloned(),
             )
         }
 
@@ -93,6 +93,7 @@ mod test {
     const ALPHA: f32 = 0.5;
     const BETA: f32 = 1.;
 
+    #[allow(clippy::too_many_arguments)]
     fn args<H: Hardware>(
         dt: DigitLayout,
         batch: usize,

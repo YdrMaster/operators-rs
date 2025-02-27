@@ -1,7 +1,6 @@
 use super::{args::Meta, common_cpu::Operator as RefOp, Args, Indices, RandomSample};
 use crate::{
     common_cpu::{Cpu, ThisThread},
-    get_static,
     infini::Device,
     ByteOf, LaunchError, QueueAlloc,
 };
@@ -50,9 +49,7 @@ impl crate::Operator for Operator {
             seed,
         } = args;
         let Meta { dt, n } = args.meta()?;
-        get_static! {
-            n
-        }
+
         let unit = dt.nbytes();
         let mut host = vec![0u8; n * unit];
 

@@ -1,6 +1,5 @@
 ﻿use super::{args::Meta, fill_pos, Args, Rope, Seq, SinCosTable};
 use crate::{
-    get_static,
     opencl::{ClDevice, CodeGen, KernelCache, CL2_0},
     shape_not_support, strides_not_support, ByteOf, LaunchError, QueueAlloc,
     SchemeDiversity::Low as LowDiversity,
@@ -121,7 +120,7 @@ impl crate::Operator for Operator {
             theta,
             ..
         } = args;
-        let &[_, nh, _] = t_layout.shape() else {
+        let &[_, nh, _] = &*t_layout.shape() else {
             unreachable!()
         };
         let &[st, sh, sd] = t_layout.strides() else {
@@ -130,12 +129,6 @@ impl crate::Operator for Operator {
         let &[sp] = p_layout.strides() else {
             unreachable!()
         };
-
-        get_static! {
-            nt nh dh
-            st sh sd
-            sp
-        }
 
         let unit = dt_t.nbytes() as isize;
         if sd != unit || sp != dt_p.nbytes() as isize {
@@ -171,8 +164,8 @@ impl crate::Operator for Operator {
             .set_arg(4, theta)
             .launch(
                 &[0, 0],
-                &[(nt * nh_l) as usize, (nh_h * dh) as usize],
-                &[nh_l as usize, dh as usize],
+                &[nt * nh_l, nh_h * dh],
+                &[nh_l, dh],
                 queue_alloc.queue(),
                 None,
             );
@@ -233,6 +226,7 @@ mod test {
         DigitLayout,
     };
 
+    #[allow(clippy::too_many_arguments)]
     fn args<H: Hardware>(
         dt_t: DigitLayout,
         dt_p: DigitLayout,

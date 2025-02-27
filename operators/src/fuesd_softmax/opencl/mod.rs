@@ -1,7 +1,6 @@
 use super::{args::Meta, Args, FusedSoftmax};
 use crate::{
     fuesd_softmax::args::AttnMask,
-    get_static,
     opencl::{ClDevice, CodeGen, KernelCache, CL2_0},
     strides_not_support, ByteOf, LaunchError, QueueAlloc,
     SchemeDiversity::Low as LowDiversity,
@@ -56,7 +55,7 @@ impl crate::Operator for Operator {
         QA: QueueAlloc<Hardware = Self::Hardware>,
     {
         let Meta { dt } = args.meta()?;
-        self.cache_kernel(args.att_layout.dt());
+        self.cache_kernel(args.att_layout.dt);
 
         let Args {
             att_mask,
@@ -66,17 +65,12 @@ impl crate::Operator for Operator {
         if !matches!(*att_mask, AttnMask::Causal) {
             todo!()
         }
-        let &[nh, seq_len, att_len] = att_layout.shape() else {
+        let &[nh, seq_len, att_len] = &*att_layout.shape() else {
             unreachable!()
         };
         let &[sh, ss, sa] = att_layout.strides() else {
             unreachable!()
         };
-
-        get_static! {
-            nh seq_len att_len
-            sh ss      sa
-        }
 
         let unit = dt.nbytes() as isize;
         if sa != unit {

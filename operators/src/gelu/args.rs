@@ -1,4 +1,4 @@
-use crate::{utils::rank_error, Hardware, LaunchError, MaybeDyn, MutPtr, TensorLayout};
+use crate::{utils::rank_error, Hardware, LaunchError, MutPtr, TensorLayout};
 use digit_layout::DigitLayout;
 
 pub struct Args<H: Hardware> {
@@ -8,8 +8,8 @@ pub struct Args<H: Hardware> {
 
 pub(super) struct Meta {
     pub dt: DigitLayout,
-    pub n: MaybeDyn<usize>,
-    pub d: MaybeDyn<usize>,
+    pub n: usize,
+    pub d: usize,
 }
 
 impl<H: Hardware> Args<H> {
@@ -24,12 +24,12 @@ impl<H: Hardware> Args<H> {
     pub(super) fn meta(&self) -> Result<Meta, LaunchError> {
         let Self { layout, .. } = self;
 
-        let &[n, d] = layout.shape() else {
+        let &[n, d] = &*layout.shape() else {
             return Err(rank_error("layout", 2, layout.ndim()));
         };
 
         Ok(Meta {
-            dt: layout.dt(),
+            dt: layout.dt,
             n,
             d,
         })

@@ -1,5 +1,5 @@
-﻿use super::{args::Meta, Args, RmsNorm};
-use crate::{common_cpu::Cpu, get_static, ByteOf, LaunchError, QueueAlloc};
+use super::{args::Meta, Args, RmsNorm};
+use crate::{common_cpu::Cpu, ByteOf, LaunchError, QueueAlloc};
 use half::f16;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
@@ -44,13 +44,6 @@ impl crate::Operator for Operator {
         let &[dsw] = w_layout.strides() else {
             unreachable!()
         };
-
-        get_static! {
-            n   d
-            nsy dsy
-            nsx dsx
-            dsw
-        }
 
         macro_rules! calculate {
             ($w:ty, $a:ty) => {

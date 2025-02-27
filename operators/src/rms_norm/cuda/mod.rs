@@ -1,8 +1,7 @@
 use super::{args::Meta, Args, RmsNorm};
 use crate::{
     cuda::{dt_name, Gpu, Handle, ModuleBox},
-    get_static, shape_not_support, strides_not_support, ByteOf, LaunchError, QueueAlloc,
-    SchemeDiversity,
+    shape_not_support, strides_not_support, ByteOf, LaunchError, QueueAlloc, SchemeDiversity,
 };
 use digit_layout::DigitLayout;
 use lru::LruCache;
@@ -58,13 +57,6 @@ impl crate::Operator for Operator {
         let &[wds] = w_layout.strides() else {
             unreachable!()
         };
-
-        get_static! {
-             n   d
-            yns yds
-            xns xds
-                wds
-        }
 
         let unit = dt_a.nbytes() as isize;
         if yds != unit || xds != unit || wds != dt_w.nbytes() as isize {

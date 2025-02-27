@@ -1,6 +1,5 @@
 ﻿use super::{args::Meta, Args, Swiglu};
 use crate::{
-    get_static,
     opencl::{ClDevice, CodeGen, KernelCache, CL2_0},
     strides_not_support,
     utils::gcd,
@@ -64,12 +63,6 @@ impl crate::Operator for Operator {
             unreachable!()
         };
 
-        get_static! {
-              n   d
-            sgn sgd
-            sun sud
-        }
-
         let unit = dt.nbytes() as isize;
         if sgd != unit || sud != unit {
             return Err(strides_not_support("opencl: swiglu"));
@@ -96,7 +89,7 @@ impl crate::Operator for Operator {
             .set_arg(3, (su) as cl_int)
             .launch(
                 &[0, 0],
-                &[n as usize, d as usize],
+                &[n, d],
                 &[1, group_size],
                 queue_alloc.queue(),
                 None,

@@ -1,8 +1,8 @@
 use super::{args::Meta, fill_pos, Args, Rope, Seq, SinCosTable};
 use crate::{
     cuda::{Gpu, Handle, ModuleBox},
-    get_static, shape_not_support, strides_not_support, type_not_support, Blob, ByteOf,
-    LaunchError, QueueAlloc,
+    shape_not_support, strides_not_support, type_not_support, Blob, ByteOf, LaunchError,
+    QueueAlloc,
 };
 use digit_layout::{types as ty, DigitLayout};
 use std::{ffi::CString, sync::Arc};
@@ -100,7 +100,7 @@ impl crate::Operator for Operator {
             theta,
             ..
         } = args;
-        let &[_, nh, _] = t_layout.shape() else {
+        let &[_, nh, _] = &*t_layout.shape() else {
             unreachable!()
         };
         let &[st, sh, sd] = t_layout.strides() else {
@@ -109,12 +109,6 @@ impl crate::Operator for Operator {
         let &[sp] = p_layout.strides() else {
             unreachable!()
         };
-
-        get_static! {
-            nt nh dh
-            st sh sd
-            sp
-        }
 
         let unit = dt_t.nbytes() as isize;
         if sd != unit || sp != dt_p.nbytes() as isize {
@@ -182,6 +176,7 @@ mod test {
         DigitLayout,
     };
 
+    #[allow(clippy::too_many_arguments)]
     fn args<H: Hardware>(
         dt_t: DigitLayout,
         dt_p: DigitLayout,

@@ -1,7 +1,7 @@
 use super::{args::Meta, Args, Gelu};
 use crate::{
     cuda::{Gpu, Handle, ModuleBox},
-    get_static, strides_not_support, type_not_support,
+    strides_not_support, type_not_support,
     utils::gcd,
     ByteOf, LaunchError, QueueAlloc,
 };
@@ -54,10 +54,6 @@ impl crate::Operator for Operator {
         let &[_, ds] = layout.strides() else {
             unreachable!()
         };
-
-        get_static! {
-             n   d  ds
-        }
 
         let unit = dt.nbytes() as isize;
         if ds != unit {

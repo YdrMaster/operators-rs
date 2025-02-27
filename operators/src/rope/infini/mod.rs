@@ -1,5 +1,5 @@
 use super::{args::Meta, fill_pos, Args, Rope, Seq, SinCosTable};
-use crate::{get_static, infini::Device, Blob, ByteOf, LaunchError, QueueAlloc, Workspace};
+use crate::{infini::Device, Blob, ByteOf, LaunchError, QueueAlloc, Workspace};
 use digit_layout::{types as ty, DigitLayout};
 use infini_op::{infiniop, AsRaw, Descriptor};
 
@@ -89,7 +89,7 @@ impl crate::Operator for Operator {
             ..
         } = args;
 
-        let &[nctx, nh, dh] = t_layout.shape() else {
+        let &[nctx, nh, dh] = &*t_layout.shape() else {
             unreachable!()
         };
         let &[ncs, nhs, dhs] = t_layout.strides() else {
@@ -105,18 +105,10 @@ impl crate::Operator for Operator {
             unreachable!()
         };
 
-        get_static! {
-            nctx nh dh
-            ncs nhs dhs
-            ps
-            sns sds
-            snc sdc
-        }
-
         let t = infini_op::Tensor::new(dt_t, [nctx, nh, dh], [ncs, nhs, dhs]);
         let p = infini_op::Tensor::new(dt_p, [nctx], [ps]);
-        let sin = infini_op::Tensor::new(sin_layout.dt(), [nctx, dh], [sns, sds]);
-        let cos = infini_op::Tensor::new(cos_layout.dt(), [nctx, dh], [snc, sdc]);
+        let sin = infini_op::Tensor::new(sin_layout.dt, [nctx, dh], [sns, sds]);
+        let cos = infini_op::Tensor::new(cos_layout.dt, [nctx, dh], [snc, sdc]);
 
         let descriptor = Descriptor::new(
             |ptr| {
@@ -159,6 +151,7 @@ mod test {
     use digit_layout::{types as ty, DigitLayout};
     use std::ptr::null;
 
+    #[allow(clippy::too_many_arguments)]
     fn args<H: Hardware>(
         dt_t: DigitLayout,
         dt_p: DigitLayout,
@@ -173,15 +166,15 @@ mod test {
     ) -> Args<H> {
         use ndarray_layout::{ArrayLayout, Endian::BigEndian};
         Args {
-            t_layout: TensorLayout::from_arr(
-                dt_t,
-                &ArrayLayout::<3>::new_contiguous(&[nt, nh, dh], BigEndian, dt_t.nbytes()).slice(
+            t_layout: TensorLayout {
+                dt: dt_t,
+                layout: ArrayLayout::new_contiguous(&[nt, nh, dh], BigEndian, dt_t.nbytes()).slice(
                     1,
                     4,
                     1,
                     nh - 8,
                 ),
-            ),
+            },
             t_base,
             p_layout: TensorLayout::new_contiguous(dt_p, &[nt]),
             p_base,

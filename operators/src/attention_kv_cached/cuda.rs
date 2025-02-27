@@ -6,6 +6,7 @@ mod test {
     use crate::{cuda::Gpu, ByteOf, Hardware, Operator as _, TensorLayout};
     use digit_layout::{types as ty, DigitLayout};
 
+    #[allow(clippy::too_many_arguments)]
     fn args<H: Hardware>(
         dt: DigitLayout,
         nh: usize,
@@ -34,7 +35,7 @@ mod test {
             k_cache_base,
             v_cache_base,
             mask: crate::fuesd_softmax::AttnMask::Causal,
-            pos: pos.into(),
+            pos,
         }
     }
 

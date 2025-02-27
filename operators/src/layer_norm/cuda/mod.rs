@@ -1,7 +1,6 @@
 use super::{Args, LayerNorm};
 use crate::{
     cuda::{dt_name, Gpu, Handle, ModuleBox},
-    get_static,
     layer_norm::args::Meta,
     shape_not_support, strides_not_support, ByteOf, LaunchError, QueueAlloc, SchemeDiversity,
 };
@@ -64,14 +63,6 @@ impl crate::Operator for Operator {
         let &[dsb] = bias_layout.strides() else {
             unreachable!()
         };
-
-        get_static! {
-            n   d
-            nsy dsy
-            nsx dsx
-                dss
-                dsb
-        }
 
         let unit = dt_a.nbytes() as isize;
         if dsy != unit
@@ -221,6 +212,7 @@ mod test {
         DigitLayout,
     };
 
+    #[allow(clippy::too_many_arguments)]
     fn args<H: Hardware>(
         dt_a: DigitLayout,
         dt_w: DigitLayout,

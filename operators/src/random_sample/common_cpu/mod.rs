@@ -1,7 +1,6 @@
 use super::{args::Meta, Args, Indices, KVPair, RandomSample, SampleArgs};
 use crate::{
-    common_cpu::Cpu, get_static, strides_not_support, type_not_support, ByteOf, LaunchError,
-    QueueAlloc,
+    common_cpu::Cpu, strides_not_support, type_not_support, ByteOf, LaunchError, QueueAlloc,
 };
 use half::f16;
 use num_traits::Float;
@@ -43,11 +42,10 @@ impl crate::Operator for Operator {
         let &[s] = args.logits.strides() else {
             unreachable!()
         };
-        if s.get_static().copied() != Some(dt.nbytes() as isize) {
+        if s != dt.nbytes() as isize {
             return Err(strides_not_support(""));
         }
 
-        get_static!(n);
         let Args {
             kv_pair_base,
             logits_base,

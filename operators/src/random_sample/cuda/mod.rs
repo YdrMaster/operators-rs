@@ -6,7 +6,7 @@ use super::{
 };
 use crate::{
     cuda::{dt_name, Gpu, Handle},
-    get_static, strides_not_support, ByteOf, LaunchError, QueueAlloc, SchemeDiversity, Workspace,
+    strides_not_support, ByteOf, LaunchError, QueueAlloc, SchemeDiversity, Workspace,
 };
 use cuda::{DevByte, Stream};
 use digit_layout::DigitLayout;
@@ -79,8 +79,6 @@ impl crate::Operator for Operator {
         let &[si] = indices.strides() else {
             unreachable!()
         };
-
-        get_static!(n sp si);
 
         if dt.nbytes() as isize != sp {
             return Err(strides_not_support(""));

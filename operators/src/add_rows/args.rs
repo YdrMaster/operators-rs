@@ -1,7 +1,7 @@
 use crate::{
     type_not_support,
     utils::{dim_distinct, rank_error, type_distinct},
-    ConstPtr, Hardware, LaunchError, MaybeDyn, MutPtr, TensorLayout,
+    ConstPtr, Hardware, LaunchError, MutPtr, TensorLayout,
 };
 use digit_layout::{DigitLayout, LayoutContent::Unsigned};
 use std::ptr::{null, null_mut};
@@ -37,10 +37,10 @@ impl<H: Hardware> Args<H> {
 pub(super) struct Meta {
     pub dt: DigitLayout,
     pub dt_idx: DigitLayout,
-    pub batch: MaybeDyn<usize>,
-    pub m: MaybeDyn<usize>,
-    pub n: MaybeDyn<usize>,
-    pub k: MaybeDyn<usize>,
+    pub batch: usize,
+    pub m: usize,
+    pub n: usize,
+    pub k: usize,
 }
 
 impl<H: Hardware> Args<H> {
@@ -52,30 +52,30 @@ impl<H: Hardware> Args<H> {
             ..
         } = self;
 
-        let dt = type_distinct(&[dst.dt(), src.dt()])?;
-        let dt_idx = idx.dt();
+        let dt = type_distinct(&[dst.dt, src.dt])?;
+        let dt_idx = idx.dt;
         if !matches!(dt_idx.decode(), Unsigned { .. }) {
             return Err(type_not_support(format!(
                 "data type {dt_idx} is not supported, must be unsigned integers"
             )));
         }
 
-        let &[batch, m, n] = dst.shape() else {
+        let &[batch, m, n] = &*dst.shape() else {
             return Err(rank_error("dst", 3, dst.ndim()));
         };
-        let &[k, n_] = src.shape() else {
+        let &[k, n_] = &*src.shape() else {
             return Err(rank_error("src", 2, src.ndim()));
         };
-        let &[batch_, m_] = idx.shape() else {
+        let &[batch_, m_] = &*idx.shape() else {
             return Err(rank_error("idx", 2, idx.ndim()));
         };
 
         Ok(Meta {
             dt,
             dt_idx,
-            batch: dim_distinct(&[batch, batch_])?,
-            m: dim_distinct(&[m, m_])?,
-            n: dim_distinct(&[n, n_])?,
+            batch: dim_distinct(&[batch, batch_]).expect("batch mismatch"),
+            m: dim_distinct(&[m, m_]).expect("m mismatch"),
+            n: dim_distinct(&[n, n_]).expect("n mismatch"),
             k,
         })
     }

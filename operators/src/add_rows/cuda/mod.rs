@@ -2,7 +2,7 @@ use super::{AddRows, Args};
 use crate::{
     add_rows::args::Meta,
     cuda::{dt_name, Gpu, Handle, ModuleBox},
-    get_static, strides_not_support,
+    strides_not_support,
     utils::gcd,
     ByteOf, LaunchError, QueueAlloc, SchemeDiversity,
 };
@@ -63,13 +63,8 @@ impl crate::Operator for Operator {
             unreachable!()
         };
 
-        get_static! {
-            b   n   m
-            bsd msd nsd
-            bsi msi nss kss
-        }
-        let unit_dst = dst_layout.dt().nbytes() as isize;
-        let unit_idx = idx_layout.dt().nbytes() as isize;
+        let unit_dst = dst_layout.dt.nbytes() as isize;
+        let unit_idx = idx_layout.dt.nbytes() as isize;
         if nsd != unit_dst || nss != unit_dst || msi != unit_idx {
             return Err(strides_not_support(""));
         };
@@ -85,9 +80,7 @@ impl crate::Operator for Operator {
         let params = cuda::params![dst_base, src_base, idx_base, bsd, msd, kss, bsi];
         let block = gcd(self.max_threads_block, n);
         let dimx = n.div_ceil(block);
-        let key = SchemeKey {
-            dt: dst_layout.dt(),
-        };
+        let key = SchemeKey { dt: dst_layout.dt };
         let scheme = self
             .schemes
             .lock()
@@ -160,6 +153,7 @@ mod test {
     };
     use half::f16;
 
+    #[allow(clippy::too_many_arguments)]
     fn args<H: Hardware>(
         dt: DigitLayout,
         b: usize,

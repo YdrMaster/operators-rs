@@ -1,8 +1,8 @@
-﻿use super::{
+use super::{
     args::{AttnMask, Meta},
     Args, FusedSoftmax,
 };
-use crate::{common_cpu::Cpu, get_static, ByteOf, LaunchError, QueueAlloc};
+use crate::{common_cpu::Cpu, ByteOf, LaunchError, QueueAlloc};
 use half::f16;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
@@ -35,17 +35,12 @@ impl crate::Operator for Operator {
             att_layout,
             att_base,
         } = args;
-        let &[nh, seq_len, att_len] = att_layout.shape() else {
+        let &[nh, seq_len, att_len] = &*att_layout.shape() else {
             unreachable!()
         };
         let &[sh, ss, sa] = att_layout.strides() else {
             unreachable!()
         };
-
-        get_static! {
-            nh seq_len att_len
-            sh ss      sa
-        }
 
         macro_rules! calculate {
             ($ty:ty) => {

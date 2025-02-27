@@ -1,6 +1,6 @@
 ﻿use crate::{
-    rank_mismatch, shape_mismatch, shape_not_support, static_from, utils::type_distinct, ConstPtr,
-    Hardware, LaunchError, MutPtr, TensorLayout,
+    rank_mismatch, shape_mismatch, shape_not_support, utils::type_distinct, ConstPtr, Hardware,
+    LaunchError, MutPtr, TensorLayout,
 };
 use std::{
     cmp::Ordering,
@@ -39,7 +39,7 @@ impl Scheme {
             ..
         } = args;
         // # 检查基本属性
-        let _ = type_distinct(&[dst_.dt(), src_.dt()])?;
+        let _ = type_distinct(&[dst_.dt, src_.dt])?;
         let ndim = dst_.ndim();
         if src_.ndim() != ndim {
             return Err(rank_mismatch(format!(
@@ -62,16 +62,16 @@ impl Scheme {
             let sd = dst_.strides();
             let ss = src_.strides();
             for i in 0..ndim {
-                let dd = *static_from(&dd[i])?;
-                let ds = *static_from(&ds[i])?;
+                let dd = dd[i];
+                let ds = ds[i];
                 if dd != ds {
                     Err(shape_mismatch(format!("dst[{i}] = {dd}, src[{i}] = {ds}")))?;
                 }
                 // 静态化
                 let dim = Dim {
                     len: dd,
-                    dst: *static_from(&sd[i])?,
-                    src: *static_from(&ss[i])?,
+                    dst: sd[i],
+                    src: ss[i],
                 };
                 // 剔除初始的 1 长维度
                 if dim.len != 1 {
@@ -105,7 +105,7 @@ impl Scheme {
         }
         dims.sort_unstable();
         // # 合并连续维度
-        let mut unit = dst_.dt().nbytes() as isize;
+        let mut unit = dst_.dt.nbytes() as isize;
         let mut ndim = dims.len();
         // ## 合并末尾连续维度到 unit
         for dim in dims.iter_mut().rev() {

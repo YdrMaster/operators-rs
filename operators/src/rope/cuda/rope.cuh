@@ -1,6 +1,6 @@
 #include <cuda_fp16.h>
 
-template<class Tp>
+template <class Tp>
 static __device__ void padding(
     half2 *__restrict__ t,
     int const stride_token,
@@ -14,11 +14,11 @@ static __device__ void padding(
         nh_l = blockDim.y,
         dh = blockDim.x,
 
-        it = blockIdx.y,        // token index
-        ih_h = blockIdx.x,      // head index (high)
-        ih_l = threadIdx.y,     // head index (low)
-        ih = ih_h * nh_l + ih_l,// head index
-        i = threadIdx.x;        // element index
+        it = blockIdx.y,         // token index
+        ih_h = blockIdx.x,       // head index (high)
+        ih_l = threadIdx.y,      // head index (low)
+        ih = ih_h * nh_l + ih_l, // head index
+        i = threadIdx.x;         // element index
 
     t += it * stride_token + ih * stride_head + i;
     float a = t->x, b = t->y, sin, cos;

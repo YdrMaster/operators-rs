@@ -1,7 +1,6 @@
-﻿use super::{args::Meta, Args, AttnKVCached};
+use super::{args::Meta, Args, AttnKVCached};
 use crate::{
-    attention, get_static, rearrange, shape_mismatch, ByteOf, Hardware, LaunchError, QueueAlloc,
-    TensorLayout,
+    attention, rearrange, shape_mismatch, ByteOf, Hardware, LaunchError, QueueAlloc, TensorLayout,
 };
 use ndarray_layout::ArrayLayout;
 use std::marker::PhantomData;
@@ -50,27 +49,27 @@ where
         let Meta {
             dt, nkvh, dh, seq, ..
         } = args.meta()?;
-        let Args {
-            q_layout,
+        let &Args {
+            ref q_layout,
             q_base,
-            k_layout,
+            ref k_layout,
             k_base,
-            v_layout,
+            ref v_layout,
             v_base,
-            o_layout,
+            ref o_layout,
             o_base,
-            k_cache_layout,
+            ref k_cache_layout,
             k_cache_base,
-            v_cache_layout,
+            ref v_cache_layout,
             v_cache_base,
             mask,
             pos,
         } = args;
 
-        let &[_, buf_k, _] = k_cache_layout.shape() else {
+        let &[_, buf_k, _] = &*k_cache_layout.shape() else {
             unreachable!()
         };
-        let &[_, buf_v, _] = v_cache_layout.shape() else {
+        let &[_, buf_v, _] = &*v_cache_layout.shape() else {
             unreachable!()
         };
         let &[nkvh_skc, buf_skc, dh_skc] = k_cache_layout.strides() else {
@@ -78,14 +77,6 @@ where
         };
         let &[nkvh_svc, buf_svc, dh_svc] = k_cache_layout.strides() else {
             unreachable!()
-        };
-
-        get_static! {
-            pos      seq
-                     buf_k
-            nkvh     buf_v   dh
-            nkvh_skc buf_skc dh_skc
-            nkvh_svc buf_svc dh_svc
         };
 
         // 检查 cache 容量
@@ -110,7 +101,7 @@ where
                 dst_layout: TensorLayout::new(dt, k_cat.shape(), k_cat.strides()),
                 dst_base: unsafe { k_cache_base.byte_add(k_cat.offset() as _) },
                 src_layout: k_layout.clone(),
-                src_base: *k_base,
+                src_base: k_base,
             },
             workspace,
             queue_alloc,
@@ -120,7 +111,7 @@ where
                 dst_layout: TensorLayout::new(dt, v_cat.shape(), v_cat.strides()),
                 dst_base: unsafe { v_cache_base.byte_add(k_cat.offset() as _) },
                 src_layout: v_layout.clone(),
-                src_base: *v_base,
+                src_base: v_base,
             },
             workspace,
             queue_alloc,
@@ -132,15 +123,15 @@ where
         assert_eq!(v_layout.offset(), 0);
         self.attention.launch(
             &attention::Args {
-                mask: *mask,
+                mask,
                 q_layout: q_layout.clone(),
-                q_base: *q_base,
+                q_base,
                 k_layout: TensorLayout::new(dt, k_layout.shape(), k_layout.strides()),
-                k_base: *k_cache_base,
+                k_base: k_cache_base,
                 v_layout: TensorLayout::new(dt, v_layout.shape(), v_layout.strides()),
-                v_base: *v_cache_base,
+                v_base: v_cache_base,
                 o_layout: o_layout.clone(),
-                o_base: *o_base,
+                o_base,
             },
             workspace,
             queue_alloc,

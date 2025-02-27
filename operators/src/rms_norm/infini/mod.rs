@@ -1,5 +1,5 @@
-﻿use super::{args::Meta, Args, RmsNorm};
-use crate::{get_static, infini::Device, ByteOf, LaunchError, QueueAlloc, Workspace};
+use super::{args::Meta, Args, RmsNorm};
+use crate::{infini::Device, ByteOf, LaunchError, QueueAlloc, Workspace};
 use infini_op::{infiniop, AsRaw, Descriptor};
 
 pub struct Operator(Device);
@@ -44,13 +44,6 @@ impl crate::Operator for Operator {
         let &[wds] = w_layout.strides() else {
             unreachable!()
         };
-
-        get_static! {
-             n   d
-            yns yds
-            xns xds
-                wds
-        }
 
         let y = infini_op::Tensor::new(dt_a, [n, d], [yns, yds]);
         let x = infini_op::Tensor::new(dt_a, [n, d], [xns, xds]);

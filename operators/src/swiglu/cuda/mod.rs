@@ -1,7 +1,7 @@
 use super::{args::Meta, Args, Swiglu};
 use crate::{
     cuda::{Gpu, Handle, ModuleBox},
-    get_static, strides_not_support, type_not_support,
+    strides_not_support, type_not_support,
     utils::gcd,
     ByteOf, LaunchError, QueueAlloc,
 };
@@ -59,12 +59,6 @@ impl crate::Operator for Operator {
 
         if dt != F16 {
             return Err(type_not_support(""));
-        }
-
-        get_static! {
-             n   d
-            gns gds
-            uns uds
         }
 
         let unit = dt.nbytes() as isize;

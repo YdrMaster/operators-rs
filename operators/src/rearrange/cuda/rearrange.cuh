@@ -1,4 +1,4 @@
-template<class Tmem>
+template <class Tmem>
 static __device__ void rearrange(
     void *__restrict__ dst,
     int const rsa,
@@ -10,7 +10,9 @@ static __device__ void rearrange(
 
     auto row = blockIdx.y,
          col = blockIdx.x * blockDim.y + threadIdx.y;
-    if (col >= ncols) return;
+    if (col >= ncols) {
+        return;
+    }
 
     auto thread = threadIdx.x,
          warp_size = blockDim.x;

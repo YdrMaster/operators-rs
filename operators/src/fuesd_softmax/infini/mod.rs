@@ -1,7 +1,6 @@
-﻿use super::{args::Meta, Args, FusedSoftmax};
+use super::{args::Meta, Args, FusedSoftmax};
 use crate::{
-    fuesd_softmax::args::AttnMask, get_static, infini::Device, ByteOf, LaunchError, QueueAlloc,
-    Workspace,
+    fuesd_softmax::args::AttnMask, infini::Device, ByteOf, LaunchError, QueueAlloc, Workspace,
 };
 use infini_op::{infiniop, AsRaw, Descriptor};
 
@@ -37,17 +36,12 @@ impl crate::Operator for Operator {
         if !matches!(att_mask, AttnMask::Causal) {
             todo!()
         }
-        let &[nh, seq_len, att_len] = att_layout.shape() else {
+        let &[nh, seq_len, att_len] = &*att_layout.shape() else {
             unreachable!()
         };
         let &[sh, ss, sa] = att_layout.strides() else {
             unreachable!()
         };
-
-        get_static! {
-            nh seq_len att_len
-            sh ss      sa
-        }
 
         let att = infini_op::Tensor::new(dt, [nh, seq_len, att_len], [sh, ss, sa]);
         let descriptor = Descriptor::new(

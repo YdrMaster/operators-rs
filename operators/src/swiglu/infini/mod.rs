@@ -1,5 +1,5 @@
-﻿use super::{args::Meta, Args, Swiglu};
-use crate::{get_static, infini::Device, ByteOf, LaunchError, QueueAlloc};
+use super::{args::Meta, Args, Swiglu};
+use crate::{infini::Device, ByteOf, LaunchError, QueueAlloc};
 use infini_op::{infiniop, AsRaw, Descriptor, Handle};
 use std::sync::Arc;
 
@@ -39,12 +39,6 @@ impl crate::Operator for Operator {
         let &[uns, uds] = up_layout.strides() else {
             unreachable!()
         };
-
-        get_static! {
-             n   d
-            gns gds
-            uns uds
-        }
 
         let gate = infini_op::Tensor::new(dt, [n, d], [gns, gds]);
         let up = infini_op::Tensor::new(dt, [n, d], [uns, uds]);

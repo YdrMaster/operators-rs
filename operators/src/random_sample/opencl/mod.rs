@@ -2,7 +2,6 @@
 
 use super::{args::Meta, Args, Indices, KVPair, RandomSample};
 use crate::{
-    get_static,
     opencl::{ClDevice, CodeGen, KernelCache, CL2_0},
     strides_not_support, ByteOf, LaunchError, QueueAlloc,
     SchemeDiversity::Low as LowDiversity,
@@ -65,11 +64,10 @@ impl crate::Operator for Operator {
         let &[s] = args.logits.strides() else {
             unreachable!()
         };
-        if s.get_static().copied() != Some(dt.nbytes() as isize) {
+        if s != dt.nbytes() as isize {
             return Err(strides_not_support(""));
         }
 
-        get_static!(n);
         let Args {
             kv_pair_base,
             logits_base,

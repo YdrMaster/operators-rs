@@ -1,5 +1,5 @@
-﻿use super::{args::Meta, Args, LayerNorm};
-use crate::{common_cpu::Cpu, get_static, ByteOf, LaunchError, QueueAlloc};
+use super::{args::Meta, Args, LayerNorm};
+use crate::{common_cpu::Cpu, ByteOf, LaunchError, QueueAlloc};
 use half::f16;
 use num_traits::{real::Real, NumCast, ToPrimitive};
 use std::ops::AddAssign;
@@ -50,14 +50,6 @@ impl crate::Operator for Operator {
         let &[dsb] = bias_layout.strides() else {
             unreachable!()
         };
-
-        get_static! {
-            n   d
-            nsy dsy
-            nsx dsx
-                dss
-                dsb
-        }
 
         macro_rules! calculate {
             ($eps:expr; $w:ty, $a:ty) => {

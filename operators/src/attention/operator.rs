@@ -1,7 +1,7 @@
-﻿use super::{args::Meta, Args, Attention};
+use super::{args::Meta, Args, Attention};
 use crate::{
-    fuesd_softmax, get_static, mat_mul, rearrange, ByteOf, Hardware, LaunchError, QueueAlloc,
-    TensorLayout, Workspace,
+    fuesd_softmax, mat_mul, rearrange, ByteOf, Hardware, LaunchError, QueueAlloc, TensorLayout,
+    Workspace,
 };
 use ndarray_layout::ArrayLayout;
 use std::marker::PhantomData;
@@ -79,12 +79,6 @@ where
         };
 
         let ele = dt.nbytes();
-        get_static! {
-            nh      seq    dh
-            nh_sq   seq_sq dh_sq
-            nkvh    att
-            nkvh_sk att_sk dh_sk
-        };
 
         #[inline(always)]
         fn layout(shape: [usize; 3], strides: [isize; 3]) -> ArrayLayout<3> {
