@@ -30,8 +30,9 @@ impl Scheme {
     pub fn new(key: SchemeKey, handle: &Arc<Handle>) -> Result<Self, SchemeError> {
         let name = kernel_name(key.unit_size, key.constrain_num);
         let cc = handle.device().compute_capability();
-        let code = format_code(key.unit_size, key.constrain_num);
-        std::fs::write("rearrange.cu", code).unwrap();
+        // for DEBUG
+        // let code = format_code(key.unit_size, key.constrain_num);
+        // std::fs::write("rearrange.cu", code).unwrap();
         Ok(Self {
             module: handle
                 .compile_kernel(&name, cc, || format_code(key.unit_size, key.constrain_num)),
@@ -411,12 +412,22 @@ impl crate::Operator for Operator {
 }
 
 fn kernel_name(unit_size: usize, constrain_num: usize) -> String {
-    format!("rearrange_unit_{unit_size}_constrain_{constrain_num}")
+    let tmem_type = match unit_size {
+        1 => "uchar1",
+        2 => "uchar2",
+        4 => "float1",
+        8 => "float2",
+        16 => "float4",
+        32 => "double4",
+        _ => unreachable!(),
+    };
+    format!("rearrange_unit_{tmem_type}_constrain_{constrain_num}")
 }
 
-fn kernel_code(unit_size: usize, constrain_num: usize, array_size: usize) -> String {
-    let name = kernel_name(unit_size, constrain_num);
-    // 根据 unit_size 选择对应的类型
+fn format_code(unit_size: usize, constrain_num: usize) -> String {
+    let mut code = String::new();
+
+    let kernel_name = kernel_name(unit_size, constrain_num);
     let tmem_type = match unit_size {
         1 => "uchar1",
         2 => "uchar2",
@@ -427,181 +438,43 @@ fn kernel_code(unit_size: usize, constrain_num: usize, array_size: usize) -> Str
         _ => unreachable!(),
     };
 
-    // 生成约束参数
-    let constrain_param = match constrain_num {
-        0 => String::new(),
-        1 | 2 => format!(",const ArrayStruct<{constrain_num}, Constrains<ARRAY_TYPE>> constrains"),
-        _ => unreachable!(),
-    };
-
-    // 生成共享内存声明
-    let shared_mem_decl = match constrain_num {
-        0 => String::new(),
-        1 | 2 => format!("__shared__ int shared_constrains_grid_idx_multiple[{constrain_num}];"),
-        _ => unreachable!(),
-    };
-
-    // 生成约束数组初始化代码
-    let constrain_init = match constrain_num {
-        0 => String::new(),
-        1 | 2 => format!("int constrains_grid_idx_multiple[{constrain_num}] = {{0}};"),
-        _ => unreachable!(),
-    };
-
-    // 生成约束检查代码
-    let constrain_check = match constrain_num {
-        0 => String::new(),
-        _ => format!(
-            r#"
-            for (int j = 0; j < {constrain_num}; j++) {{
-                if (i == constrains.a[j].grid_idx) {{
-                    constrains_grid_idx_multiple[j] = idx * constrains.a[j].grid_div_block;
-                }}
-            }}"#
-        ),
-    };
-
-    // 生成共享内存同步代码
-    let shared_mem_sync = match constrain_num {
-        0 => String::new(),
-        _ => format!(
-            r#"
-            for (int j = 0; j < {constrain_num}; j++) {{
-                shared_constrains_grid_idx_multiple[j] = constrains_grid_idx_multiple[j];
-            }}"#
-        ),
-    };
-
-    // 生成约束加载代码
-    let constrain_load = match constrain_num {
-        0 => String::new(),
-        _ => format!(
-            r#"
-    int constrains_grid_idx_multiple[{constrain_num}];
-    for (int j = 0; j < {constrain_num}; j++) {{
-        constrains_grid_idx_multiple[j] = shared_constrains_grid_idx_multiple[j];
-    }}"#
-        ),
-    };
-
-    // 生成约束边界检查代码
-    let constrain_boundary_check = match constrain_num {
-        0 => String::new(),
-        _ => format!(
-            r#"
-            for (int j = 0; j < {constrain_num}; j++) {{
-                if (constrains.a[j].total_len != 0 && i == constrains.a[j].block_idx) {{
-                    if (constrains_grid_idx_multiple[j] + idx >= constrains.a[j].total_len) {{
-                        return;
-                    }}
-                }}
-            }}"#
-        ),
-    };
-
-    // 生成第一维度约束检查代码
-    let first_dim_check = match constrain_num {
-        0 => String::new(),
-        _ => format!(
-            r#"
-    for (int j = 0; j < {constrain_num}; j++) {{
-        if (constrains.a[j].total_len != 0 && 0 == constrains.a[j].block_idx) {{
-            if (constrains_grid_idx_multiple[j] + remaining >= constrains.a[j].total_len) {{
-                return;
-            }}
-        }}
-    }}"#
-        ),
-    };
-
-    format!(
-        r#"
-extern "C" __global__ void {name}(
-    void *__restrict__ dst,
-    void const *__restrict__ src,
-    unsigned int const block_dim,
-    unsigned int const block_len_total,                    // block_len 各元素的乘积
-    const ArrayStruct<{array_size}, ARRAY_TYPE> block_len,       // 各维度的长度
-    const ArrayStruct<{array_size}, ARRAY_TYPE> src_block_stride,// 源tensor在各维度上的步长(bytes)
-    const ArrayStruct<{array_size}, ARRAY_TYPE> dst_block_stride,// 目标tensor在各维度上的步长(bytes)
-    const ArrayStruct<{array_size}, ARRAY_TYPE> grid_len,        // 各维度的长度
-    const ArrayStruct<{array_size}, ARRAY_TYPE> src_grid_stride, // 源tensor在各维度上的步长(bytes)
-    const ArrayStruct<{array_size}, ARRAY_TYPE> dst_grid_stride{constrain_param} // 目标tensor在各维度上的步长(bytes),切分维度的约束条件数组
-             // 
-) {{
-    int remaining = threadIdx.x;
-    if (remaining >= block_len_total) {{
-        return;
-    }}
-
-    // 声明共享内存
-    __shared__ int shared_src_offset;
-    __shared__ int shared_dst_offset;
-    {shared_mem_decl}
-
-    if (threadIdx.x == 0) {{// 只让0号线程计算
-        // 计算当前block处理的数据在src和dst中的基础偏移(bytes)
-        int src_offset = 0;
-        int dst_offset = 0;
-        {constrain_init}
-        int remaining = blockIdx.x;
-
-        for (int i = {array_size} - 1; i >= 0; i--) {{
-            int idx = remaining % grid_len.a[i];
-            remaining /= grid_len.a[i];
-            src_offset += idx * src_grid_stride.a[i];
-            dst_offset += idx * dst_grid_stride.a[i];
-            {constrain_check}
-        }}
-        
-        // 将结果存入共享内存
-        shared_src_offset = src_offset;
-        shared_dst_offset = dst_offset;
-        {shared_mem_sync}
-    }}
-
-    // 确保所有线程都能看到共享内存中的值
-    __syncthreads();
-
-    // 所有线程直接使用计算好的偏移值
-    int src_offset = shared_src_offset;
-    int dst_offset = shared_dst_offset;
-    {constrain_load}
-
-    for (int i = {array_size} - 1; i > 0; i--) {{
-        if (block_len.a[i] > 1) {{
-            int idx = remaining % block_len.a[i];
-            remaining /= block_len.a[i];
-            // 计算偏移量
-            src_offset += idx * src_block_stride.a[i];
-            dst_offset += idx * dst_block_stride.a[i];
-            {constrain_boundary_check}
-        }}
-    }}
-
-    src_offset += remaining * src_block_stride.a[0];
-    dst_offset += remaining * dst_block_stride.a[0];
-    {first_dim_check}
-
-    // 执行数据拷贝，注意offset已经是字节偏移
-    *reinterpret_cast<{tmem_type} *>(reinterpret_cast<char *>(dst) + dst_offset) =
-        *reinterpret_cast<const {tmem_type} *>(reinterpret_cast<const char *>(src) + src_offset);
-}}
-"#
-    )
-}
-
-fn format_code(unit_size: usize, constrain_num: usize) -> String {
-    let mut code = String::new();
-
     // 添加头部定义
     code.push_str(&format!("#define ARRAY_SIZE {ARRAY_SIZE}\n"));
     code.push_str("#define ARRAY_TYPE int\n");
+    code.push_str(&format!("#define CONSTRAIN_NUM {constrain_num}\n"));
     code.push_str(CODE);
     code.push_str("\n");
 
-    code.push_str(&kernel_code(unit_size, constrain_num, ARRAY_SIZE));
-    code.push_str("\n\n");
+    // 添加实例化宏调用
+    code.push_str(&format!(
+        r#"
+extern "C" __global__ void {kernel_name}(
+    void *__restrict__ dst,
+    void const *__restrict__ src,
+    unsigned int const block_dim,
+    unsigned int const block_len_total,
+    const ArrayStruct<ARRAY_SIZE, ARRAY_TYPE> block_len,
+    const ArrayStruct<ARRAY_SIZE, ARRAY_TYPE> src_block_stride,
+    const ArrayStruct<ARRAY_SIZE, ARRAY_TYPE> dst_block_stride,
+    const ArrayStruct<ARRAY_SIZE, ARRAY_TYPE> grid_len,
+    const ArrayStruct<ARRAY_SIZE, ARRAY_TYPE> src_grid_stride,
+    const ArrayStruct<ARRAY_SIZE, ARRAY_TYPE> dst_grid_stride
+#if CONSTRAIN_NUM > 0
+    ,const ArrayStruct<CONSTRAIN_NUM, Constrains<ARRAY_TYPE>> constrains
+#endif
+) {{
+    rearrange_kernel<{tmem_type}, {constrain_num}>(
+        dst, src, block_dim, block_len_total,
+        block_len, src_block_stride, dst_block_stride,
+        grid_len, src_grid_stride, dst_grid_stride
+#if CONSTRAIN_NUM > 0
+        ,constrains
+#endif
+    );
+}}
+"#
+    ));
+    code.push_str("\n");
 
     code
 }
