@@ -1,11 +1,9 @@
 use super::{args::Scheme as ArgsScheme, Args, Rearrange};
 use crate::cuda::AsParam;
-
 use crate::{
     cuda::{Gpu, Handle, ModuleBox},
-    shape_not_support, ByteOf, LaunchError, QueueAlloc, SchemeDiversity, SchemeError,
+    ByteOf, LaunchError, QueueAlloc, SchemeDiversity, SchemeError,
 };
-
 use itertools::Itertools;
 use lru::LruCache;
 use std::iter::repeat;
@@ -33,16 +31,19 @@ impl Scheme {
         // for DEBUG
         // let code = format_code(key.unit_size, key.constrain_num);
         // std::fs::write("rearrange.cu", code).unwrap();
+
+        /// Maximum number of dimensions supported in the array
+        const ARRAY_SIZE: usize = 5;
+
         Ok(Self {
-            module: handle
-                .compile_kernel(&name, cc, || format_code(key.unit_size, key.constrain_num)),
+            module: handle.compile_kernel(&name, cc, || {
+                format_code(key.unit_size, ARRAY_SIZE, key.constrain_num)
+            }),
             name: CString::new(name).unwrap(),
         })
     }
 }
 
-/// Maximum number of dimensions supported in the array
-const ARRAY_SIZE: usize = 5;
 /// Type used for array indices and strides
 type ArrayType = i32;
 
@@ -57,27 +58,22 @@ struct SplitDim {
 }
 
 #[derive(Debug)]
-struct ArrayStruct<const N: usize>([ArrayType; N]);
+struct ArrayStruct(Vec<ArrayType>);
 
-impl<const N: usize> ArrayStruct<N> {
-    fn new(
-        element: impl Iterator<Item = ArrayType>,
-        default: ArrayType,
-    ) -> Result<Self, SchemeError> {
-        let mut array = [default; N];
-        for (i, v) in element.into_iter().enumerate() {
-            if i >= N {
-                return Err(shape_not_support(
-                    "ArrayStruct::new: too many elements".to_string(),
-                ));
-            }
-            array[i] = v;
+impl ArrayStruct {
+    fn new(mut array: Vec<ArrayType>, default: ArrayType) -> Result<Self, SchemeError> {
+        while array.len() < 5 {
+            array.push(default);
         }
         Ok(Self(array))
     }
 }
 
-impl<const N: usize> AsParam for ArrayStruct<N> {}
+impl AsParam for ArrayStruct {
+    fn as_param(&self) -> *const std::ffi::c_void {
+        self.0.as_ptr().cast()
+    }
+}
 
 //TODO 需要使用max_warps_block和warp_size来进行计算
 pub struct Operator {
@@ -279,13 +275,13 @@ impl crate::Operator for Operator {
 
         let mut block_dim: ArrayType = 0;
 
-        let mut block_len = Vec::<ArrayType>::with_capacity(ARRAY_SIZE);
-        let mut src_block_stride = Vec::<ArrayType>::with_capacity(ARRAY_SIZE);
-        let mut dst_block_stride = Vec::<ArrayType>::with_capacity(ARRAY_SIZE);
+        let mut block_len = Vec::<ArrayType>::with_capacity(5);
+        let mut src_block_stride = Vec::<ArrayType>::with_capacity(5);
+        let mut dst_block_stride = Vec::<ArrayType>::with_capacity(5);
 
-        let mut grid_len = Vec::<ArrayType>::with_capacity(ARRAY_SIZE);
-        let mut src_grid_stride = Vec::<ArrayType>::with_capacity(ARRAY_SIZE);
-        let mut dst_grid_stride = Vec::<ArrayType>::with_capacity(ARRAY_SIZE);
+        let mut grid_len = Vec::<ArrayType>::with_capacity(5);
+        let mut src_grid_stride = Vec::<ArrayType>::with_capacity(5);
+        let mut dst_grid_stride = Vec::<ArrayType>::with_capacity(5);
 
         // 处理block，填充block_len，block_stride
         for i in 0..ndim {
@@ -348,12 +344,12 @@ impl crate::Operator for Operator {
 
         // cuda 参数准备
         let block_len_total = block_len.iter().map(|x| *x as u32).product::<u32>();
-        let src_block_stride = ArrayStruct::<ARRAY_SIZE>::new(src_block_stride.into_iter(), 0)?;
-        let dst_block_stride = ArrayStruct::<ARRAY_SIZE>::new(dst_block_stride.into_iter(), 0)?;
-        let src_grid_stride = ArrayStruct::<ARRAY_SIZE>::new(src_grid_stride.into_iter(), 0)?;
-        let dst_grid_stride = ArrayStruct::<ARRAY_SIZE>::new(dst_grid_stride.into_iter(), 0)?;
-        let block_len = ArrayStruct::<ARRAY_SIZE>::new(block_len.into_iter(), 1)?;
-        let grid_len = ArrayStruct::<ARRAY_SIZE>::new(grid_len.into_iter(), 1)?;
+        let src_block_stride = ArrayStruct::new(src_block_stride, 0)?;
+        let dst_block_stride = ArrayStruct::new(dst_block_stride, 0)?;
+        let src_grid_stride = ArrayStruct::new(src_grid_stride, 0)?;
+        let dst_grid_stride = ArrayStruct::new(dst_grid_stride, 0)?;
+        let block_len = ArrayStruct::new(block_len, 1)?;
+        let grid_len = ArrayStruct::new(grid_len, 1)?;
 
         let filter_split_dims = split_dims
             .iter()
@@ -361,8 +357,8 @@ impl crate::Operator for Operator {
             .collect::<Vec<_>>();
 
         let constrains = match filter_split_dims.len() {
-            0 => ArrayStruct([0; 8]),
-            1 => ArrayStruct([
+            0 => ArrayStruct(vec![0; 8]),
+            1 => ArrayStruct(vec![
                 filter_split_dims[0].array_struct_idx_grid,
                 filter_split_dims[0].array_struct_idx_block,
                 filter_split_dims[0].num_per_block as ArrayType,
@@ -372,7 +368,7 @@ impl crate::Operator for Operator {
                 0,
                 0,
             ]),
-            2 => ArrayStruct([
+            2 => ArrayStruct(vec![
                 filter_split_dims[0].array_struct_idx_grid,
                 filter_split_dims[0].array_struct_idx_block,
                 filter_split_dims[0].num_per_block as ArrayType,
@@ -424,7 +420,7 @@ fn kernel_name(unit_size: usize, constrain_num: usize) -> String {
     format!("rearrange_unit_{tmem_type}_constrain_{constrain_num}")
 }
 
-fn format_code(unit_size: usize, constrain_num: usize) -> String {
+fn format_code(unit_size: usize, array_size: usize, constrain_num: usize) -> String {
     let mut code = String::new();
 
     let kernel_name = kernel_name(unit_size, constrain_num);
@@ -439,7 +435,7 @@ fn format_code(unit_size: usize, constrain_num: usize) -> String {
     };
 
     // 添加头部定义
-    code.push_str(&format!("#define ARRAY_SIZE {ARRAY_SIZE}\n"));
+    code.push_str(&format!("#define ARRAY_SIZE {array_size}\n"));
     code.push_str("#define ARRAY_TYPE int\n");
     code.push_str(&format!("#define CONSTRAIN_NUM {constrain_num}\n"));
     code.push_str(CODE);
