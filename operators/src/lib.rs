@@ -8,6 +8,8 @@ pub mod add_rows;
 pub mod all_reduce;
 pub mod attention;
 pub mod attention_kv_cached;
+pub mod attention_mla;
+pub mod attention_mla_cached;
 pub mod broadcast;
 pub mod conv;
 pub mod fuesd_softmax;
@@ -18,6 +20,7 @@ pub mod random_sample;
 pub mod rearrange;
 pub mod rms_norm;
 pub mod rope;
+pub mod scale;
 pub mod swiglu;
 
 pub use common::*;

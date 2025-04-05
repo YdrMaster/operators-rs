@@ -1,4 +1,4 @@
-﻿use super::{args::Meta, Args, AttnKVCached};
+use super::{args::Meta, Args, AttnKVCached};
 use crate::{
     attention, dyn_, get_static, rearrange, shape_mismatch, ByteOf, Hardware, LaunchError,
     MaybeDyn, QueueAlloc, TensorLayout, WorkspaceCollector,
@@ -66,7 +66,7 @@ where
         };
 
         wc.push_sub(self.attention.scheme(
-            &attention::Args::new_null(args.mask, dt, nh, nkvh, seq, att, dh),
+            &attention::Args::new_null(args.mask, dt, nh, nkvh, seq, att, dh, dh),
             max_workspace_size,
         )?);
 
