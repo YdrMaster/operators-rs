@@ -1,5 +1,5 @@
 use crate::{LaunchError, random_sample::SampleArgs};
-use cuda::{AsRaw, DevByte, Stream, bindings::CUstream};
+use cuda::{AsRaw, DevByte, Stream, bindings::HCstream};
 use libloading::Library;
 
 type WorkspaceFunc = unsafe extern "C" fn(
@@ -14,7 +14,7 @@ type ArgMaxFunc = unsafe extern "C" fn(
     usize,          //   n
     *mut DevByte,   // - workspace_ptr
     usize,          //   workspace_len
-    CUstream,       //   stream
+    HCstream,       //   stream
 ) -> i32;
 
 type SampleFunc = unsafe extern "C" fn(
@@ -28,13 +28,13 @@ type SampleFunc = unsafe extern "C" fn(
     usize,          //   topk
     *mut DevByte,   // - workspace_ptr
     usize,          //   workspace_len
-    CUstream,       //   stream
+    HCstream,       //   stream
 ) -> i32;
 
 macro_rules! extern_c {
     ($ty:ty; $lib:expr, $name:expr; $($args:expr),* $(,)?) => {{
         let result = unsafe { $lib.get::<$ty>($name.as_bytes()).unwrap()( $( $args ),* ) };
-        if result == ::cuda::bindings::CUresult::CUDA_SUCCESS as _ {
+        if result == ::cuda::bindings::hcError_t::hcSuccess as _ {
             Ok(())
         } else {
             Err($crate::execution_failed(format!(
@@ -124,7 +124,7 @@ pub(super) fn format_code(
 {EXPORT_H}
 {CODE}
 
-{EXPORT}cudaError {workspace_name}(
+{EXPORT}hcError_t {workspace_name}(
     size_t *argmax,
     size_t *random_sample,
     size_t n
@@ -132,14 +132,14 @@ pub(super) fn format_code(
     return calculate_workspace_size<{dt}>(argmax, random_sample, n);
 }}
 
-{EXPORT}cudaError {argmax_name}(
+{EXPORT}hcError_t {argmax_name}(
     cub::KeyValuePair<int, {dt}> *kv_pair,
     {dt} const *logits,
     size_t n,
 
     void *workspace_ptr,
     size_t workspace_len,
-    cudaStream_t stream
+    hcStream_t stream
 ) {{
     return arg_max(
         kv_pair,
@@ -151,7 +151,7 @@ pub(super) fn format_code(
         stream);
 }}
 
-{EXPORT}cudaError {sample_name}(
+{EXPORT}hcError_t {sample_name}(
     cub::KeyValuePair<int, {dt}> *kv_pair,
     {dt} const *logits,
     unsigned int const *indices,
@@ -164,7 +164,7 @@ pub(super) fn format_code(
 
     void *workspace_ptr,
     size_t workspace_len,
-    cudaStream_t stream
+    hcStream_t stream
 ) {{
     return random_sample(
         kv_pair,

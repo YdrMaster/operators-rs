@@ -282,7 +282,7 @@ mod test {
             rand::rng().fill(&mut bias[..]);
             let data_ans = gpu.apply(|ctx| {
                 let stream = ctx.stream();
-                #[cfg(use_nvidia)]
+                #[cfg(not(use_iluvatar))]
                 let rt = &stream;
                 #[cfg(use_iluvatar)]
                 let rt = ctx;

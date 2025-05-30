@@ -1,7 +1,7 @@
 use super::{Handle, Key};
 use cuda::{
     ContextResource, ContextSpore, CurrentCtx, Dim3, KernelFn, ModuleSpore, Ptx, Stream,
-    bindings::nvrtcResult,
+    bindings::hcrtcResult,
 };
 use log::warn;
 use std::{
@@ -61,7 +61,7 @@ impl Drop for ModuleBox {
     }
 }
 
-fn cache_ptx(key: &Key, code: impl FnOnce() -> String) -> Result<Arc<Ptx>, (nvrtcResult, String)> {
+fn cache_ptx(key: &Key, code: impl FnOnce() -> String) -> Result<Arc<Ptx>, (hcrtcResult, String)> {
     static CACHE: OnceLock<RwLock<HashMap<Key, Arc<Ptx>>>> = OnceLock::new();
     let cache = CACHE.get_or_init(Default::default);
 

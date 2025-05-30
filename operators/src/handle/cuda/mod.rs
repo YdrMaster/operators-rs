@@ -221,7 +221,7 @@ where
     let host = unsafe { std::slice::from_raw_parts_mut(host.as_mut_ptr().cast(), val.len()) };
     host.iter_mut().zip(val).for_each(|(y, x)| *y = f(*x));
 
-    #[cfg(use_nvidia)]
+    #[cfg(not(use_iluvatar))]
     let mem = stream.from_host(host);
     #[cfg(use_iluvatar)]
     let mem = stream.ctx().from_host(host);

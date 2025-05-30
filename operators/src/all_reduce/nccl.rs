@@ -60,10 +60,10 @@ impl crate::Operator for Operator {
 fn convert_enum(op: ReduceOp) -> nccl::ReduceType {
     use nccl::ReduceType::*;
     match op {
-        ReduceOp::Sum => ncclSum,
-        ReduceOp::Prod => ncclProd,
-        ReduceOp::Min => ncclMin,
-        ReduceOp::Max => ncclMax,
-        ReduceOp::Mean => ncclAvg,
+        ReduceOp::Sum => hcclSum,
+        ReduceOp::Prod => hcclProd,
+        ReduceOp::Min => hcclMin,
+        ReduceOp::Max => hcclMax,
+        ReduceOp::Mean => hcclAvg,
     }
 }

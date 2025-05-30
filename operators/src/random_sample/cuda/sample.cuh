@@ -1,16 +1,16 @@
 #include <cub/device/device_radix_sort.cuh>
 #include <cub/device/device_reduce.cuh>
 #include <cub/device/device_scan.cuh>
-#include <cuda_fp16.h>
+#include <common/hpcc_fp16.h>
 
 template <class T>
-cudaError arg_max_(
+hcError_t arg_max_(
     cub::KeyValuePair<int, T> *kv_pair,
     T const *logits,
     int n,
     void *workspace_ptr,
     size_t &workspace_len,
-    cudaStream_t stream) {
+    hcStream_t stream) {
     return cub::DeviceReduce::ArgMax(
         workspace_ptr, workspace_len,
         logits, kv_pair, n,
@@ -18,12 +18,12 @@ cudaError arg_max_(
 }
 
 template <class T, class I>
-cudaError radix_sort(
+hcError_t radix_sort(
     void *workspace_ptr, size_t &workspace_len,
     T const *key_in, T *key_out,
     I const *val_in, I *val_out,
     int n,
-    cudaStream_t stream) {
+    hcStream_t stream) {
     return cub::DeviceRadixSort::SortPairsDescending(
         workspace_ptr, workspace_len,
         key_in, key_out,
@@ -34,10 +34,10 @@ cudaError radix_sort(
 }
 
 template <class T>
-cudaError inclusive_sum(
+hcError_t inclusive_sum(
     void *workspace_ptr, size_t &workspace_len,
     T *data, int n,
-    cudaStream_t stream) {
+    hcStream_t stream) {
     return cub::DeviceScan::InclusiveSum(
         workspace_ptr, workspace_len,
         data, data, n,
@@ -82,8 +82,8 @@ __global__ void random_sample_kernel(
 #define CHECK(statement)                                                                        \
     {                                                                                           \
         auto error = (statement);                                                               \
-        if (error != cudaSuccess) {                                                             \
-            printf("Error: %s (%d) at \"%s\"\n", cudaGetErrorString(error), error, #statement); \
+        if (error != hcSuccess) {                                                             \
+            printf("Error: %s (%d) at \"%s\"\n", hcGetErrorString(error), error, #statement); \
             return error;                                                                       \
         }                                                                                       \
     }
@@ -93,7 +93,7 @@ constexpr size_t align(size_t size, size_t alignment) {
 }
 
 template <class T>
-cudaError calculate_workspace_size(
+hcError_t calculate_workspace_size(
     size_t *argmax,
     size_t *random_sample,
     size_t n_) {
@@ -126,18 +126,18 @@ cudaError calculate_workspace_size(
     size_random += cub::Max()(size_radix_sort, size_inclusive_sum);
     *random_sample = size_random;
 
-    return cudaGetLastError();
+    return hcGetLastError();
 }
 
 template <class T>
-cudaError arg_max(
+hcError_t arg_max(
     cub::KeyValuePair<int, T> *kv_pair,
     T const *logits,
     size_t n,
 
     void *workspace_ptr,
     size_t workspace_len,
-    cudaStream_t stream) {
+    hcStream_t stream) {
     return arg_max_(
         kv_pair,
         logits,
@@ -148,7 +148,7 @@ cudaError arg_max(
 }
 
 template <class T>
-cudaError random_sample(
+hcError_t random_sample(
     cub::KeyValuePair<int, T> *kv_pair,
     T const *logits,
     unsigned int const *indices,
@@ -161,7 +161,7 @@ cudaError random_sample(
 
     void *workspace_ptr,
     size_t workspace_len,
-    cudaStream_t stream) {
+    hcStream_t stream) {
 
     auto workspace = reinterpret_cast<size_t>(workspace_ptr);
     auto workspace_end = workspace + workspace_len;
@@ -199,5 +199,5 @@ cudaError random_sample(
         kv_pair,
         sorted, indices_out, n,
         random, topp, topk);
-    return cudaGetLastError();
+    return hcGetLastError();
 }

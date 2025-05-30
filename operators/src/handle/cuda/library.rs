@@ -25,7 +25,8 @@ pub(super) fn cache_lib(key: &Key, code: impl FnOnce() -> String) -> Arc<Library
     }
 
     static ROOT: LazyLock<PathBuf> = LazyLock::new(|| {
-        let user = var(if cfg!(windows) { "USERNAME" } else { "USER" }).unwrap();
+        let user = var(if cfg!(windows) { "USERNAME" } else { "USER" })
+            .unwrap_or_else(|_| var("HOME").unwrap().split('/').rev().next().unwrap().into());
         let root = temp_dir().join(format!("operators-rs-nv-libs-{user}"));
         fs::create_dir_all(&root).unwrap();
         fs::write(root.join("export.h"), include_str!("cxx/export.h")).unwrap();
@@ -34,7 +35,7 @@ pub(super) fn cache_lib(key: &Key, code: impl FnOnce() -> String) -> Arc<Library
 
     let dir = ROOT.join(format!("{}_{}", key.0, key.1));
     let lock = dir.join(".lock");
-    let src = dir.join("src.cu");
+    let src = dir.join("src.maca");
     let lib: PathBuf = if cfg!(windows) {
         dir.join("bin").join("lib.dll")
     } else {
@@ -61,6 +62,8 @@ pub(super) fn cache_lib(key: &Key, code: impl FnOnce() -> String) -> Arc<Library
             fs::write(dir.join("xmake.lua"), include_str!("cxx/nv.lua")).unwrap();
         } else if cfg!(use_iluvatar) {
             fs::write(dir.join("xmake.lua"), include_str!("cxx/iluvatar.lua")).unwrap();
+        } else if cfg!(use_metax) {
+            fs::write(dir.join("xmake.lua"), include_str!("cxx/metax.lua")).unwrap();
         } else {
             unreachable!()
         }
@@ -132,15 +135,13 @@ fn xmake_config(dir: impl AsRef<Path>, arch: impl fmt::Display) {
             .stderr(Stdio::piped())
             .output()
             .unwrap()
-    } else if cfg!(use_iluvatar) {
+    } else {
         cmd.arg("config")
             .current_dir(&dir)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
             .unwrap()
-    } else {
-        unreachable!()
     };
     let log = read_output(&output);
     if output.status.success() {

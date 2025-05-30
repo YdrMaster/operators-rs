@@ -234,7 +234,7 @@ fn test_compute() {
     {
         let kv_ans = gpu.apply(|ctx| {
             let stream = ctx.stream();
-            #[cfg(use_nvidia)]
+            #[cfg(not(use_iluvatar))]
             let rt = &stream;
             #[cfg(use_iluvatar)]
             let rt = ctx;
@@ -284,7 +284,7 @@ fn test_compute() {
         let seed = 0.75;
         let kv_ans = gpu.apply(|ctx| {
             let stream = ctx.stream();
-            #[cfg(use_nvidia)]
+            #[cfg(not(use_iluvatar))]
             let rt = &stream;
             #[cfg(use_iluvatar)]
             let rt = ctx;

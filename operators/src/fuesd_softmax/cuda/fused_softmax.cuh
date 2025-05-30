@@ -28,7 +28,7 @@ static __device__ void block_padding(
     unsigned int const tok_id,
     unsigned int const seq_len) {
 
-    auto att_idx = threadIdx.x, att_len = blockDim.x;
+    unsigned int att_idx = threadIdx.x, att_len = blockDim.x;
     auto thread_data = mask(tok_id, seq_len, att_idx, att_len)
                          ? float(att[att_idx])
                          : -__FLT_MAX__;

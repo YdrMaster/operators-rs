@@ -8,7 +8,7 @@ static __device__ void padding(
     Tp const *__restrict__ pos,
     float const theta) {
 
-    auto const
+    unsigned int const
         // nt = gridDim.y,
         // nh_h = gridDim.x,
         nh_l = blockDim.y,

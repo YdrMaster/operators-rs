@@ -4,6 +4,7 @@ fn main() {
     use search_corex_tools::find_corex;
     use search_cuda_tools::{find_cuda_root, find_nccl_root};
     use search_infini_tools::{find_infini_ccl, find_infini_op, find_infini_rt};
+    use search_maca_tools::find_maca_root;
 
     let cpu = Cfg::new("use_cpu");
     let cl = Cfg::new("use_cl");
@@ -12,6 +13,7 @@ fn main() {
     let nvidia = Cfg::new("use_nvidia");
     let nccl = Cfg::new("use_nccl");
     let iluvatar = Cfg::new("use_iluvatar");
+    let metax = Cfg::new("use_metax");
 
     if cfg!(feature = "common-cpu") {
         cpu.define()
@@ -27,20 +29,22 @@ fn main() {
         infini.define()
     }
 
-    // iluvatar
-    let use_iluvatar = cfg!(feature = "iluvatar-gpu") && find_corex().is_some();
-    if use_iluvatar {
-        iluvatar.define();
-        cuda.define();
-        return;
-    }
-
     let use_nvidia = cfg!(feature = "nvidia-gpu") && find_cuda_root().is_some();
-    if use_nvidia {
+    let use_iluvatar = cfg!(feature = "iluvatar-gpu") && find_corex().is_some();
+    let use_metax = cfg!(feature = "metax-gpu") && find_maca_root().is_some();
+    if use_metax {
+        metax.define();
+        nccl.define()
+    } else if use_iluvatar {
+        iluvatar.define()
+    } else if use_nvidia {
         nvidia.define();
         if find_nccl_root().is_some() {
             nccl.define()
         }
-        cuda.define();
+    }
+
+    if use_nvidia || use_iluvatar || use_metax {
+        cuda.define()
     }
 }
