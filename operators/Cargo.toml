@@ -5,12 +5,13 @@ edition.workspace = true
 authors = ["YdrMaster <ydrml@hotmail.com>"]
 
 [features]
-default = ["common-cpu", "opencl", "infini", "nvidia-gpu", "iluvatar-gpu"]
+default = ["common-cpu", "opencl", "nvidia-gpu", "iluvatar-gpu", "metax-gpu"]
 common-cpu = ["gemm"]
 opencl = ["clrt"]
 infini = ["infini-rt", "infini-op", "infini-ccl"]
 nvidia-gpu = ["cuda", "cublas", "nccl", "fslock", "libloading"]
 iluvatar-gpu = ["cuda", "cublas", "fslock", "libloading"]
+metax-gpu = ["cuda", "cublas", "nccl", "fslock", "libloading"]
 
 [dependencies]
 digit-layout = "0.3"
@@ -42,6 +43,7 @@ search-cl-tools.workspace = true
 search-infini-tools.workspace = true
 search-cuda-tools.workspace = true
 search-corex-tools.workspace = true
+search-maca-tools.workspace = true
 
 [dev-dependencies]
 gemm = "0.18"

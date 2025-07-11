@@ -75,44 +75,44 @@ impl crate::Operator for Operator {
         let c = c_base.cast::<c_void>();
         let a = a.cast::<c_void>();
         let b = b.cast::<c_void>();
-        #[cfg(use_nvidia)]
-        let compute_type = cublas::bindings::cublasComputeType_t::CUBLAS_COMPUTE_32F;
-        #[cfg(use_iluvatar)]
-        let compute_type = cublas::bindings::cudaDataType_t::CUDA_R_32F;
+        // #[cfg(use_nvidia)]
+        let compute_type = cublas::bindings::mcblasComputeType_t::MCBLAS_COMPUTE_32F;
+        // #[cfg(use_iluvatar)]
+        // let compute_type = cublas::bindings::mcDataType_t::HPCC_R_32F;
 
         self.handle.cublas(queue_alloc.queue(), |handle| {
-            cublas!(cublasGemmStridedBatchedEx(
+            cublas!(mcblasGemmStridedBatchedEx(
                 handle.as_raw(),
                 if a_trans {
-                    cublasOperation_t::CUBLAS_OP_T
+                    mcblasOperation_t::MCBLAS_OP_T
                 } else {
-                    cublasOperation_t::CUBLAS_OP_N
+                    mcblasOperation_t::MCBLAS_OP_N
                 },
                 if b_trans {
-                    cublasOperation_t::CUBLAS_OP_T
+                    mcblasOperation_t::MCBLAS_OP_T
                 } else {
-                    cublasOperation_t::CUBLAS_OP_N
+                    mcblasOperation_t::MCBLAS_OP_N
                 },
                 m as _,
                 n as _,
                 k as _,
                 ((&alpha) as *const f32).cast(),
                 a,
-                cudaDataType_t::CUDA_R_16F,
+                macaDataType_t::MACA_R_16F,
                 a_ld as _,
                 a_stride as _,
                 b,
-                cudaDataType_t::CUDA_R_16F,
+                macaDataType_t::MACA_R_16F,
                 b_ld as _,
                 b_stride as _,
                 ((&beta) as *const f32).cast(),
                 c,
-                cudaDataType_t::CUDA_R_16F,
+                macaDataType_t::MACA_R_16F,
                 c_ld as _,
                 c_stride as _,
                 batch as _,
                 compute_type,
-                cublasGemmAlgo_t::CUBLAS_GEMM_DFALT,
+                mcblasGemmAlgo_t::MCBLAS_GEMM_DFALT,
             ));
         });
 
