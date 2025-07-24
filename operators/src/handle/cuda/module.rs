@@ -1,12 +1,12 @@
 use super::{Handle, Key};
 use cuda::{
-    bindings::nvrtcResult, ContextResource, ContextSpore, CurrentCtx, Dim3, KernelFn, ModuleSpore,
-    Ptx, Stream,
+    ContextResource, ContextSpore, CurrentCtx, Dim3, KernelFn, ModuleSpore, Ptx, Stream,
+    bindings::nvrtcResult,
 };
 use log::warn;
 use std::{
-    collections::{hash_map::Entry::Occupied, HashMap},
-    ffi::{c_void, CStr},
+    collections::{HashMap, hash_map::Entry::Occupied},
+    ffi::{CStr, c_void},
     ptr::addr_eq,
     sync::{Arc, OnceLock, RwLock},
 };
@@ -39,19 +39,11 @@ impl ModuleBox {
     pub fn launch(
         &self,
         name: impl AsRef<CStr>,
-        grid_dims: impl Into<Dim3>,
-        block_dims: impl Into<Dim3>,
-        params: *const *const c_void,
-        shared_mem: usize,
+        attrs: (impl Into<Dim3>, impl Into<Dim3>, usize),
+        params: &[*const c_void],
         stream: &Stream,
     ) {
-        self.load(name, stream.ctx()).launch(
-            grid_dims,
-            block_dims,
-            params,
-            shared_mem,
-            Some(stream),
-        )
+        stream.launch(&self.load(name, stream.ctx()), attrs, params);
     }
 }
 

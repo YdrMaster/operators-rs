@@ -99,7 +99,6 @@ impl<'ctx> Alloc<DevMem<'ctx>> for &'ctx CurrentCtx {
     fn free(&self, _mem: DevMem<'ctx>) {}
 }
 
-#[cfg(use_nvidia)]
 impl<'ctx> Alloc<DevMem<'ctx>> for Stream<'ctx> {
     #[inline]
     fn alloc(&self, size: usize) -> DevMem<'ctx> {
@@ -108,11 +107,10 @@ impl<'ctx> Alloc<DevMem<'ctx>> for Stream<'ctx> {
 
     #[inline]
     fn free(&self, mem: DevMem<'ctx>) {
-        mem.drop_on(self)
+        Stream::free(self, mem);
     }
 }
 
-#[cfg(use_nvidia)]
 impl<'ctx> QueueAlloc for Stream<'ctx> {
     type Hardware = Gpu;
     type DevMem = DevMem<'ctx>;

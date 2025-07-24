@@ -1,5 +1,5 @@
-﻿use std::{
-    alloc::{alloc, dealloc, Layout},
+use std::{
+    alloc::{Layout, alloc, dealloc},
     ops::{Deref, DerefMut},
     ptr::NonNull,
     slice::{from_raw_parts, from_raw_parts_mut},

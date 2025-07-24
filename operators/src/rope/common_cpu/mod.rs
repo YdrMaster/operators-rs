@@ -1,9 +1,6 @@
-use super::{args::Meta, fill_pos, Args, Rope, Seq, SinCosTable};
-use crate::{
-    common_cpu::Cpu, get_static, strides_not_support, ByteOf, LaunchError, QueueAlloc, SchemeError,
-    Unsigned,
-};
-use digit_layout::{types as ty, DigitLayout};
+use super::{Args, Rope, Seq, SinCosTable, args::Meta, fill_pos};
+use crate::{ByteOf, LaunchError, QueueAlloc, Unsigned, common_cpu::Cpu, strides_not_support};
+use digit_layout::{DigitLayout, types as ty};
 use half::f16;
 
 pub struct Operator;
@@ -53,15 +50,6 @@ impl crate::Operator for Operator {
         Self
     }
 
-    fn scheme(
-        &mut self,
-        args: &Self::Args,
-        _max_workspace_size: usize,
-    ) -> Result<usize, SchemeError> {
-        let _meta = args.meta()?;
-        Ok(0)
-    }
-
     fn launch<QA>(
         &self,
         args: &Self::Args,
@@ -80,7 +68,7 @@ impl crate::Operator for Operator {
             theta,
             ..
         } = args;
-        let &[_, nh, dh] = t_layout.shape() else {
+        let &[_, nh, dh] = &*t_layout.shape() else {
             unreachable!()
         };
         let &[st, sh, sd] = t_layout.strides() else {
@@ -90,13 +78,8 @@ impl crate::Operator for Operator {
             unreachable!()
         };
 
-        get_static! {
-            nt nh dh
-            st sh sd
-            sp
-        }
         if sd != dt_t.nbytes() as isize {
-            return Err(strides_not_support("").into());
+            return Err(strides_not_support(""));
         }
 
         macro_rules! calculate {

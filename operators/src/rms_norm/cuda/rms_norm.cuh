@@ -3,7 +3,7 @@
 #include <cub/block/block_store.cuh>
 
 // assert BLOCK_SIZE >= blockDim.x
-template<unsigned int BLOCK_SIZE, class Tw, class Ta>
+template <unsigned int BLOCK_SIZE, class Tw, class Ta>
 static __device__ void padding(
     Ta *__restrict__ y_,
     int const stride_y,
@@ -29,7 +29,7 @@ static __device__ void padding(
     *y = Ta(rms * x * w);
 }
 
-template<unsigned int BLOCK_SIZE, unsigned int NUM_ITEMS_THREAD, class Tw, class Ta>
+template <unsigned int BLOCK_SIZE, unsigned int NUM_ITEMS_THREAD, class Tw, class Ta>
 static __device__ void folding(
     Ta *__restrict__ y,
     int const stride_y,

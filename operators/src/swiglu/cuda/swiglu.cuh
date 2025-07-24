@@ -2,7 +2,7 @@ static __forceinline__ __device__ float sigmoid(float x) {
     return fdividef(1, 1 + expf(-x));
 }
 
-template<class Tdata>
+template <class Tdata>
 static __device__ void swiglu(
     Tdata *__restrict__ gate_,
     int const stride_gate,

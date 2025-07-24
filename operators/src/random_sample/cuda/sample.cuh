@@ -3,7 +3,7 @@
 #include <cub/device/device_scan.cuh>
 #include <cuda_fp16.h>
 
-template<class T>
+template <class T>
 cudaError arg_max_(
     cub::KeyValuePair<int, T> *kv_pair,
     T const *logits,
@@ -17,7 +17,7 @@ cudaError arg_max_(
         stream);
 }
 
-template<class T, class I>
+template <class T, class I>
 cudaError radix_sort(
     void *workspace_ptr, size_t &workspace_len,
     T const *key_in, T *key_out,
@@ -33,7 +33,7 @@ cudaError radix_sort(
         stream);
 }
 
-template<class T>
+template <class T>
 cudaError inclusive_sum(
     void *workspace_ptr, size_t &workspace_len,
     T *data, int n,
@@ -44,24 +44,24 @@ cudaError inclusive_sum(
         stream);
 }
 
-template<class T>
+template <class T>
 __global__ void partial_softmax_kernel(
     T *__restrict__ data, int n,
     float temperature) {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
     if (0 < i && i < n) {
         float max = __ldg(data);
-        data[i] = (T) expf(((float) data[i] - max) / temperature);
+        data[i] = (T)expf(((float)data[i] - max) / temperature);
     }
 }
 
-template<class T>
+template <class T>
 __global__ void set_softmax_max_kernel(
     T *__restrict__ data) {
     *data = 1;
 }
 
-template<class T, class I>
+template <class T, class I>
 __global__ void random_sample_kernel(
     cub::KeyValuePair<int, T> *__restrict__ kv_pair,
     T const *__restrict__ sorted,
@@ -69,7 +69,7 @@ __global__ void random_sample_kernel(
     size_t n,
     float random, float topp, size_t topk) {
     topk = cub::Min()(topk, n);
-    auto p = (T) (random * cub::Min()(topp * (float) sorted[n - 1], (float) sorted[topk - 1]));
+    auto p = (T)(random * cub::Min()(topp * (float)sorted[n - 1], (float)sorted[topk - 1]));
     for (size_t i = 0;; ++i) {
         if ((sorted[i]) >= p) {
             kv_pair->key = indices_out[i];
@@ -92,7 +92,7 @@ constexpr size_t align(size_t size, size_t alignment) {
     return (size + alignment - 1) & ~(alignment - 1);
 }
 
-template<class T>
+template <class T>
 cudaError calculate_workspace_size(
     size_t *argmax,
     size_t *random_sample,
@@ -119,17 +119,17 @@ cudaError calculate_workspace_size(
         nullptr))
 
     size_t size_random = 0;
-    size_random += sizeof(T) * n;           // sorted
-    size_random = align(size_random, 256);  //
-    size_random += sizeof(unsigned int) * n;// indices_out
-    size_random = align(size_random, 256);  //
+    size_random += sizeof(T) * n;            // sorted
+    size_random = align(size_random, 256);   //
+    size_random += sizeof(unsigned int) * n; // indices_out
+    size_random = align(size_random, 256);   //
     size_random += cub::Max()(size_radix_sort, size_inclusive_sum);
     *random_sample = size_random;
 
     return cudaGetLastError();
 }
 
-template<class T>
+template <class T>
 cudaError arg_max(
     cub::KeyValuePair<int, T> *kv_pair,
     T const *logits,
@@ -147,7 +147,7 @@ cudaError arg_max(
         stream);
 }
 
-template<class T>
+template <class T>
 cudaError random_sample(
     cub::KeyValuePair<int, T> *kv_pair,
     T const *logits,
@@ -185,7 +185,7 @@ cudaError random_sample(
         n,
         stream));
     // softmax
-    auto block = cub::Min()((size_t) 1024, n);
+    auto block = cub::Min()((size_t)1024, n);
     auto grid = (n + block - 1) / block;
     partial_softmax_kernel<<<grid, block, 0, stream>>>(sorted, n, temperature);
     set_softmax_max_kernel<<<1, 1, 0, stream>>>(sorted);

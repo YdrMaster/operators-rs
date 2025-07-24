@@ -1,13 +1,12 @@
-﻿use super::{args::Meta, fill_pos, Args, Rope, Seq, SinCosTable};
+use super::{Args, Rope, Seq, SinCosTable, args::Meta, fill_pos};
 use crate::{
-    get_static,
-    opencl::{ClDevice, CodeGen, KernelCache, CL2_0},
-    shape_not_support, strides_not_support, ByteOf, LaunchError, QueueAlloc,
+    ByteOf, LaunchError, QueueAlloc,
     SchemeDiversity::Low as LowDiversity,
-    SchemeError,
+    opencl::{CL2_0, ClDevice, CodeGen, KernelCache},
+    shape_not_support, strides_not_support,
 };
-use clrt::{bindings::cl_int, Context};
-use digit_layout::{types as Ty, DigitLayout};
+use clrt::{Context, bindings::cl_int};
+use digit_layout::{DigitLayout, types as Ty};
 use lru::LruCache;
 use std::sync::Mutex;
 use std::{alloc::Layout, iter::zip};
@@ -101,14 +100,6 @@ impl crate::Operator for Operator {
         }
     }
 
-    fn scheme(
-        &mut self,
-        _args: &Self::Args,
-        _max_workspace_size: usize,
-    ) -> Result<usize, SchemeError> {
-        Ok(0)
-    }
-
     fn launch<QA>(
         &self,
         args: &Self::Args,
@@ -130,7 +121,7 @@ impl crate::Operator for Operator {
             theta,
             ..
         } = args;
-        let &[_, nh, _] = t_layout.shape() else {
+        let &[_, nh, _] = &*t_layout.shape() else {
             unreachable!()
         };
         let &[st, sh, sd] = t_layout.strides() else {
@@ -140,15 +131,9 @@ impl crate::Operator for Operator {
             unreachable!()
         };
 
-        get_static! {
-            nt nh dh
-            st sh sd
-            sp
-        }
-
         let unit = dt_t.nbytes() as isize;
         if sd != unit || sp != dt_p.nbytes() as isize {
-            return Err(strides_not_support("").into());
+            return Err(strides_not_support(""));
         };
 
         let dh = dh / 2;
@@ -156,7 +141,7 @@ impl crate::Operator for Operator {
         let sh = (sh / unit / 2) as i32;
 
         if self.max_group_size % dh != 0 {
-            return Err(shape_not_support("").into());
+            return Err(shape_not_support(""));
         }
 
         let max_nh_l = (self.max_group_size / dh).min(nh);
@@ -180,8 +165,8 @@ impl crate::Operator for Operator {
             .set_arg(4, theta)
             .launch(
                 &[0, 0],
-                &[(nt * nh_l) as usize, (nh_h * dh) as usize],
-                &[nh_l as usize, dh as usize],
+                &[nt * nh_l, nh_h * dh],
+                &[nh_l, dh],
                 queue_alloc.queue(),
                 None,
             );
@@ -238,26 +223,11 @@ mod test {
     use super::Args;
     use crate::{Hardware, TensorLayout};
     use digit_layout::{
-        types::{F32, F64, U32},
         DigitLayout,
+        types::{F64, U32},
     };
 
-    fn dyn_args<H: Hardware>(dt_t: DigitLayout, dt_p: DigitLayout) -> Args<H> {
-        use crate::dyn_;
-        use std::ptr::{null, null_mut};
-        Args {
-            t_layout: TensorLayout::new_dyn(dt_t, &[dyn_(); 3], &[dyn_(); 3]),
-            t_base: null_mut(),
-            p_layout: TensorLayout::new_dyn(dt_p, &[dyn_()], &[dyn_()]),
-            p_base: null(),
-            sin_layout: TensorLayout::new_dyn(dt_t, &[dyn_(); 2], &[dyn_(); 2]),
-            sin_base: null(),
-            cos_layout: TensorLayout::new_dyn(dt_t, &[dyn_(); 2], &[dyn_(); 2]),
-            cos_base: null(),
-            theta: 0.,
-        }
-    }
-
+    #[allow(clippy::too_many_arguments)]
     fn args<H: Hardware>(
         dt_t: DigitLayout,
         dt_p: DigitLayout,
@@ -286,26 +256,24 @@ mod test {
     fn test_compute() {
         use super::{super::common_cpu::Operator as RefOp, Operator};
         use crate::{
+            Operator as _,
             common_cpu::{Cpu, ThisThread},
             opencl::ClDevice,
             test_utils::{Diff, ErrorCollector},
-            Operator as _,
         };
         use clrt::Platform;
         use digit_layout::types as ty;
         use rand::Rng;
         use std::{iter::zip, time::Instant};
 
-        let mut cpu_op = RefOp::new(&Cpu);
+        let cpu_op = RefOp::new(&Cpu);
         for platform in Platform::all() {
             for device in platform.devices() {
                 println!("device: {}", device.name());
 
                 let context = device.context();
                 let queue = context.queue();
-                let mut cl_op = Operator::new(&ClDevice::new(context.clone(), Default::default()));
-                cpu_op.scheme(&dyn_args(F64, U32), 0).unwrap();
-                cl_op.scheme(&dyn_args(F32, U32), 0).unwrap();
+                let cl_op = Operator::new(&ClDevice::new(context.clone(), Default::default()));
 
                 const NT: usize = 1;
                 let nh = 32;
@@ -375,7 +343,7 @@ mod test {
                     .unwrap();
                 let cpu_time = time.elapsed();
 
-                let map = queue.map(&mut t_svm);
+                let map = queue.map(&t_svm);
 
                 let ([], y_ans, []) = (unsafe { map.align_to::<f32>() }) else {
                     panic!()

@@ -1,9 +1,9 @@
-﻿use super::Cpu;
+use super::Cpu;
 use crate::TopoNode;
 use std::sync::{
-    atomic::{AtomicUsize, Ordering::Relaxed},
-    mpsc::{channel, Receiver, Sender},
     Arc, Condvar, Mutex,
+    atomic::{AtomicUsize, Ordering::Relaxed},
+    mpsc::{Receiver, Sender, channel},
 };
 
 pub struct InprocNode<T> {

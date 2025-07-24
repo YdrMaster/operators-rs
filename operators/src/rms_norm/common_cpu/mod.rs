@@ -1,5 +1,5 @@
-﻿use super::{args::Meta, Args, RmsNorm};
-use crate::{common_cpu::Cpu, get_static, ByteOf, LaunchError, QueueAlloc, SchemeError};
+use super::{Args, RmsNorm, args::Meta};
+use crate::{ByteOf, LaunchError, QueueAlloc, common_cpu::Cpu};
 use half::f16;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 
@@ -14,15 +14,6 @@ impl crate::Operator for Operator {
 
     fn new(_node: &Self::TopoNode) -> Self {
         Self
-    }
-
-    fn scheme(
-        &mut self,
-        args: &Self::Args,
-        _max_workspace_size: usize,
-    ) -> Result<usize, SchemeError> {
-        let _meta = args.meta()?;
-        Ok(0)
     }
 
     fn launch<QA>(
@@ -53,13 +44,6 @@ impl crate::Operator for Operator {
         let &[dsw] = w_layout.strides() else {
             unreachable!()
         };
-
-        get_static! {
-            n   d
-            nsy dsy
-            nsx dsx
-            dsw
-        }
 
         macro_rules! calculate {
             ($w:ty, $a:ty) => {
@@ -113,15 +97,15 @@ unsafe impl<W, A> Sync for Scheme<W, A> {}
 impl<W, A> Scheme<W, A> {
     #[inline]
     unsafe fn y_ptr(&self, i: isize, j: isize) -> *mut A {
-        self.y.byte_offset(i * self.nsy + j * self.dsy)
+        unsafe { self.y.byte_offset(i * self.nsy + j * self.dsy) }
     }
     #[inline]
     unsafe fn x_ptr(&self, i: isize, j: isize) -> *const A {
-        self.x.byte_offset(i * self.nsx + j * self.dsx)
+        unsafe { self.x.byte_offset(i * self.nsx + j * self.dsx) }
     }
     #[inline]
     unsafe fn w_ptr(&self, j: isize) -> *const W {
-        self.w.byte_offset(j * self.dsw)
+        unsafe { self.w.byte_offset(j * self.dsw) }
     }
 }
 
@@ -141,11 +125,11 @@ impl<W> Scheme<W, f16> {
 
     #[inline]
     unsafe fn y(&self, i: isize, j: isize, val: f32) {
-        self.y_ptr(i, j).write(f16::from_f32(val))
+        unsafe { self.y_ptr(i, j).write(f16::from_f32(val)) }
     }
     #[inline]
     unsafe fn x(&self, i: isize, j: isize) -> f32 {
-        self.x_ptr(i, j).read().to_f32()
+        unsafe { self.x_ptr(i, j).read().to_f32() }
     }
 }
 impl<W> Scheme<W, f32> {
@@ -153,11 +137,11 @@ impl<W> Scheme<W, f32> {
 
     #[inline]
     unsafe fn y(&self, i: isize, j: isize, val: f32) {
-        self.y_ptr(i, j).write(val)
+        unsafe { self.y_ptr(i, j).write(val) }
     }
     #[inline]
     unsafe fn x(&self, i: isize, j: isize) -> f32 {
-        self.x_ptr(i, j).read()
+        unsafe { self.x_ptr(i, j).read() }
     }
 }
 impl<W> Scheme<W, f64> {
@@ -165,30 +149,30 @@ impl<W> Scheme<W, f64> {
 
     #[inline]
     unsafe fn y(&self, i: isize, j: isize, val: f64) {
-        self.y_ptr(i, j).write(val)
+        unsafe { self.y_ptr(i, j).write(val) }
     }
     #[inline]
     unsafe fn x(&self, i: isize, j: isize) -> f64 {
-        self.x_ptr(i, j).read()
+        unsafe { self.x_ptr(i, j).read() }
     }
 }
 
 impl<A> Scheme<f16, A> {
     #[inline]
     unsafe fn w(&self, j: isize) -> f32 {
-        self.w_ptr(j).read().to_f32()
+        unsafe { self.w_ptr(j).read() }.to_f32()
     }
 }
 impl<A> Scheme<f32, A> {
     #[inline]
     unsafe fn w(&self, j: isize) -> f32 {
-        self.w_ptr(j).read()
+        unsafe { self.w_ptr(j).read() }
     }
 }
 impl<A> Scheme<f64, A> {
     #[inline]
     unsafe fn w(&self, j: isize) -> f64 {
-        self.w_ptr(j).read()
+        unsafe { self.w_ptr(j).read() }
     }
 }
 

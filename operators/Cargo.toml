@@ -1,7 +1,7 @@
 [package]
 name = "operators"
 version = "0.0.0"
-edition = "2021"
+edition.workspace = true
 authors = ["YdrMaster <ydrml@hotmail.com>"]
 
 [features]
@@ -13,13 +13,13 @@ nvidia-gpu = ["cuda", "cublas", "nccl", "fslock", "libloading"]
 iluvatar-gpu = ["cuda", "cublas", "fslock", "libloading"]
 
 [dependencies]
-digit-layout = "0.2"
-ndarray-layout = "0.1"
+digit-layout = "0.3"
+ndarray-layout = "0.2"
 rayon = "1.10"
-lru = "0.12"
+lru = "0.14"
 num-traits = "0.2"
 itertools = "0.14"
-half = "2.4"
+half = "2.6"
 log = "0.4"
 
 gemm = { version = "0.18", optional = true }

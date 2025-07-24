@@ -1,22 +1,93 @@
-use super::{args::Scheme, Args, Rearrange};
+use super::{Args, Rearrange, args::Scheme as ArgsScheme};
+use crate::rank_not_support;
 use crate::{
+    ByteOf, LaunchError, QueueAlloc, SchemeDiversity,
     cuda::{Gpu, Handle, ModuleBox},
-    rank_not_support, shape_not_support, ByteOf, LaunchError, QueueAlloc, SchemeError,
 };
+use itertools::Itertools;
+use lru::LruCache;
+use std::cmp::max;
+use std::slice::{from_raw_parts, from_raw_parts_mut};
 use std::{
     ffi::CString,
-    slice::{from_raw_parts, from_raw_parts_mut},
-    sync::Arc,
+    sync::{Arc, Mutex},
 };
-
-pub struct Operator {
-    _handle: Arc<Handle>,
-    max_warps_block: usize,
-    warp_size: usize,
-    module: Arc<ModuleBox>,
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+struct SchemeKey {
+    unit_size: usize,
+    block_array_size: usize,
+    grid_array_size: usize,
+    constrain_num: usize,
 }
 
-const NAME: &str = "rearrange";
+#[derive(Clone)]
+struct Scheme {
+    module: Arc<ModuleBox>,
+    name: CString,
+}
+
+impl Scheme {
+    pub fn new(key: SchemeKey, handle: &Arc<Handle>) -> Self {
+        let name = kernel_name(key);
+        let cc = handle.device().compute_capability();
+        // for DEBUG
+        // let code = format_code(key.unit_size, key.constrain_num);
+        // std::fs::write("rearrange.cu", code).unwrap();
+
+        Self {
+            module: handle.compile_kernel(&name, cc, || format_code(key)),
+            name: CString::new(name).unwrap(),
+        }
+    }
+}
+
+/// Type used for array indices and strides
+type ArrayType = i32;
+
+// 默认的数组大小，同时也是最大的数组大小，不能为0
+const DEFAULT_ARRAY_SIZE: usize = 5;
+const CONSTRAIN_ARRAY_SIZE: usize = 8;
+
+#[derive(Debug)]
+struct SplitDim {
+    choose_idx: usize,
+    num_per_block: usize,
+    num_per_grid: usize,
+    array_struct_idx_block: ArrayType,
+    array_struct_idx_grid: ArrayType,
+    dim_len: usize,
+}
+
+#[derive(Debug)]
+struct ArrayStruct(Vec<ArrayType>);
+
+impl ArrayStruct {
+    fn new(mut array: Vec<ArrayType>, default: ArrayType) -> Self {
+        while array.len() < DEFAULT_ARRAY_SIZE {
+            array.push(default);
+        }
+        Self(array)
+    }
+
+    fn try_into_array<const N: usize>(self) -> Result<[ArrayType; N], LaunchError> {
+        let ArrayStruct(vec) = self;
+        if vec.len() <= N {
+            Ok(std::array::from_fn(|i| vec.get(i).copied().unwrap_or(0)))
+        } else {
+            Err(rank_not_support("over length"))
+        }
+    }
+}
+
+pub struct Operator {
+    handle: Arc<Handle>,
+    #[allow(unused)]
+    max_warps_block: usize,
+    #[allow(unused)]
+    warp_size: usize,
+    schemes: Mutex<LruCache<SchemeKey, Scheme>>,
+}
+
 const CODE: &str = include_str!("rearrange.cuh");
 
 impl Rearrange<Gpu> for Operator {}
@@ -31,24 +102,14 @@ impl crate::Operator for Operator {
         let device = node.0.device();
         let max_threads_block = device.block_limit().max_threads;
         let warp_size = device.warp_size();
-        let cc = device.compute_capability();
         assert_eq!(max_threads_block % warp_size, 0);
         // 生成执行资源
         Self {
-            _handle: node.0.clone(),
+            handle: node.0.clone(),
             max_warps_block: max_threads_block / warp_size,
             warp_size,
-            module: node.0.compile_kernel(NAME, cc, format_code),
+            schemes: node.0.scheme_cache(SchemeDiversity::Low),
         }
-    }
-
-    fn scheme(
-        &mut self,
-        _args: &Self::Args,
-        _max_workspace_size: usize,
-    ) -> Result<usize, SchemeError> {
-        // 完全动态，不需要做任何准备工作
-        Ok(0)
     }
 
     fn launch<QA>(
@@ -60,156 +121,389 @@ impl crate::Operator for Operator {
     where
         QA: QueueAlloc<Hardware = Self::Hardware>,
     {
-        let scheme = Scheme::new(args)?;
-        if scheme.ndim() == 0 {
-            let unit = scheme.unit();
+        let scheme_update = ArgsScheme::new(args)?;
+
+        // 发现最大的1 thread 处理的数据量
+        let scheme_update = scheme_update.distribute_unit((0..=5).rev().map(|n| (1 << n)));
+        if scheme_update.ndim() == 0 {
+            let unit = scheme_update.unit();
             let dst = unsafe { from_raw_parts_mut(args.dst_base, unit) };
             let src = unsafe { from_raw_parts(args.src_base, unit) };
             queue_alloc.queue().memcpy_d2d(dst, src);
             return Ok(());
         }
 
-        let scheme = scheme.distribute_unit((0..=5).rev().map(|n| 32 * (1 << n)));
-        let unit = scheme.unit();
+        let src_strides = scheme_update.src_strides();
+        let dst_strides = scheme_update.dst_strides();
+        let shape = scheme_update.shape().collect::<Vec<_>>();
+        let unit = scheme_update.unit();
+        let ndim = scheme_update.ndim();
 
-        struct Layout {
-            r: u32,
-            c: u32,
-            dst_rs: i32,
-            dst_cs: i32,
-            src_rs: i32,
-            src_cs: i32,
+        //src strides 降序 index
+        let src_strides_desc_idx = (0..scheme_update.ndim())
+            .zip(src_strides)
+            .sorted_by(|a, b| b.1.cmp(a.1))
+            .map(|(i, _)| i)
+            .collect::<Vec<_>>();
+
+        //分离维度，分成grid处理的维度和block处理的维度，与dst的维度相对应
+        let mut block_dim_choose = vec![false; ndim];
+
+        //TODO 需要优化
+        let max_block_size = 256;
+        let mut split_dims = Vec::new(); // 长度最多为2
+
+        //进行维度选择
+        {
+            let mut src_choose_idx = ndim;
+            let mut dst_choose_idx = ndim;
+
+            let mut block_elements = 1;
+            let mut block_src_elements = 1;
+            let mut block_dst_elements = 1;
+
+            while src_choose_idx > 0 && dst_choose_idx > 0 {
+                let src_idx = src_strides_desc_idx[src_choose_idx - 1];
+                let dst_idx = dst_choose_idx - 1;
+
+                if src_idx == dst_idx {
+                    let idx = src_idx;
+                    let len = shape[idx];
+                    if block_elements * shape[src_idx] <= max_block_size {
+                        //选择维度
+                        block_dim_choose[idx] = true;
+                        block_elements *= len;
+                        block_src_elements *= len;
+                        block_dst_elements *= len;
+                        src_choose_idx -= 1;
+                        dst_choose_idx -= 1;
+                    } else {
+                        //切分维度，并退出
+                        let num_per_block = max_block_size.div_euclid(block_elements);
+                        assert!(num_per_block > 0);
+                        assert!(len >= num_per_block);
+                        if num_per_block > 1 {
+                            split_dims.push(SplitDim {
+                                choose_idx: idx,
+                                num_per_block,
+                                num_per_grid: len.div_ceil(num_per_block),
+                                array_struct_idx_block: 0,
+                                array_struct_idx_grid: 0,
+                                dim_len: len,
+                            });
+                        }
+                        break;
+                    }
+                } else {
+                    let src_div_dst = block_src_elements as f64 / block_dst_elements as f64;
+                    let src_num_per_block =
+                        (max_block_size as f64 / block_elements as f64 / src_div_dst).sqrt();
+                    let dst_num_per_block = src_num_per_block * src_div_dst;
+
+                    let src_current_dim_len = shape[src_idx];
+                    let dst_current_dim_len = shape[dst_idx];
+
+                    if (src_current_dim_len as f64) < src_num_per_block {
+                        //选择维度
+                        block_dim_choose[src_idx] = true;
+                        block_elements *= src_current_dim_len;
+                        block_src_elements *= src_current_dim_len;
+                        src_choose_idx -= 1;
+                    } else if (dst_current_dim_len as f64) < dst_num_per_block {
+                        //选择维度
+                        block_dim_choose[dst_idx] = true;
+                        block_elements *= dst_current_dim_len;
+                        block_dst_elements *= dst_current_dim_len;
+                        dst_choose_idx -= 1;
+                    } else {
+                        //切分维度，并退出
+                        let src_num_per_block = src_num_per_block.floor() as usize;
+                        let dst_num_per_block = dst_num_per_block.floor() as usize;
+                        let src_num_per_grid = src_current_dim_len.div_ceil(src_num_per_block);
+                        let dst_num_per_grid = dst_current_dim_len.div_ceil(dst_num_per_block);
+
+                        if src_num_per_block == 1 {
+                        } else if src_num_per_grid == 1 {
+                            block_dim_choose[src_idx] = true;
+                        } else {
+                            split_dims.push(SplitDim {
+                                choose_idx: src_idx,
+                                num_per_block: src_num_per_block,
+                                num_per_grid: src_num_per_grid,
+                                array_struct_idx_block: 0,
+                                array_struct_idx_grid: 0,
+                                dim_len: src_current_dim_len,
+                            });
+                        }
+
+                        if dst_num_per_block == 1 {
+                        } else if dst_num_per_grid == 1 {
+                            block_dim_choose[dst_idx] = true;
+                        } else {
+                            split_dims.push(SplitDim {
+                                choose_idx: dst_idx,
+                                num_per_block: dst_num_per_block,
+                                num_per_grid: dst_num_per_grid,
+                                array_struct_idx_block: 0,
+                                array_struct_idx_grid: 0,
+                                dim_len: dst_current_dim_len,
+                            });
+                        }
+                        break;
+                    }
+                }
+            }
         }
 
-        let Layout {
-            r,
-            c,
-            dst_rs,
-            dst_cs,
-            src_rs,
-            src_cs,
-        } = match scheme.ndim() {
-            0 => unreachable!(),
-            1 => {
-                let &[dst_cs] = scheme.dst_strides() else {
-                    unreachable!()
-                };
-                let &[src_cs] = scheme.src_strides() else {
-                    unreachable!()
-                };
-                Layout {
-                    r: 1,
-                    c: scheme.shape().next().unwrap() as _,
-                    dst_rs: 0,
-                    dst_cs: dst_cs as _,
-                    src_rs: 0,
-                    src_cs: src_cs as _,
+        let mut block_dim: ArrayType = 0;
+
+        let mut block_len = Vec::<ArrayType>::with_capacity(DEFAULT_ARRAY_SIZE);
+        let mut src_block_stride = Vec::<ArrayType>::with_capacity(DEFAULT_ARRAY_SIZE);
+        let mut dst_block_stride = Vec::<ArrayType>::with_capacity(DEFAULT_ARRAY_SIZE);
+
+        let mut grid_len = Vec::<ArrayType>::with_capacity(DEFAULT_ARRAY_SIZE);
+        let mut src_grid_stride = Vec::<ArrayType>::with_capacity(DEFAULT_ARRAY_SIZE);
+        let mut dst_grid_stride = Vec::<ArrayType>::with_capacity(DEFAULT_ARRAY_SIZE);
+
+        // 处理block，填充block_len，block_stride
+        for i in 0..ndim {
+            if block_dim_choose[i] {
+                block_len.push(shape[i] as ArrayType);
+                src_block_stride.push(src_strides[i] as ArrayType);
+                dst_block_stride.push(dst_strides[i] as ArrayType);
+                block_dim += 1;
+            }
+
+            for split_dim in split_dims.iter_mut() {
+                if i == split_dim.choose_idx {
+                    block_len.push(split_dim.num_per_block as ArrayType);
+                    src_block_stride.push(src_strides[i] as ArrayType);
+                    dst_block_stride.push(dst_strides[i] as ArrayType);
+                    split_dim.array_struct_idx_block = block_dim;
+                    block_dim += 1;
                 }
             }
-            2 => {
-                let mut shape = scheme.shape();
-                let r = shape.next().unwrap();
-                let c = shape.next().unwrap();
-                let &[dst_rs, dst_cs] = scheme.dst_strides() else {
-                    unreachable!()
-                };
-                let &[src_rs, src_cs] = scheme.src_strides() else {
-                    unreachable!()
-                };
-                Layout {
-                    r: r as _,
-                    c: c as _,
-                    dst_rs: dst_rs as _,
-                    dst_cs: dst_cs as _,
-                    src_rs: src_rs as _,
-                    src_cs: src_cs as _,
+        }
+
+        // 处理grid，填充grid_len，grid_stride
+        let mut grid_dim = 0_u32;
+        for i in 0..ndim {
+            let mut is_split = false;
+            if !block_dim_choose[i] {
+                for split_dim in split_dims.iter_mut() {
+                    if i == split_dim.choose_idx {
+                        is_split = true;
+                        grid_len.push(split_dim.num_per_grid as ArrayType);
+                        src_grid_stride
+                            .push((src_strides[i] * split_dim.num_per_block as isize) as ArrayType);
+                        dst_grid_stride
+                            .push((dst_strides[i] * split_dim.num_per_block as isize) as ArrayType);
+                        split_dim.array_struct_idx_grid = grid_dim as ArrayType;
+                    }
                 }
+                if !is_split {
+                    grid_len.push(shape[i] as ArrayType);
+                    src_grid_stride.push(src_strides[i] as ArrayType);
+                    dst_grid_stride.push(dst_strides[i] as ArrayType);
+                }
+                grid_dim += 1;
             }
-            _ => Err(rank_not_support("rearrange not support ndim > 2 on NV GPU"))?,
+        }
+
+        let filter_split_dims = split_dims
+            .iter()
+            .filter(|split_dim| split_dim.dim_len % split_dim.num_per_block != 0)
+            .collect::<Vec<_>>();
+
+        let constrain_num = filter_split_dims.len();
+
+        // 准备kernel
+        let key = SchemeKey {
+            unit_size: unit,
+            constrain_num,
+            block_array_size: block_len.len(),
+            grid_array_size: grid_len.len(),
         };
 
-        let name = CString::new(NAME).unwrap();
-        if unit % self.warp_size != 0 {
-            Err(shape_not_support(format!(
-                "memory region {unit} is not align to warp size, which is not supported yet on NV GPU",
-            )))?;
-        }
-        let bytes_thread = (unit / self.warp_size) as u32;
-        if bytes_thread > 32 || !bytes_thread.is_power_of_two() {
-            Err(shape_not_support(format!(
-                "bytes per thread {bytes_thread} is not supported yet on NV GPU"
-            )))?;
-        }
+        let mut schemes = self.schemes.lock().unwrap();
 
-        let warps = self.max_warps_block as u32;
-        let grid = (r, c.div_ceil(warps));
-        let block = (c.div_ceil(grid.1), self.warp_size as u32);
+        let scheme = schemes.get_or_insert(key, || Scheme::new(key, &self.handle));
 
-        let unit = unit as i32;
-        let dst_rs = dst_rs / unit;
-        let dst_cs = dst_cs / unit;
-        let src_rs = src_rs / unit;
-        let src_cs = src_cs / unit;
+        // 计算grid和block
+        let grid = grid_len.iter().product::<ArrayType>() as u32;
+        let block = block_len.iter().product::<ArrayType>() as u32;
+
+        // cuda 参数准备
+        let block_len_total = block_len.iter().map(|x| *x as u32).product::<u32>();
+        let src_block_stride = ArrayStruct::new(src_block_stride, 0);
+        let dst_block_stride = ArrayStruct::new(dst_block_stride, 0);
+        let src_grid_stride = ArrayStruct::new(src_grid_stride, 0);
+        let dst_grid_stride = ArrayStruct::new(dst_grid_stride, 0);
+        let block_len = ArrayStruct::new(block_len, 1);
+        let grid_len = ArrayStruct::new(grid_len, 1);
+
+        let constrains = match filter_split_dims.len() {
+            0 => ArrayStruct(vec![0; 8]),
+            1 => ArrayStruct(vec![
+                filter_split_dims[0].array_struct_idx_grid,
+                filter_split_dims[0].array_struct_idx_block,
+                filter_split_dims[0].num_per_block as ArrayType,
+                filter_split_dims[0].dim_len as ArrayType,
+                0,
+                0,
+                0,
+                0,
+            ]),
+            2 => ArrayStruct(vec![
+                filter_split_dims[0].array_struct_idx_grid,
+                filter_split_dims[0].array_struct_idx_block,
+                filter_split_dims[0].num_per_block as ArrayType,
+                filter_split_dims[0].dim_len as ArrayType,
+                filter_split_dims[1].array_struct_idx_grid,
+                filter_split_dims[1].array_struct_idx_block,
+                filter_split_dims[1].num_per_block as ArrayType,
+                filter_split_dims[1].dim_len as ArrayType,
+            ]),
+            _ => unreachable!(),
+        };
 
         let params = cuda::params![
             args.dst_base,
-            dst_rs,
-            dst_cs,
             args.src_base,
-            src_rs,
-            src_cs,
-            c,
-            bytes_thread
+            block_dim,
+            block_len_total,
+            block_len.try_into_array::<DEFAULT_ARRAY_SIZE>()?, // 各维度的长度
+            src_block_stride.try_into_array::<DEFAULT_ARRAY_SIZE>()?, // 源tensor在各维度上的步长(bytes)
+            dst_block_stride.try_into_array::<DEFAULT_ARRAY_SIZE>()?, // 目标tensor在各维度上的步长(bytes)
+            grid_len.try_into_array::<DEFAULT_ARRAY_SIZE>()?,         // 各维度的长度
+            src_grid_stride.try_into_array::<DEFAULT_ARRAY_SIZE>()?, // 源tensor在各维度上的步长(bytes)
+            dst_grid_stride.try_into_array::<DEFAULT_ARRAY_SIZE>()?, // 目标tensor在各维度上的步长(bytes)
+            constrains.try_into_array::<CONSTRAIN_ARRAY_SIZE>()?
         ];
-        self.module
-            .launch(&name, grid, block, params.as_ptr(), 0, queue_alloc.queue());
+
+        scheme.module.launch(
+            &scheme.name,
+            (grid, block, 0),
+            &params.to_ptrs(),
+            queue_alloc.queue(),
+        );
         Ok(())
     }
 }
 
-fn format_code() -> String {
+fn kernel_name(
+    SchemeKey {
+        unit_size,
+        block_array_size,
+        grid_array_size,
+        constrain_num,
+    }: SchemeKey,
+) -> String {
+    let tmem_type = match unit_size {
+        1 => "uchar1",
+        2 => "uchar2",
+        4 => "float1",
+        8 => "float2",
+        16 => "float4",
+        32 => "double4",
+        _ => unreachable!(),
+    };
     format!(
-        r#"{CODE}
+        "rearrange_unit_{tmem_type}_block_{block_array_size}_grid_{grid_array_size}_constrain_{constrain_num}"
+    )
+}
 
-extern "C" __global__ void {NAME}(
-    void       *__restrict__ dst,
-    int const rsa,
-    int const csa,
+fn format_code(
+    SchemeKey {
+        unit_size,
+        block_array_size,
+        grid_array_size,
+        constrain_num,
+    }: SchemeKey,
+) -> String {
+    assert!(block_array_size != 0);
+
+    let kernel_name = kernel_name(SchemeKey {
+        unit_size,
+        block_array_size,
+        grid_array_size,
+        constrain_num,
+    });
+    //处理 grid_array_size = 0的情况
+    let grid_array_size = max(grid_array_size, 1);
+
+    let mut code = String::new();
+
+    let tmem_type = match unit_size {
+        1 => "uchar1",
+        2 => "uchar2",
+        4 => "float1",
+        8 => "float2",
+        16 => "float4",
+        32 => "double4",
+        _ => unreachable!(),
+    };
+
+    // 添加头部定义
+    code.push_str(&format!("#define BLOCK_ARRAY_SIZE {block_array_size}\n"));
+    code.push_str(&format!("#define GRID_ARRAY_SIZE {grid_array_size}\n"));
+    code.push_str("#define ARRAY_TYPE int\n");
+    code.push_str(&format!("#define CONSTRAIN_NUM {constrain_num}\n"));
+    code.push_str(CODE);
+    code.push('\n');
+
+    // 添加实例化宏调用
+    code.push_str(&format!(
+        r#"
+extern "C" __global__ void {kernel_name}(
+    void *__restrict__ dst,
     void const *__restrict__ src,
-    int const rsb,
-    int const csb,
-    unsigned int const ncols,
-    unsigned int const bytes_per_thread
-){{
-    switch (bytes_per_thread) {{
-        case  1: rearrange<uchar1 >(dst, rsa, csa, src, rsb, csb, ncols); break;
-        case  2: rearrange<uchar2 >(dst, rsa, csa, src, rsb, csb, ncols); break;
-        case  4: rearrange<float1 >(dst, rsa, csa, src, rsb, csb, ncols); break;
-        case  8: rearrange<float2 >(dst, rsa, csa, src, rsb, csb, ncols); break;
-        case 16: rearrange<float4 >(dst, rsa, csa, src, rsb, csb, ncols); break;
-        case 32: rearrange<double4>(dst, rsa, csa, src, rsb, csb, ncols); break;
-    }}
+    unsigned int const block_dim,
+    unsigned int const block_len_total,
+    const ArrayStruct<BLOCK_ARRAY_SIZE, ARRAY_TYPE> block_len,
+    const ArrayStruct<BLOCK_ARRAY_SIZE, ARRAY_TYPE> src_block_stride,
+    const ArrayStruct<BLOCK_ARRAY_SIZE, ARRAY_TYPE> dst_block_stride,
+    const ArrayStruct<GRID_ARRAY_SIZE, ARRAY_TYPE> grid_len,
+    const ArrayStruct<GRID_ARRAY_SIZE, ARRAY_TYPE> src_grid_stride,
+    const ArrayStruct<GRID_ARRAY_SIZE, ARRAY_TYPE> dst_grid_stride
+#if CONSTRAIN_NUM > 0
+    ,const ArrayStruct<CONSTRAIN_NUM, Constrains<ARRAY_TYPE>> constrains
+#endif
+) {{
+    rearrange_kernel<{tmem_type}, {constrain_num}>(
+        dst, src, block_dim, block_len_total,
+        block_len, src_block_stride, dst_block_stride,
+        grid_len, src_grid_stride, dst_grid_stride
+#if CONSTRAIN_NUM > 0
+        ,constrains
+#endif
+    );
 }}
 "#
-    )
+    ));
+    code.push('\n');
+
+    code
 }
 
 #[cfg(test)]
 mod test {
+    use std::time::Duration;
+
     use super::{Args, Gpu, Operator};
     use crate::{ConstPtr, Hardware, MutPtr, Operator as _, TensorLayout};
-    use digit_layout::{types as ty, DigitLayout};
+    use digit_layout::{DigitLayout, types as ty};
+    use log::debug;
 
-    fn dyn_args<H: Hardware>(dt: DigitLayout) -> Args<H> {
-        use crate::dyn_;
-        use std::ptr::{null, null_mut};
-        Args {
-            dst_layout: TensorLayout::new_dyn(dt, &[dyn_(); 2], &[dyn_(); 2]),
-            dst_base: null_mut(),
-            src_layout: TensorLayout::new_dyn(dt, &[dyn_(); 2], &[dyn_(); 2]),
-            src_base: null(),
-        }
-    }
+    // fn dyn_args<H: Hardware>(dt: DigitLayout) -> Args<H> {
+    //     use std::ptr::{null, null_mut};
+    //     Args {
+    //         dst_layout: TensorLayout::new(dt, &[0; 2], &[0; 2]),
+    //         dst_base: null_mut(),
+    //         src_layout: TensorLayout::new_dyn(dt, &[0; 2], &[0; 2]),
+    //         src_base: null(),
+    //     }
+    // }
 
     fn args<H: Hardware>(
         dt: DigitLayout,
@@ -229,69 +523,126 @@ mod test {
 
     #[test]
     fn test_compile() {
-        use super::NAME;
-        use std::ffi::CString;
+        use super::Scheme;
+        use super::SchemeKey;
 
         let Some(gpu) = Gpu::init() else {
             return;
         };
         println!("{}", gpu.0.device().info());
 
-        let mut op = Operator::new(&gpu);
-        op.scheme(&dyn_args(ty::F16), 0).unwrap();
+        let op = Operator::new(&gpu);
 
-        let module = op.module;
+        // 遍历所有可能的unit_size和constrain_num组合，编译所有kernel
+        for unit_size in (0..=5).map(|n| (1 << n)) {
+            for constrain_num in 0..=2 {
+                println!(
+                    "compile unit_size: {}, constrain_num: {}",
+                    unit_size, constrain_num
+                );
+                let key = SchemeKey {
+                    unit_size,
+                    constrain_num,
+                    block_array_size: 5,
+                    grid_array_size: 5,
+                };
+                op.schemes
+                    .lock()
+                    .unwrap()
+                    .get_or_insert(key, || Scheme::new(key, &op.handle));
+            }
+        }
+
+        // 打印所有编译好的kernel信息
         gpu.apply(|ctx| {
-            println!(
-                "{NAME}\n{}",
-                module.load(CString::new(NAME).unwrap(), ctx).info()
-            );
-        })
+            let schemes = op.schemes.lock().unwrap();
+            for (key, scheme) in schemes.iter() {
+                println!("{:?}", scheme.name);
+                println!(
+                    "unit_size: {}, constrain_num: {}\n{}",
+                    key.unit_size,
+                    key.constrain_num,
+                    // scheme.name.to_str().unwrap(),
+                    scheme.module.load(&scheme.name, ctx).info()
+                );
+                println!("----------------------------------------");
+            }
+        });
     }
 
-    #[test]
-    fn test_compute() {
+    fn copute_with_check<const N: usize, const TRANS_N: usize>(
+        gpu: &Gpu,
+        shape: [usize; N],
+    ) -> Duration {
+        assert!(TRANS_N <= N, "TRANS_N must be less than or equal to N");
         use super::super::common_cpu::Operator as RefOp;
         use crate::common_cpu::{Cpu, ThisThread};
+
         use cuda::memcpy_d2h;
         use ndarray_layout::{ArrayLayout, Endian::BigEndian};
         use rand::Rng;
 
-        let Some(gpu) = Gpu::init() else {
-            return;
-        };
+        let dt = ty::U64;
 
-        let dt = ty::U32;
+        let cpu_op = RefOp::new(&Cpu);
+        let gpu_op = Operator::new(gpu);
 
-        let mut cpu_op = RefOp::new(&Cpu);
-        let mut gpu_op = Operator::new(&gpu);
-        cpu_op.scheme(&dyn_args(dt), 0).unwrap();
-        gpu_op.scheme(&dyn_args(dt), 0).unwrap();
+        let mut r_shape = shape;
+        r_shape[0..TRANS_N].reverse();
 
-        let nh = 32;
-        let seq = 7;
-        let dh = 128;
-        let mut src = vec![0u32; nh * seq * dh];
+        let trans_param: [usize; TRANS_N] =
+            (0..TRANS_N).rev().collect::<Vec<_>>().try_into().unwrap();
+
+        let mut src = vec![0u64; shape.iter().product::<usize>()];
         rand::rng().fill(&mut src[..]);
 
         let ele = dt.nbytes();
-        let s_src = ArrayLayout::<3>::new_contiguous(&[nh, seq, dh], BigEndian, ele);
+        let s_src = ArrayLayout::<N>::new_contiguous(&shape, BigEndian, ele);
         let s_dst =
-            ArrayLayout::<3>::new_contiguous(&[seq, nh, dh], BigEndian, ele).transpose(&[1, 0]);
+            ArrayLayout::<N>::new_contiguous(&r_shape, BigEndian, ele).transpose(&trans_param);
 
-        let dst_ans = gpu.apply(|ctx| {
+        debug!("s_src shape: {:?}", s_src.shape());
+        debug!("s_dst shape: {:?}", s_dst.shape());
+        debug!("s_src strides: {:?}", s_src.strides());
+        debug!("s_dst strides: {:?}", s_dst.strides());
+
+        let (dst_ans, time) = gpu.apply(|ctx| {
             let stream = ctx.stream();
             #[cfg(use_nvidia)]
             let rt = &stream;
             #[cfg(use_iluvatar)]
             let rt = ctx;
+
             let src = rt.from_host(&src);
             let mut dst = rt.malloc::<u8>(src.len());
+
+            let start_event = stream.record();
+
+            stream.bench(
+                |_, stream| {
+                    gpu_op
+                        .launch(
+                            &args(
+                                dt,
+                                &shape,
+                                s_src.strides(),
+                                s_dst.strides(),
+                                src.as_ptr().cast(),
+                                dst.as_mut_ptr().cast(),
+                            ),
+                            &mut [],
+                            stream,
+                        )
+                        .unwrap();
+                },
+                5,
+                1,
+            );
             gpu_op
                 .launch(
                     &args(
                         dt,
-                        &[nh, seq, dh],
+                        &shape,
                         s_src.strides(),
                         s_dst.strides(),
                         src.as_ptr().cast(),
@@ -301,17 +652,21 @@ mod test {
                     &stream,
                 )
                 .unwrap();
-            let mut host = vec![0u32; nh * seq * dh];
+            let end_event = stream.record();
+            end_event.synchronize();
+            let time = end_event.elapse_from(&start_event);
+
+            let mut host = vec![0u64; shape.iter().product::<usize>()];
             memcpy_d2h(&mut host, &dst);
-            host
+            (host, time)
         });
 
-        let mut dst_ref = vec![0u32; seq * nh * dh];
+        let mut dst_ref = vec![0u64; shape.iter().product::<usize>()];
         cpu_op
             .launch(
                 &args(
                     dt,
-                    &[nh, seq, dh],
+                    &shape,
                     s_src.strides(),
                     s_dst.strides(),
                     src.as_ptr().cast(),
@@ -322,5 +677,32 @@ mod test {
             )
             .unwrap();
         assert_eq!(dst_ans, dst_ref);
+        time
+    }
+
+    #[test]
+    fn test_compute() {
+        let Some(gpu) = Gpu::init() else {
+            return;
+        };
+        let shape = [2];
+        let time = copute_with_check::<1, 1>(&gpu, shape);
+        println!("time: {time:?}");
+
+        let shape = [13];
+        let time = copute_with_check::<1, 1>(&gpu, shape);
+        println!("time: {time:?}");
+
+        let shape = [16, 2, 16];
+        let time = copute_with_check::<3, 3>(&gpu, shape);
+        println!("time: {time:?}");
+
+        let shape = [32, 2, 17];
+        let time = copute_with_check::<3, 3>(&gpu, shape);
+        println!("time: {time:?}");
+
+        let shape = [32, 2, 17, 2, 13];
+        let time = copute_with_check::<5, 5>(&gpu, shape);
+        println!("time: {time:?}");
     }
 }

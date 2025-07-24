@@ -1,7 +1,8 @@
-﻿use super::{args::Meta, AllReduce, Args, ReduceOp};
+use super::{AllReduce, Args, ReduceOp, args::Meta};
 use crate::{
+    ByteOf, LaunchError, QueueAlloc,
     cuda::{Gpu, NcclNode},
-    rearrange, ByteOf, LaunchError, QueueAlloc, SchemeError,
+    rearrange,
 };
 use std::{
     slice::{from_raw_parts, from_raw_parts_mut},
@@ -23,14 +24,6 @@ impl crate::Operator for Operator {
         Self {
             nccl: node.nccl.clone(),
         }
-    }
-
-    fn scheme(
-        &mut self,
-        _args: &Self::Args,
-        _max_workspace_size: usize,
-    ) -> Result<usize, SchemeError> {
-        Ok(0)
     }
 
     fn launch<QA>(

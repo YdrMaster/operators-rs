@@ -1,4 +1,4 @@
-template<class Tdata>
+template <class Tdata>
 static __device__ void _add(
     Tdata *__restrict__ c,
     Tdata const *__restrict__ a,

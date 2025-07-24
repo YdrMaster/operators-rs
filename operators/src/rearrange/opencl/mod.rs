@@ -1,11 +1,11 @@
-use super::{args::Scheme, Args, Rearrange};
+use super::{Args, Rearrange, args::Scheme};
 use crate::{
-    opencl::{ClDevice, CodeGen, KernelCache, CL2_0},
-    rank_not_support, ByteOf, LaunchError, QueueAlloc,
+    ByteOf, LaunchError, QueueAlloc,
     SchemeDiversity::Low as LowDiversity,
-    SchemeError,
+    opencl::{CL2_0, ClDevice, CodeGen, KernelCache},
+    rank_not_support,
 };
-use clrt::{bindings::cl_int, Context};
+use clrt::{Context, bindings::cl_int};
 use lru::LruCache;
 use std::slice::{from_raw_parts, from_raw_parts_mut};
 use std::sync::Mutex;
@@ -37,14 +37,6 @@ impl crate::Operator for Operator {
             max_group_size,
             schemes: node.new_cache(LowDiversity),
         }
-    }
-
-    fn scheme(
-        &mut self,
-        _args: &Self::Args,
-        _max_workspace_size: usize,
-    ) -> Result<usize, SchemeError> {
-        Ok(0)
     }
 
     fn launch<QA>(
@@ -190,17 +182,6 @@ mod test {
     use crate::{ConstPtr, Hardware, MutPtr, TensorLayout};
     use digit_layout::DigitLayout;
 
-    fn dyn_args<H: Hardware>(dt: DigitLayout) -> Args<H> {
-        use crate::dyn_;
-        use std::ptr::{null, null_mut};
-        Args {
-            dst_layout: TensorLayout::new_dyn(dt, &[dyn_(); 2], &[dyn_(); 2]),
-            dst_base: null_mut(),
-            src_layout: TensorLayout::new_dyn(dt, &[dyn_(); 2], &[dyn_(); 2]),
-            src_base: null(),
-        }
-    }
-
     fn args<H: Hardware>(
         dt: DigitLayout,
         shape: &[usize],
@@ -221,9 +202,9 @@ mod test {
     fn test_compute() {
         use super::{super::common_cpu::Operator as RefOp, Operator};
         use crate::{
+            Operator as _,
             common_cpu::{Cpu, ThisThread},
             opencl::ClDevice,
-            Operator as _,
         };
         use clrt::Platform;
         use digit_layout::types as ty;
@@ -233,14 +214,14 @@ mod test {
 
         let dt = ty::U32;
 
-        let mut cpu_op = RefOp::new(&Cpu);
+        let cpu_op = RefOp::new(&Cpu);
         for platform in Platform::all() {
             for device in platform.devices() {
                 println!("device: {}", device.name());
 
                 let context = device.context();
                 let queue = context.queue();
-                let mut cl_op = Operator::new(&ClDevice::new(context.clone(), Default::default()));
+                let cl_op = Operator::new(&ClDevice::new(context.clone(), Default::default()));
 
                 let nh = 5;
                 let seq = 32;
@@ -254,8 +235,6 @@ mod test {
                         .transpose(&[1, 0]);
 
                 let dt = ty::U32;
-                cpu_op.scheme(&dyn_args(dt), 0).unwrap();
-                cl_op.scheme(&dyn_args(dt), 0).unwrap();
 
                 let mut s_svm = context.malloc::<u32>(nh * seq * dh * 2);
                 let mut d_svm = context.malloc::<u32>(nh * seq * dh);
@@ -305,7 +284,7 @@ mod test {
                     .unwrap();
                 let cpu_time = time.elapsed();
 
-                let map = queue.map(&mut d_svm);
+                let map = queue.map(&d_svm);
                 let ([], y_ans, []) = (unsafe { map.align_to::<u32>() }) else {
                     panic!()
                 };

@@ -1,8 +1,8 @@
-﻿use super::{args::Meta, AllReduce, Args, ReduceOp};
+use super::{AllReduce, Args, ReduceOp, args::Meta};
 use crate::{
+    ByteOf, LaunchError, QueueAlloc,
     infini::{Device, InfiniNode},
     rearrange::{self, infini::Operator as Rearrange},
-    ByteOf, LaunchError, QueueAlloc, SchemeError,
 };
 use digit_layout::types as ty;
 use infini_ccl::bindings::InfiniDataType_t;
@@ -28,14 +28,6 @@ impl crate::Operator for Operator {
             Some(comm) => Self::Comm(comm.clone()),
             None => Self::Rearrange(Rearrange::new(&node.device)),
         }
-    }
-
-    fn scheme(
-        &mut self,
-        _args: &Self::Args,
-        _max_workspace_size: usize,
-    ) -> Result<usize, SchemeError> {
-        Ok(0)
     }
 
     fn launch<QA>(

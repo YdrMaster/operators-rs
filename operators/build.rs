@@ -26,18 +26,21 @@ fn main() {
     {
         infini.define()
     }
-    let use_nvidia = cfg!(feature = "nvidia-gpu") && find_cuda_root().is_some();
+
+    // iluvatar
     let use_iluvatar = cfg!(feature = "iluvatar-gpu") && find_corex().is_some();
+    if use_iluvatar {
+        iluvatar.define();
+        cuda.define();
+        return;
+    }
+
+    let use_nvidia = cfg!(feature = "nvidia-gpu") && find_cuda_root().is_some();
     if use_nvidia {
         nvidia.define();
         if find_nccl_root().is_some() {
             nccl.define()
         }
-    }
-    if use_iluvatar {
-        iluvatar.define()
-    }
-    if use_nvidia || use_iluvatar {
-        cuda.define()
+        cuda.define();
     }
 }

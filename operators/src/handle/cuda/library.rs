@@ -210,7 +210,7 @@ fn read_output(output: &Output) -> String {
 fn test_compile() {
     use cuda::Version;
     use libloading::Symbol;
-    use std::ffi::{c_char, CStr};
+    use std::ffi::{CStr, c_char};
 
     let lib = cache_lib(
         &("test_compile".into(), Version { major: 8, minor: 0 }),

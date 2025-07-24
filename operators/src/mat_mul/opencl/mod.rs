@@ -1,12 +1,11 @@
-use super::{args::SchemeLayout, Args, MatMul};
+use super::{Args, MatMul, args::SchemeLayout};
 use crate::{
-    opencl::{ClDevice, CodeGen, KernelCache, CL2_0},
     ByteOf, LaunchError, QueueAlloc,
     SchemeDiversity::Low as LowDiversity,
-    SchemeError,
+    opencl::{CL2_0, ClDevice, CodeGen, KernelCache},
 };
-use clrt::{bindings::cl_int, Context};
-use digit_layout::{types as Ty, DigitLayout};
+use clrt::{Context, bindings::cl_int};
+use digit_layout::{DigitLayout, types as Ty};
 use lru::LruCache;
 use std::sync::Mutex;
 
@@ -37,14 +36,6 @@ impl crate::Operator for Operator {
             max_group_size,
             schemes: node.new_cache(LowDiversity),
         }
-    }
-
-    fn scheme(
-        &mut self,
-        _args: &Self::Args,
-        _max_workspace_size: usize,
-    ) -> Result<usize, SchemeError> {
-        Ok(0)
     }
 
     fn launch<QA>(
@@ -177,6 +168,7 @@ mod test {
     const ALPHA: f32 = 0.5;
     const BETA: f32 = 1.;
 
+    #[allow(clippy::too_many_arguments)]
     fn args<H: Hardware>(
         dt: DigitLayout,
         batch: usize,
@@ -203,10 +195,10 @@ mod test {
     fn test_compute() {
         use super::{super::common_cpu::Operator as RefOp, Operator};
         use crate::{
+            Operator as _,
             common_cpu::{Cpu, ThisThread},
             opencl::ClDevice,
             test_utils::{Diff, ErrorCollector},
-            Operator as _,
         };
         use clrt::Platform;
         use digit_layout::types::{F32, F64};
@@ -309,7 +301,7 @@ mod test {
                         .unwrap();
                     let cpu_time = time.elapsed();
 
-                    let map = queue.map(&mut c_svm);
+                    let map = queue.map(&c_svm);
                     let ([], y_ans, []) = (unsafe { map.align_to::<f32>() }) else {
                         panic!()
                     };

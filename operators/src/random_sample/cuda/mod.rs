@@ -1,13 +1,13 @@
 mod ffi;
 
 use super::{
-    args::{Meta, SampleArgs},
     Args, Indices, RandomSample,
+    args::{Meta, SampleArgs},
 };
 use crate::{
-    cuda::{dt_name, Gpu, Handle},
-    get_static, strides_not_support, ByteOf, LaunchError, QueueAlloc, SchemeDiversity, SchemeError,
-    Workspace,
+    ByteOf, LaunchError, QueueAlloc, SchemeDiversity, Workspace,
+    cuda::{Gpu, Handle, dt_name},
+    strides_not_support,
 };
 use cuda::{DevByte, Stream};
 use digit_layout::DigitLayout;
@@ -50,35 +50,6 @@ impl crate::Operator for Operator {
         }
     }
 
-    fn scheme(
-        &mut self,
-        args: &Self::Args,
-        max_workspace_size: usize,
-    ) -> Result<usize, SchemeError> {
-        let meta = args.meta()?;
-        let mut schemes = self.schemes.lock().unwrap();
-        let scheme = schemes.get_or_insert(meta.dt, || Scheme::new(&self.handle, meta.dt));
-        let Some(&n) = meta.n.get_static() else {
-            return Ok(0);
-        };
-        let (argmax_size, sample_size) = scheme.workspace_size(n);
-        drop(schemes);
-
-        let (max, min) = if argmax_size > sample_size {
-            (argmax_size, sample_size)
-        } else {
-            (sample_size, argmax_size)
-        };
-
-        Ok(if max <= max_workspace_size {
-            max
-        } else if min <= max_workspace_size {
-            min
-        } else {
-            0
-        })
-    }
-
     fn launch<QA>(
         &self,
         args: &Self::Args,
@@ -110,13 +81,11 @@ impl crate::Operator for Operator {
             unreachable!()
         };
 
-        get_static!(n sp si);
-
         if dt.nbytes() as isize != sp {
-            return Err(strides_not_support("").into());
+            return Err(strides_not_support(""));
         }
         if size_of::<u32>() as isize != si {
-            return Err(strides_not_support("").into());
+            return Err(strides_not_support(""));
         }
 
         let scheme = self
@@ -239,10 +208,10 @@ impl Scheme {
 
 #[test]
 fn test_compute() {
-    use super::{common_cpu::Operator as RefOp, KVPair};
+    use super::{KVPair, common_cpu::Operator as RefOp};
     use crate::{
-        common_cpu::{Cpu, ThisThread},
         Operator as _,
+        common_cpu::{Cpu, ThisThread},
     };
     use cuda::memcpy_d2h;
     use digit_layout::types as ty;
@@ -256,13 +225,7 @@ fn test_compute() {
     let n = 32000;
 
     let cpu_op = RefOp::new(&Cpu);
-    let mut gpu_op = Operator::new(&gpu);
-    println!(
-        "workspace = {}",
-        gpu_op
-            .scheme(&Args::layout(ty::F32, n), usize::MAX)
-            .unwrap()
-    );
+    let gpu_op = Operator::new(&gpu);
 
     let mut logits = vec![0.0f32; n];
     rand::rng().fill(&mut logits[..]);

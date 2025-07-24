@@ -1,17 +1,16 @@
-use super::{args::Meta, Args, FusedSoftmax};
+use super::{Args, FusedSoftmax, args::Meta};
 use crate::{
-    fuesd_softmax::args::AttnMask,
-    get_static,
-    opencl::{ClDevice, CodeGen, KernelCache, CL2_0},
-    strides_not_support, ByteOf, LaunchError, QueueAlloc,
+    ByteOf, LaunchError, QueueAlloc,
     SchemeDiversity::Low as LowDiversity,
-    SchemeError,
+    fuesd_softmax::args::AttnMask,
+    opencl::{CL2_0, ClDevice, CodeGen, KernelCache},
+    strides_not_support,
 };
 use clrt::{
-    bindings::{cl_int, cl_uint},
     Context,
+    bindings::{cl_int, cl_uint},
 };
-use digit_layout::{types as Ty, DigitLayout};
+use digit_layout::{DigitLayout, types as Ty};
 use lru::LruCache;
 use std::sync::Mutex;
 
@@ -47,16 +46,6 @@ impl crate::Operator for Operator {
         }
     }
 
-    fn scheme(
-        &mut self,
-        args: &Self::Args,
-        _max_workspace_size: usize,
-    ) -> Result<usize, SchemeError> {
-        let Meta { dt } = args.meta()?;
-        self.cache_kernel(dt);
-        Ok(0)
-    }
-
     fn launch<QA>(
         &self,
         args: &Self::Args,
@@ -67,7 +56,7 @@ impl crate::Operator for Operator {
         QA: QueueAlloc<Hardware = Self::Hardware>,
     {
         let Meta { dt } = args.meta()?;
-        self.cache_kernel(args.att_layout.dt());
+        self.cache_kernel(args.att_layout.dt);
 
         let Args {
             att_mask,
@@ -77,21 +66,16 @@ impl crate::Operator for Operator {
         if !matches!(*att_mask, AttnMask::Causal) {
             todo!()
         }
-        let &[nh, seq_len, att_len] = att_layout.shape() else {
+        let &[nh, seq_len, att_len] = &*att_layout.shape() else {
             unreachable!()
         };
         let &[sh, ss, sa] = att_layout.strides() else {
             unreachable!()
         };
 
-        get_static! {
-            nh seq_len att_len
-            sh ss      sa
-        }
-
         let unit = dt.nbytes() as isize;
         if sa != unit {
-            return Err(strides_not_support("").into());
+            return Err(strides_not_support(""));
         };
 
         let group_size = last_power_of_two(att_len.min(self.max_group_size));
@@ -163,16 +147,6 @@ mod test {
     use crate::{Hardware, TensorLayout};
     use digit_layout::DigitLayout;
 
-    fn dyn_args<H: Hardware>(dt: DigitLayout) -> Args<H> {
-        use crate::dyn_;
-        use std::ptr::null_mut;
-        Args {
-            att_mask: AttnMask::Causal,
-            att_layout: TensorLayout::new_dyn(dt, &[dyn_(); 3], &[dyn_(); 3]),
-            att_base: null_mut(),
-        }
-    }
-
     fn args<H: Hardware>(
         dt: DigitLayout,
         nh: usize,
@@ -191,10 +165,10 @@ mod test {
     fn test_compute() {
         use super::{super::common_cpu::Operator as RefOp, Operator};
         use crate::{
+            Operator as _,
             common_cpu::{Cpu, ThisThread},
             opencl::ClDevice,
             test_utils::{Diff, ErrorCollector},
-            Operator as _,
         };
         use clrt::Platform;
         use digit_layout::types as ty;
@@ -202,16 +176,14 @@ mod test {
         use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
         use std::{iter::zip, time::Instant};
 
-        let mut cpu_op = RefOp::new(&Cpu);
+        let cpu_op = RefOp::new(&Cpu);
         for platform in Platform::all() {
             for device in platform.devices() {
                 println!("device: {}", device.name());
 
                 let context = device.context();
                 let queue = context.queue();
-                let mut cl_op = Operator::new(&ClDevice::new(context.clone(), Default::default()));
-                cpu_op.scheme(&dyn_args(ty::F64), 0).unwrap();
-                cl_op.scheme(&dyn_args(ty::F32), 0).unwrap();
+                let cl_op = Operator::new(&ClDevice::new(context.clone(), Default::default()));
 
                 let nh = 32;
                 for (seq_len, att_len) in [
@@ -260,7 +232,7 @@ mod test {
                     let cpu_time = time.elapsed();
                     println!("cl: {cl_time:?} / cpu: {cpu_time:?}");
 
-                    let map = queue.map(&mut att_svm);
+                    let map = queue.map(&att_svm);
                     let ([], mem, []) = (unsafe { map.align_to::<f32>() }) else {
                         panic!()
                     };

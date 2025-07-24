@@ -1,5 +1,5 @@
 ﻿#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum SchemeErrorKind {
+pub enum LaunchErrorKind {
     TypeNotSupport,
     TypeMismatch,
     RankNotSupport,
@@ -9,17 +9,6 @@ pub enum SchemeErrorKind {
     StridesNotSupport,
     ArgsNotSupport,
     DynamicNotSupport,
-}
-
-#[derive(Clone, Debug)]
-pub struct SchemeError {
-    pub kind: SchemeErrorKind,
-    pub info: String,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum LaunchErrorKind {
-    Scheme(SchemeErrorKind),
     ExecutionFailed,
 }
 
@@ -29,17 +18,8 @@ pub struct LaunchError {
     pub info: String,
 }
 
-impl From<SchemeError> for LaunchError {
-    fn from(SchemeError { kind, info }: SchemeError) -> Self {
-        Self {
-            kind: LaunchErrorKind::Scheme(kind),
-            info,
-        }
-    }
-}
-
 pub(super) mod functions {
-    use super::{LaunchError, LaunchErrorKind::*, SchemeError, SchemeErrorKind::*};
+    use super::{LaunchError, LaunchErrorKind::*};
 
     macro_rules! builder {
         ($ty:ident: $name:ident $kind:expr) => {
@@ -53,15 +33,15 @@ pub(super) mod functions {
         };
     }
 
-    builder!(SchemeError: type_not_support    TypeNotSupport   );
-    builder!(SchemeError: type_mismatch       TypeMismatch     );
-    builder!(SchemeError: rank_mismatch       RankMismatch     );
-    builder!(SchemeError: rank_not_support    RankNotSupport   );
-    builder!(SchemeError: shape_not_support   ShapeNotSupport  );
-    builder!(SchemeError: shape_mismatch      ShapeMismatch    );
-    builder!(SchemeError: strides_not_support StridesNotSupport);
-    builder!(SchemeError: args_not_support    ArgsNotSupport   );
-    builder!(SchemeError: dyn_not_support     DynamicNotSupport);
+    builder!(LaunchError: type_not_support    TypeNotSupport   );
+    builder!(LaunchError: type_mismatch       TypeMismatch     );
+    builder!(LaunchError: rank_mismatch       RankMismatch     );
+    builder!(LaunchError: rank_not_support    RankNotSupport   );
+    builder!(LaunchError: shape_not_support   ShapeNotSupport  );
+    builder!(LaunchError: shape_mismatch      ShapeMismatch    );
+    builder!(LaunchError: strides_not_support StridesNotSupport);
+    builder!(LaunchError: args_not_support    ArgsNotSupport   );
+    builder!(LaunchError: dyn_not_support     DynamicNotSupport);
 
     builder!(LaunchError: execution_failed    ExecutionFailed  );
 }

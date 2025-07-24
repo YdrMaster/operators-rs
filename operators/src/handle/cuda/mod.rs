@@ -219,7 +219,7 @@ where
 {
     let mut host = stream.ctx().malloc_host::<U>(val.len());
     let host = unsafe { std::slice::from_raw_parts_mut(host.as_mut_ptr().cast(), val.len()) };
-    host.into_iter().zip(val).for_each(|(y, x)| *y = f(*x));
+    host.iter_mut().zip(val).for_each(|(y, x)| *y = f(*x));
 
     #[cfg(use_nvidia)]
     let mem = stream.from_host(host);

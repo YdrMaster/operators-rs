@@ -1,16 +1,14 @@
-use super::{args::Meta, Args, RmsNorm};
+use super::{Args, RmsNorm, args::Meta};
 use crate::{
-    get_static,
-    opencl::{ClDevice, CodeGen, KernelCache, CL2_0},
     ByteOf, LaunchError, QueueAlloc,
     SchemeDiversity::Low as LowDiversity,
-    SchemeError,
+    opencl::{CL2_0, ClDevice, CodeGen, KernelCache},
 };
 use clrt::{
-    bindings::{cl_int, cl_uint},
     Context,
+    bindings::{cl_int, cl_uint},
 };
-use digit_layout::{types as Ty, DigitLayout};
+use digit_layout::{DigitLayout, types as Ty};
 use lru::LruCache;
 use std::sync::Mutex;
 
@@ -43,18 +41,6 @@ impl crate::Operator for Operator {
         }
     }
 
-    fn scheme(
-        &mut self,
-        args: &Self::Args,
-        _max_workspace_size: usize,
-    ) -> Result<usize, SchemeError> {
-        let Meta { dt_a, dt_w, d, .. } = args.meta()?;
-        if let Some(&d) = d.get_static() {
-            self.cache_kernel(dt_a, dt_w, d);
-        }
-        Ok(0)
-    }
-
     fn launch<QA>(
         &self,
         args: &Self::Args,
@@ -80,11 +66,6 @@ impl crate::Operator for Operator {
         let &[nsx, ..] = x_layout.strides() else {
             unreachable!()
         };
-        get_static! {
-            n d
-            nsy
-            nsx
-        }
 
         let (key, group_size) = self.cache_kernel(dt_a, dt_w, d);
 
@@ -169,20 +150,6 @@ mod test {
     use crate::{Hardware, TensorLayout};
     use digit_layout::DigitLayout;
 
-    fn dyn_args<H: Hardware>(dt_w: DigitLayout, dt_a: DigitLayout, d: usize) -> Args<H> {
-        use crate::dyn_;
-        use std::ptr::{null, null_mut};
-        Args {
-            y_layout: TensorLayout::new_dyn(dt_a, &[dyn_(), d.into()], &[dyn_(); 2]),
-            y_base: null_mut(),
-            x_layout: TensorLayout::new_dyn(dt_a, &[dyn_(), d.into()], &[dyn_(); 2]),
-            x_base: null(),
-            w_layout: TensorLayout::new_dyn(dt_w, &[d.into()], &[dyn_()]),
-            w_base: null(),
-            epsilon: 1e-5,
-        }
-    }
-
     fn args<H: Hardware>(
         dt_w: DigitLayout,
         dt_a: DigitLayout,
@@ -208,10 +175,10 @@ mod test {
     fn test_compute() {
         use super::{super::common_cpu::Operator as RefOp, Operator};
         use crate::{
+            Operator as _,
             common_cpu::{Cpu, ThisThread},
             opencl::ClDevice,
             test_utils::{Diff, ErrorCollector},
-            Operator as _,
         };
         use clrt::Platform;
         use digit_layout::types as ty;
@@ -219,21 +186,18 @@ mod test {
         use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, ParallelIterator};
         use std::{iter::zip, time::Instant};
 
-        let mut cpu_op = RefOp::new(&Cpu);
+        let cpu_op = RefOp::new(&Cpu);
         for platform in Platform::all() {
             for device in platform.devices() {
                 println!("device: {}", device.name());
 
                 let context = device.context();
                 let queue = context.queue();
-                let mut cl_op = Operator::new(&ClDevice::new(context.clone(), Default::default()));
+                let cl_op = Operator::new(&ClDevice::new(context.clone(), Default::default()));
 
                 for k in 2..=12 {
                     let n = 5;
                     let d = 1 << k;
-
-                    cpu_op.scheme(&dyn_args(ty::F64, ty::F64, d), 0).unwrap();
-                    cl_op.scheme(&dyn_args(ty::F32, ty::F32, d), 0).unwrap();
 
                     let mut x = vec![0.0f64; n * d];
                     let mut w = vec![0.0f64; d];
@@ -301,7 +265,7 @@ mod test {
                         .unwrap();
                     let cpu_time = time.elapsed();
 
-                    let map = queue.map(&mut y_svm);
+                    let map = queue.map(&y_svm);
                     let ([], y_ans, []) = (unsafe { map.align_to::<f32>() }) else {
                         panic!()
                     };

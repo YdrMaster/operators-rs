@@ -1,4 +1,4 @@
-template<class Tdata, class Tidx>
+template <class Tdata, class Tidx>
 static __device__ void add_rows(
     Tdata *__restrict__ dst,
     Tdata const *__restrict__ src,

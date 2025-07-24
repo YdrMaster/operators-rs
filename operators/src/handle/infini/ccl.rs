@@ -1,6 +1,6 @@
-﻿use super::Device;
+use super::Device;
 use crate::TopoNode;
-use infini_ccl::{bindings::DeviceType, Comm};
+use infini_ccl::{Comm, bindings::DeviceType};
 use std::{os::raw::c_uint, sync::Arc};
 
 pub struct InfiniNode {

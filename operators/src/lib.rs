@@ -113,23 +113,6 @@ pub trait Operator {
     /// 在指定拓扑节点上创建算子实例。
     fn new(node: &Self::TopoNode) -> Self;
 
-    /// 规划执行方案。
-    ///
-    /// 通过向算子实例提供尽可能详细的参数来尽量确定算子执行方案。
-    /// 通过允许参数中标量值、张量形状、张量步长和张量基址的动态性（[ArgVal] 或 [null](std::ptr::null)）来尽可能复用算子实例。
-    ///
-    /// 另外，需要传入一个最大工作空间容量。工作空间是与硬件存储单元相同类型的存储区域，供算子执行过程中使用。
-    /// 规划执行方案时，将尽可能尝试计算一个满足最大工作空间容量的工作空间需求，作为返回值。
-    ///
-    /// 算子的返回值将保证不大于最大工作空间容量。如果算子还需要更多空间，可能产生运行时分配。
-    ///
-    /// 由于参数提供可能不全，有时无法计算出具体的工作空间需求，算子将返回 0 作为工作空间需求，并在执行时再计算实际的需求。
-    fn scheme(
-        &mut self,
-        args: &Self::Args,
-        max_workspace_size: usize,
-    ) -> Result<usize, SchemeError>;
-
     /// 发射算子到任务队列。
     ///
     /// 如果算子实际需要的工作空间大于通过参数提供的工作空间，将通过流分配器分配和释放工作空间。
@@ -195,15 +178,6 @@ where
     #[inline]
     fn new(node: &Self::TopoNode) -> Self {
         Self(R::new(node), PhantomData)
-    }
-
-    #[inline]
-    fn scheme(
-        &mut self,
-        args: &Self::Args,
-        max_workspace_size: usize,
-    ) -> Result<usize, crate::SchemeError> {
-        self.0.scheme(args.as_ref(), max_workspace_size)
     }
 
     #[inline]

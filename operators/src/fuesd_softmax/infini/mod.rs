@@ -1,10 +1,8 @@
-﻿use infini_op::{infiniop, AsRaw, Descriptor};
-
-use super::{args::Meta, Args, FusedSoftmax};
+use super::{Args, FusedSoftmax, args::Meta};
 use crate::{
-    fuesd_softmax::args::AttnMask, get_static, infini::Device, ByteOf, LaunchError, QueueAlloc,
-    SchemeError, Workspace,
+    ByteOf, LaunchError, QueueAlloc, Workspace, fuesd_softmax::args::AttnMask, infini::Device,
 };
+use infini_op::{AsRaw, Descriptor, infiniop};
 
 pub struct Operator(Device);
 
@@ -18,15 +16,6 @@ impl crate::Operator for Operator {
     #[inline]
     fn new(node: &Self::TopoNode) -> Self {
         Self(node.clone())
-    }
-
-    #[inline]
-    fn scheme(
-        &mut self,
-        _args: &Self::Args,
-        _max_workspace_size: usize,
-    ) -> Result<usize, SchemeError> {
-        Ok(0)
     }
 
     fn launch<QA>(
@@ -47,17 +36,12 @@ impl crate::Operator for Operator {
         if !matches!(att_mask, AttnMask::Causal) {
             todo!()
         }
-        let &[nh, seq_len, att_len] = att_layout.shape() else {
+        let &[nh, seq_len, att_len] = &*att_layout.shape() else {
             unreachable!()
         };
         let &[sh, ss, sa] = att_layout.strides() else {
             unreachable!()
         };
-
-        get_static! {
-            nh seq_len att_len
-            sh ss      sa
-        }
 
         let att = infini_op::Tensor::new(dt, [nh, seq_len, att_len], [sh, ss, sa]);
         let descriptor = Descriptor::new(
@@ -91,17 +75,7 @@ impl crate::Operator for Operator {
 mod test {
     use super::{Args, AttnMask, Device, Operator};
     use crate::{Hardware, Operator as _, TensorLayout};
-    use digit_layout::{types as ty, DigitLayout};
-
-    fn dyn_args<H: Hardware>(dt: DigitLayout) -> Args<H> {
-        use crate::dyn_;
-        use std::ptr::null_mut;
-        Args {
-            att_mask: AttnMask::Causal,
-            att_layout: TensorLayout::new_dyn(dt, &[dyn_(); 3], &[dyn_(); 3]),
-            att_base: null_mut(),
-        }
-    }
+    use digit_layout::{DigitLayout, types as ty};
 
     fn args<H: Hardware>(
         dt: DigitLayout,
@@ -131,10 +105,8 @@ mod test {
         infini_rt::init(infini_rt::DEVICE_CPU);
         let dev = Device::cpu();
 
-        let mut cpu_op = RefOp::new(&Cpu);
-        let mut dev_op = Operator::new(&dev);
-        cpu_op.scheme(&dyn_args(ty::F64), 0).unwrap();
-        dev_op.scheme(&dyn_args(ty::F16), 0).unwrap();
+        let cpu_op = RefOp::new(&Cpu);
+        let dev_op = Operator::new(&dev);
 
         let nh = 32;
         for (seq_len, att_len) in [(1, 511), (1, 2048), (7, 511), (7, 2048)] {

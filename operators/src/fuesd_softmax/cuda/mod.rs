@@ -1,16 +1,17 @@
-﻿use super::{
-    args::{AttnMask, Meta},
+use super::{
     Args, FusedSoftmax,
+    args::{AttnMask, Meta},
 };
 use crate::{
+    ByteOf, LaunchError, QueueAlloc,
     cuda::{Gpu, Handle, ModuleBox},
-    get_static, strides_not_support, type_not_support, ByteOf, LaunchError, QueueAlloc,
-    SchemeError,
+    strides_not_support, type_not_support,
 };
+use cuda::params;
 use digit_layout::types::F16;
 use std::{
     collections::HashMap,
-    ffi::{c_float, CString},
+    ffi::{CString, c_float},
     mem::size_of,
     sync::Arc,
 };
@@ -37,19 +38,6 @@ impl crate::Operator for Operator {
         }
     }
 
-    fn scheme(
-        &mut self,
-        args: &Self::Args,
-        _max_workspace_size: usize,
-    ) -> Result<usize, SchemeError> {
-        let Meta { dt } = args.meta()?;
-        if dt == F16 {
-            Ok(0)
-        } else {
-            Err(type_not_support(""))
-        }
-    }
-
     fn launch<T>(
         &self,
         args: &Self::Args,
@@ -65,7 +53,7 @@ impl crate::Operator for Operator {
             att_layout,
             att_base,
         } = args;
-        let &[nh, seq_len, att_len] = att_layout.shape() else {
+        let &[nh, seq_len, att_len] = &*att_layout.shape() else {
             unreachable!()
         };
         let &[sh, ss, sa] = att_layout.strides() else {
@@ -73,17 +61,12 @@ impl crate::Operator for Operator {
         };
 
         if dt != F16 {
-            return Err(type_not_support("").into());
-        }
-
-        get_static! {
-            nh seq_len att_len
-            sh ss      sa
+            return Err(type_not_support(""));
         }
 
         let unit = dt.nbytes() as isize;
         if sa != unit {
-            return Err(strides_not_support("").into());
+            return Err(strides_not_support(""));
         };
 
         let scheme = &self.scheme[att_mask];
@@ -92,15 +75,13 @@ impl crate::Operator for Operator {
         let sh = (sh / unit) as i32;
         let ss = (ss / unit) as i32;
         let att_len = att_len as u32;
-        let params = cuda::params![att_base, 0i32, sh, ss, att_len];
+        let params = params![*att_base, 0i32, sh, ss, att_len];
 
         if att_len <= block_size {
             scheme.module.launch(
                 &scheme.padding,
-                grid_dims,
-                att_len,
-                params.as_ptr(),
-                0,
+                (grid_dims, att_len, 0),
+                &params.to_ptrs(),
                 queue.queue(),
             );
         } else {
@@ -108,10 +89,8 @@ impl crate::Operator for Operator {
             let smem = (num_items_thread * block_size) as usize;
             scheme.module.launch(
                 &scheme.folding,
-                grid_dims,
-                block_size,
-                params.as_ptr(),
-                smem * size_of::<c_float>(),
+                (grid_dims, block_size, smem * size_of::<c_float>()),
+                &params.to_ptrs(),
                 queue.queue(),
             );
         }
@@ -183,17 +162,7 @@ extern "C" __global__ void {folding}(
 mod test {
     use super::{Args, AttnMask, Gpu, Operator};
     use crate::{Hardware, Operator as _, TensorLayout};
-    use digit_layout::{types as ty, DigitLayout};
-
-    fn dyn_args<H: Hardware>(dt: DigitLayout) -> Args<H> {
-        use crate::dyn_;
-        use std::ptr::null_mut;
-        Args {
-            att_mask: AttnMask::Causal,
-            att_layout: TensorLayout::new_dyn(dt, &[dyn_(); 3], &[dyn_(); 3]),
-            att_base: null_mut(),
-        }
-    }
+    use digit_layout::{DigitLayout, types as ty};
 
     fn args<H: Hardware>(
         dt: DigitLayout,
@@ -207,27 +176,6 @@ mod test {
             att_layout: TensorLayout::new_contiguous(dt, &[nh, seq_len, att_len]),
             att_base,
         }
-    }
-
-    #[test]
-    fn test_compile() {
-        let Some(gpu) = Gpu::init() else {
-            return;
-        };
-        println!("{}", gpu.0.device().info());
-
-        let mut op = Operator::new(&gpu);
-        op.scheme(&dyn_args(ty::F16), 0).unwrap();
-
-        gpu.apply(|ctx| {
-            for (mask, scheme) in op.scheme {
-                println!("{mask:?}============================");
-                println!("{}", scheme.padding.to_str().unwrap());
-                println!("{}", scheme.module.load(&scheme.padding, ctx).info());
-                println!("{}", scheme.folding.to_str().unwrap());
-                println!("{}", scheme.module.load(&scheme.folding, ctx).info());
-            }
-        })
     }
 
     #[test]
@@ -246,10 +194,8 @@ mod test {
             return;
         };
 
-        let mut cpu_op = RefOp::new(&Cpu);
-        let mut gpu_op = Operator::new(&gpu);
-        cpu_op.scheme(&dyn_args(ty::F64), 0).unwrap();
-        gpu_op.scheme(&dyn_args(ty::F16), 0).unwrap();
+        let cpu_op = RefOp::new(&Cpu);
+        let gpu_op = Operator::new(&gpu);
 
         let nh = 32;
         for (seq_len, att_len) in [(1, 511), (1, 2048), (7, 511), (7, 2048)] {

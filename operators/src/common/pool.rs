@@ -1,5 +1,5 @@
 use std::{
-    alloc::{alloc, dealloc, Layout},
+    alloc::{Layout, alloc, dealloc},
     ptr::null_mut,
     sync::atomic::{
         AtomicPtr,

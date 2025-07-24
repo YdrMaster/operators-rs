@@ -21,7 +21,7 @@ struct AttentionCausalMask {
     }
 };
 
-template<unsigned int BLOCK_SIZE, class Tdata, class Tmask>
+template <unsigned int BLOCK_SIZE, class Tdata, class Tmask>
 static __device__ void block_padding(
     Tdata *__restrict__ att,
     Tmask mask,
@@ -30,8 +30,8 @@ static __device__ void block_padding(
 
     auto att_idx = threadIdx.x, att_len = blockDim.x;
     auto thread_data = mask(tok_id, seq_len, att_idx, att_len)
-                           ? float(att[att_idx])
-                           : -__FLT_MAX__;
+                         ? float(att[att_idx])
+                         : -__FLT_MAX__;
 
     using BlockOp = cub::BlockReduce<float, BLOCK_SIZE>;
     __shared__ typename BlockOp::TempStorage temp_storage;
@@ -40,21 +40,25 @@ static __device__ void block_padding(
     __shared__ float max;
     {
         auto acc = block_op.Reduce(thread_data, cub::Max(), att_len);
-        if (threadIdx.x == 0) { max = acc; }
+        if (threadIdx.x == 0) {
+            max = acc;
+        }
     }
     __syncthreads();
 
     __shared__ float mean;
     {
         auto acc = block_op.Sum(thread_data = expf(thread_data - max), att_len);
-        if (threadIdx.x == 0) { mean = fdividef(1, acc); }
+        if (threadIdx.x == 0) {
+            mean = fdividef(1, acc);
+        }
     }
     __syncthreads();
 
     att[att_idx] = Tdata(thread_data * mean);
 }
 
-template<unsigned int BLOCK_SIZE, class Tdata, class Tmask>
+template <unsigned int BLOCK_SIZE, class Tdata, class Tmask>
 static __device__ void block_folding(
     Tdata *__restrict__ att,
     Tmask mask,
@@ -78,8 +82,8 @@ static __device__ void block_folding(
     for (unsigned int i = 0; i < local; ++i) {
         auto att_idx = thread_offset + i;
         auto val = att_idx < att_len && mask(tok_id, seq_len, att_idx, att_len)
-                       ? float(att[i])
-                       : -__FLT_MAX__;
+                     ? float(att[i])
+                     : -__FLT_MAX__;
         thread_data[i * blockDim.x] = val;
         thread_max = cub::Max()(thread_max, val);
     }
@@ -91,7 +95,9 @@ static __device__ void block_folding(
     __shared__ float max;
     {
         auto acc = block_op.Reduce(thread_max, cub::Max());
-        if (threadIdx.x == 0) { max = acc; }
+        if (threadIdx.x == 0) {
+            max = acc;
+        }
     }
     __syncthreads();
 
@@ -103,7 +109,9 @@ static __device__ void block_folding(
             thread_sum += (val = expf(val - max));
         }
         auto acc = block_op.Sum(thread_sum);
-        if (threadIdx.x == 0) { mean = fdividef(1, acc); }
+        if (threadIdx.x == 0) {
+            mean = fdividef(1, acc);
+        }
     }
     __syncthreads();
 
@@ -115,7 +123,7 @@ static __device__ void block_folding(
 }
 
 // assert BLOCK_SIZE >= blockDim.x
-template<unsigned int BLOCK_SIZE, class Tdata, class Tmask>
+template <unsigned int BLOCK_SIZE, class Tdata, class Tmask>
 static __forceinline__ __device__ void padding(
     Tdata *__restrict__ att,
     Tmask mask,
@@ -128,7 +136,7 @@ static __forceinline__ __device__ void padding(
     block_padding<BLOCK_SIZE>(att + offset, mask, tok_id, seq_len);
 }
 
-template<unsigned int BLOCK_SIZE, class Tdata, class Tmask>
+template <unsigned int BLOCK_SIZE, class Tdata, class Tmask>
 static __forceinline__ __device__ void folding(
     Tdata *__restrict__ att,
     Tmask mask,

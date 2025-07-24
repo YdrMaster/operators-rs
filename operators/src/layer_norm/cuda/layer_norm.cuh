@@ -10,7 +10,8 @@ struct SumPair {
         return SumPair{this->average + other.average, this->variance + other.variance};
     }
 };
-template<unsigned int BLOCK_SIZE, class Ta, class Tw>
+
+template <unsigned int BLOCK_SIZE, class Ta, class Tw>
 static __device__ void padding(
     Ta *__restrict__ y_,
     int const stride_y,
@@ -39,7 +40,7 @@ static __device__ void padding(
     *y = Ta((x - average) * variance * s + b);
 }
 
-template<unsigned int BLOCK_SIZE, unsigned int NUM_ITEMS_THREAD, class Tw, class Ta>
+template <unsigned int BLOCK_SIZE, unsigned int NUM_ITEMS_THREAD, class Tw, class Ta>
 static __device__ void folding(
     Ta *__restrict__ y_,
     int const stride_y,

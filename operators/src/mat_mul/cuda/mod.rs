@@ -1,7 +1,8 @@
-use super::{args::SchemeLayout, Args, MatMul};
+use super::{Args, MatMul, args::SchemeLayout};
 use crate::{
+    ByteOf, LaunchError, QueueAlloc,
     cuda::{Gpu, Handle},
-    type_not_support, ByteOf, LaunchError, QueueAlloc, SchemeError,
+    type_not_support,
 };
 use cublas::cublas;
 use cuda::AsRaw;
@@ -25,15 +26,6 @@ impl crate::Operator for Operator {
         Self {
             handle: processor.0.clone(),
         }
-    }
-
-    fn scheme(
-        &mut self,
-        _args: &Self::Args,
-        _max_workspace_size: usize,
-    ) -> Result<usize, SchemeError> {
-        // 仅支持 cublas，不需要为执行做准备
-        Ok(0)
     }
 
     fn launch<QA>(
@@ -71,7 +63,7 @@ impl crate::Operator for Operator {
         } = args;
 
         if dt != F16 {
-            return Err(type_not_support("").into());
+            return Err(type_not_support(""));
         }
 
         let (a, b) = if ab_swap {
@@ -137,6 +129,7 @@ mod test {
     const ALPHA: f32 = 0.5;
     const BETA: f32 = 1.;
 
+    #[allow(clippy::too_many_arguments)]
     fn args<H: Hardware>(
         dt: DigitLayout,
         batch: usize,
@@ -163,10 +156,10 @@ mod test {
     fn test_compute() {
         use super::{super::common_cpu::Operator as RefOp, Gpu, Operator};
         use crate::{
+            Operator as _,
             common_cpu::{Cpu, ThisThread},
             cuda::cast_load,
             test_utils::{Diff, ErrorCollector},
-            Operator as _,
         };
         use cuda::memcpy_d2h;
         use digit_layout::types::{F16, F64};

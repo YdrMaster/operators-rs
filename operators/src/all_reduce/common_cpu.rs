@@ -1,8 +1,9 @@
-﻿use super::{args::Meta, AllReduce, Args, ReduceOp};
+use super::{AllReduce, Args, ReduceOp, args::Meta};
 use crate::{
+    ByteOf, LaunchError, QueueAlloc, TopoNode,
     broadcast::{self, common_cpu::Operator as Broadcast},
     common_cpu::{Cpu, InprocNode},
-    rearrange, ByteOf, LaunchError, QueueAlloc, SchemeError, TopoNode,
+    rearrange,
 };
 use digit_layout::DigitLayout;
 use half::{bf16, f16};
@@ -30,14 +31,6 @@ impl crate::Operator for Operator {
             node: node.clone(),
             broadcast: Broadcast::new(node),
         }
-    }
-
-    fn scheme(
-        &mut self,
-        _args: &Self::Args,
-        _max_workspace_size: usize,
-    ) -> Result<usize, SchemeError> {
-        Ok(0)
     }
 
     fn launch<QA>(
@@ -146,7 +139,7 @@ fn sum<T: AddAssign + Clone>(len: usize, buf: *mut u8, src: *const u8) {
 
 #[test]
 fn test_comm() {
-    use crate::{common_cpu::ThisThread, Operator as _, TensorLayout};
+    use crate::{Operator as _, TensorLayout, common_cpu::ThisThread};
     use digit_layout::types::U32;
 
     InprocNode::new(4)
@@ -174,5 +167,5 @@ fn test_comm() {
         })
         .collect::<Vec<_>>()
         .into_iter()
-        .for_each(|h| assert_eq!(h.join().unwrap(), [0 + 1 + 2 + 3; 8]));
+        .for_each(|h| assert_eq!(h.join().unwrap(), [1 + 2 + 3; 8]));
 }

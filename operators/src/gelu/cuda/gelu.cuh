@@ -1,7 +1,8 @@
 #ifndef M_SQRT1_2
 #define M_SQRT1_2 .707106781186547524401f
 #endif
-template<class Tdata>
+
+template <class Tdata>
 static __device__ void gelu(
     Tdata *__restrict__ data) {
     auto i = blockIdx.x * blockDim.x + threadIdx.x;

@@ -1,13 +1,14 @@
-use super::{args::Meta, Args, Gelu};
+use super::{Args, Gelu, args::Meta};
 use crate::{
+    ByteOf, LaunchError, QueueAlloc,
     cuda::{Gpu, Handle, ModuleBox},
-    get_static, strides_not_support, type_not_support,
+    strides_not_support, type_not_support,
     utils::gcd,
-    ByteOf, LaunchError, QueueAlloc, SchemeError,
 };
+use cuda::params;
 use digit_layout::types::F16;
 use std::{
-    ffi::{c_uint, CString},
+    ffi::{CString, c_uint},
     sync::Arc,
 };
 
@@ -37,15 +38,6 @@ impl crate::Operator for Operator {
         }
     }
 
-    #[inline]
-    fn scheme(
-        &mut self,
-        _args: &Self::Args,
-        _max_workspace_size: usize,
-    ) -> Result<usize, SchemeError> {
-        Ok(0)
-    }
-
     fn launch<QA>(
         &self,
         args: &Self::Args,
@@ -58,30 +50,23 @@ impl crate::Operator for Operator {
         let Meta { dt, n, d } = args.meta()?;
         let Args { layout, base } = args;
         if dt != F16 {
-            return Err(type_not_support("").into());
+            return Err(type_not_support(""));
         }
         let &[_, ds] = layout.strides() else {
             unreachable!()
         };
 
-        get_static! {
-             n   d  ds
-        }
-
         let unit = dt.nbytes() as isize;
         if ds != unit {
-            return Err(strides_not_support("").into());
+            return Err(strides_not_support(""));
         };
 
-        let params = cuda::params![base];
         let block = gcd(self.max_threads_block, d);
 
         self.module.launch(
             CString::new(NAME).unwrap(),
-            (n * d).div_ceil(block) as c_uint,
-            block as u32,
-            params.as_ptr(),
-            0,
+            ((n * d).div_ceil(block) as c_uint, block as c_uint, 0),
+            &params![*base].to_ptrs(),
             queue_alloc.queue(),
         );
         Ok(())
@@ -103,47 +88,18 @@ extern "C" __global__ void {NAME}(
 #[cfg(test)]
 mod test {
     use super::{Args, Gpu, Operator};
-    use crate::{dyn_, Hardware, Operator as _, TensorLayout};
+    use crate::{Hardware, Operator as _, TensorLayout};
     use digit_layout::{
-        types::{F16, F64},
         DigitLayout,
+        types::{F16, F64},
     };
 
-    fn dyn_args<H: Hardware>(dt: DigitLayout) -> Args<H> {
-        use std::ptr::null_mut;
-        let layout = TensorLayout::new_dyn(dt, &[dyn_(); 2], &[dyn_(); 2]);
-        Args {
-            layout: layout.clone(),
-            base: null_mut(),
-        }
-    }
     fn args<H: Hardware>(dt: DigitLayout, n: usize, d: usize, base: *mut H::Byte) -> Args<H> {
         let layout = TensorLayout::new_contiguous(dt, &[n, d]);
         Args {
             layout: layout.clone(),
             base,
         }
-    }
-
-    #[test]
-    fn test_compile() {
-        use super::NAME;
-        use std::ffi::CString;
-
-        let Some(gpu) = Gpu::init() else {
-            return;
-        };
-        println!("{}", gpu.0.device().info());
-
-        let mut op = Operator::new(&gpu);
-        op.scheme(&dyn_args(F16), 0).unwrap();
-
-        gpu.apply(|ctx| {
-            println!(
-                "{NAME}\n{}",
-                op.module.load(CString::new(NAME).unwrap(), ctx).info()
-            );
-        })
     }
 
     #[test]
@@ -162,10 +118,8 @@ mod test {
             return;
         };
 
-        let mut cpu_op = RefOp::new(&Cpu);
-        let mut gpu_op = Operator::new(&gpu);
-        cpu_op.scheme(&dyn_args(F64), 0).unwrap();
-        gpu_op.scheme(&dyn_args(F16), 0).unwrap();
+        let cpu_op = RefOp::new(&Cpu);
+        let gpu_op = Operator::new(&gpu);
 
         let n = 1024;
         let d = 2048;
