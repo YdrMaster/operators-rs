@@ -12,9 +12,9 @@ infini-op = { git = "https://github.com/InfiniTensor/infini-toolkit", rev = "e83
 infini-ccl = { git = "https://github.com/InfiniTensor/infini-toolkit", rev = "e8362c3" }
 search-infini-tools = { git = "https://github.com/InfiniTensor/infini-toolkit", rev = "e8362c3" }
 
-cuda = { git = "https://github.com/YdrMaster/cuda-driver", rev = "40e91cd" }
-cublas = { git = "https://github.com/YdrMaster/cuda-driver", rev = "40e91cd" }
-nccl = { git = "https://github.com/YdrMaster/cuda-driver", rev = "40e91cd" }
-search-cuda-tools = { git = "https://github.com/YdrMaster/cuda-driver", rev = "40e91cd" }
-search-corex-tools = { git = "https://github.com/YdrMaster/cuda-driver", rev = "40e91cd" }
-search-maca-tools = { git = "https://github.com/YdrMaster/cuda-driver", rev = "40e91cd" }
+cuda = { git = "https://github.com/YdrMaster/cuda-driver", rev = "aff85aa" }
+cublas = { git = "https://github.com/YdrMaster/cuda-driver", rev = "aff85aa" }
+nccl = { git = "https://github.com/YdrMaster/cuda-driver", rev = "aff85aa" }
+search-cuda-tools = { git = "https://github.com/YdrMaster/cuda-driver", rev = "aff85aa" }
+search-corex-tools = { git = "https://github.com/YdrMaster/cuda-driver", rev = "aff85aa" }
+search-maca-tools = { git = "https://github.com/YdrMaster/cuda-driver", rev = "aff85aa" }
