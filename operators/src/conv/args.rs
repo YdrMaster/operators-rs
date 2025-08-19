@@ -11,8 +11,8 @@ pub struct Args<H: Hardware> {
     pub x_base: ConstPtr<H>,
     pub w_layout: TensorLayout,
     pub w_base: ConstPtr<H>,
-    pub b_layout: TensorLayout,
-    pub b_base: ConstPtr<H>,
+    pub b_layout: Option<TensorLayout>,
+    pub b_base: Option<ConstPtr<H>>,
     pub strides: [usize; 2],
     pub dilations: [usize; 2],
     pub pads: [usize; 4],
@@ -50,12 +50,17 @@ impl<H: Hardware> Args<H> {
         let &[m, ck, hk, wk] = &*w_layout.shape() else {
             return Err(rank_error("w", 4, w_layout.ndim()));
         };
-        let &[mb] = &*b_layout.shape() else {
-            return Err(rank_error("b", 1, b_layout.ndim()));
+        let (mb, b_layout_dt) = if let Some(b_layout) = b_layout {
+            let &[mb] = &*b_layout.shape() else {
+                return Err(rank_error("b", 1, b_layout.ndim()));
+            };
+            (mb, b_layout.dt)
+        } else {
+            (m, y_layout.dt)
         };
 
         Ok(Meta {
-            dt: type_distinct(&[y_layout.dt, x_layout.dt, w_layout.dt, b_layout.dt])?,
+            dt: type_distinct(&[y_layout.dt, x_layout.dt, w_layout.dt, b_layout_dt])?,
             n: dim_distinct(&[n, ny]).expect("n mismatch"),
             m: dim_distinct(&[m, my, mb]).expect("m mismatch"),
             c: dim_distinct(&[c, ck]).expect("c mismatch"),

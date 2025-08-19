@@ -91,9 +91,6 @@ where
         let &[mks, cks, hks, wks] = w_layout.strides() else {
             unreachable!()
         };
-        let &[mbs] = b_layout.strides() else {
-            unreachable!()
-        };
 
         // 计算考虑空洞的 kernel size
 
@@ -147,19 +144,24 @@ where
         let b_dst = TensorLayout { dt, layout: b_dst };
         let b_src = TensorLayout { dt, layout: b_src };
 
-        // b 布局广播
-        let b = Arr4::new(&[n, m, hy * wy], &[0, mbs, 0], 0);
-        // 广播 b
-        self.rearrange.launch(
-            &rearrange::Args {
-                dst_layout: c_y.clone(),
-                dst_base: *y_base,
-                src_layout: TensorLayout::new(dt, b.shape(), b.strides()),
-                src_base: *b_base,
-            },
-            workspace,
-            queue_alloc,
-        )?;
+        if let (Some(b_layout), Some(b_base)) = (b_layout, b_base) {
+            let &[mbs] = b_layout.strides() else {
+                unreachable!()
+            };
+            // b 布局广播
+            let b = Arr4::new(&[n, m, hy * wy], &[0, mbs, 0], 0);
+            // 广播 b
+            self.rearrange.launch(
+                &rearrange::Args {
+                    dst_layout: c_y.clone(),
+                    dst_base: *y_base,
+                    src_layout: TensorLayout::new(dt, b.shape(), b.strides()),
+                    src_base: *b_base,
+                },
+                workspace,
+                queue_alloc,
+            )?;
+        }
 
         // 为 im2col 分配工作空间
         let b_size = b_shape.iter().product::<usize>() * ele;
@@ -181,7 +183,7 @@ where
             &mat_mul::Args {
                 c_layout: c_y.clone(),
                 c_base: *y_base,
-                beta: 1.,
+                beta: if b_layout.is_some() { 1. } else { 0. },
                 a_layout: a_w,
                 a_base: *w_base,
                 b_layout: b_x,
